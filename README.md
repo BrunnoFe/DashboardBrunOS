@@ -63,16 +63,6 @@ O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário j
 | `HOST_PROC` | `/host/proc` | `/proc` do servidor (rede) |
 | `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | por padrão a primeira execução só aceita IPs da rede local/Tailscale |
 
-## Segurança
-
-- A senha nunca é gravada: só o hash PBKDF2-HMAC-SHA256 com sal aleatório, em `/data/auth.json` (permissão 0600).
-- O cookie de sessão é HttpOnly, SameSite=Lax e Secure quando acessado por HTTPS. No disco fica só o SHA-256 do token.
-- Depois de 5 senhas erradas, o IP fica bloqueado por 1 min, depois 2, 4… até 30 min. O usuário inexistente gasta o mesmo tempo que o existente.
-- Toda alteração exige o cabeçalho `X-BrunOS` e a mesma origem (proteção contra CSRF). Há CSP restrita, `X-Frame-Options` e `nosniff`.
-- Arquivos: leituras passam por `os.Root` (não sai da pasta nem por links simbólicos). Escritas validam o caminho real. Pastas somente leitura recusam escrita. Arquivos HTML/SVG da sua pasta abrem como texto, em sandbox, nunca como página.
-- Docker: o proxy só libera listar containers, ler estatísticas e reiniciar. Criar, apagar e `exec` ficam bloqueados.
-- `app.env` dos apps contém senhas: o BrunOS lê só as chaves de porta e domínio e ignora o resto.
-
 ## Desenvolvimento
 
 ```bash
