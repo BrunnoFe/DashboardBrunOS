@@ -31,6 +31,7 @@ import (
 	"brunos/internal/runtipi"
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
+	"brunos/internal/terminal"
 	"brunos/web"
 )
 
@@ -47,6 +48,7 @@ type config struct {
 	HostProc      string
 	MaxUploadGB   int64
 	PublicSetup   bool
+	Terminal      bool
 }
 
 func env(k, def string) string {
@@ -72,6 +74,7 @@ func loadConfig() config {
 		DockerActions: envBool("BRUNOS_DOCKER_ACTIONS"),
 		HostProc:      env("HOST_PROC", "/host/proc"),
 		PublicSetup:   envBool("BRUNOS_ALLOW_PUBLIC_SETUP"),
+		Terminal:      env("BRUNOS_TERMINAL", "true") != "false" && env("BRUNOS_TERMINAL", "true") != "off",
 	}
 	c.MaxUploadGB, _ = strconv.ParseInt(env("BRUNOS_MAX_UPLOAD_GB", "50"), 10, 64)
 	if c.MaxUploadGB <= 0 {
@@ -87,6 +90,7 @@ type server struct {
 	tipi      *runtipi.Discoverer
 	docker    *dockerc.Client
 	files     *files.Service
+	term      *terminal.Manager
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -142,6 +146,9 @@ func main() {
 	fsvc, errs := files.New(func() []files.RootConfig { return files.ParseRoots(cfg.Roots, cfg.FilesDir) })
 	for _, e := range errs {
 		slog.Warn("pasta ignorada", "erro", e)
+	}
+	if cfg.Terminal {
+		s.term = terminal.NewManager(filepath.Join(cfg.DataDir, "known_hosts.json"))
 	}
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
 	if err := fsvc.LoadMapping(); err != nil {
@@ -226,6 +233,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/apps/restart", a(s.hAppRestart))
 
 	s.files.Register(mux, a)
+	if s.term != nil {
+		s.term.Register(mux, a)
+	}
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "rota desconhecida"})
@@ -451,6 +461,9 @@ func (s *server) hLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) hLogout(w http.ResponseWriter, r *http.Request) {
 	s.auth.Logout(session(r).token)
+	if s.term != nil {
+		s.term.CloseAll()
+	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -487,6 +500,9 @@ func (s *server) hPassword(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
+	}
+	if s.term != nil {
+		s.term.CloseAll()
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -680,7 +696,7 @@ func (s *server) hSystem(w http.ResponseWriter, r *http.Request) {
 		dockerOK = err == nil
 	}
 	writeJSON(w, 200, map[string]any{
-		"info": s.stats.Info(), "runtipi": tipi, "docker": dockerOK, "dockerActions": s.cfg.DockerActions && dockerOK,
+		"info": s.stats.Info(), "runtipi": tipi, "docker": dockerOK, "dockerActions": s.cfg.DockerActions && dockerOK, "terminal": s.term != nil,
 		"version": version, "startedAt": s.started.Unix(), "maxUploadGB": s.cfg.MaxUploadGB,
 	})
 }

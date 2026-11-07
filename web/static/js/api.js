@@ -16,7 +16,7 @@ async function call(method, path, body, { raw = false } = {}) {
   let data = null;
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('json')) data = await res.json();
-  if (!res.ok) throw new Error(data?.error || `Erro ${res.status}`);
+  if (!res.ok) { const e = new Error(data?.error || `Erro ${res.status}`); e.status = res.status; e.data = data; throw e; }
   return data;
 }
 const q = (o) => new URLSearchParams(o).toString();
@@ -55,6 +55,27 @@ const real = {
     return () => { stopped = true; clearTimeout(retry); es?.close(); };
   },
   system: () => call('GET', '/api/system'),
+  term: {
+    open: (b) => call('POST', '/api/terminal/open', b),
+    input: (id, data) => call('POST', '/api/terminal/input', { id, data }),
+    resize: (id, cols, rows) => call('POST', '/api/terminal/resize', { id, cols, rows }),
+    close: (id) => call('POST', '/api/terminal/close', { id }),
+    forget: (host, port) => call('POST', '/api/terminal/forget', { host, port }),
+    // saída do terminal por Server-Sent Events (base64); reconecta sozinho se a rede piscar
+    stream(id, { onData, onExit, onReplaced, onError }) {
+      let es, stopped = false, fails = 0;
+      const open = () => {
+        es = new EventSource(`/api/terminal/stream?id=${encodeURIComponent(id)}`);
+        es.addEventListener('ready', () => { fails = 0; });
+        es.onmessage = (e) => { const bin = atob(e.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); onData(u8); };
+        es.addEventListener('exit', (e) => { stopped = true; es.close(); onExit(JSON.parse(e.data).message); });
+        es.addEventListener('replaced', () => { stopped = true; es.close(); onReplaced?.(); });
+        es.onerror = () => { es.close(); if (stopped) return; if (++fails > 5) { stopped = true; onError?.(); } else setTimeout(open, 1500); };
+      };
+      open();
+      return () => { stopped = true; es?.close(); };
+    },
+  },
   apps: () => call('GET', '/api/apps'),
   usage: () => call('GET', '/api/usage'),
   restart: (urn) => call('POST', '/api/apps/restart', { urn }),
@@ -197,6 +218,24 @@ function makeDemo() {
     apps: () => wait({ apps, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
     usage: () => wait([{ urn: '', name: 'Runtipi (sistema)', project: 'runtipi', cpu: 1.2 + Math.random(), memory: 420e6 }, ...apps.filter((a) => a.state === 'running').map((a) => ({ urn: a.urn, name: a.name, project: a.project, cpu: Math.random() * 3, memory: 20e6 + Math.random() * 600e6 }))].sort((a, b) => b.cpu - a.cpu), 200),
     restart: () => Promise.reject(new Error('Indisponível na demonstração')),
+    term: (() => {
+      const enc = new TextEncoder(); let out = null, line = '';
+      const prompt = '\x1b[1;32mptbruno@homeio\x1b[0m:\x1b[1;34m~\x1b[0m$ ';
+      return {
+        open: (b) => b.trust ? wait({ id: 'demo', addr: `${b.host}:${b.port || 22}`, user: b.user }, 500)
+          : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
+        input: (id, d) => {
+          for (const ch of d) {
+            if (ch === '\r') { const cmd = line.trim(); line = ''; out?.(enc.encode('\r\n' + (cmd === 'uptime' ? ' 17:42:10 up 2 days, 16:03,  1 user,  load average: 0,31, 0,28, 0,25\r\n' : cmd ? `demonstração: "${cmd}" não roda aqui\r\n` : '') + prompt)); }
+            else if (ch === '\x7f') { if (line) { line = line.slice(0, -1); out?.(enc.encode('\b \b')); } }
+            else { line += ch; out?.(enc.encode(ch)); }
+          }
+          return wait(null, 5);
+        },
+        resize: () => wait(null, 5), close: () => wait(null, 5), forget: () => wait(null, 5),
+        stream(id, h) { out = h.onData; setTimeout(() => out?.(enc.encode('Welcome to Ubuntu 26.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt)), 300); return () => { out = null; }; },
+      };
+    })(),
     logoUrl: () => '',
     files: {
       roots: () => wait(demoRoots()),

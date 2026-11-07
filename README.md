@@ -56,6 +56,7 @@ O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário j
 | `BRUNOS_DATA` | `/data` | pasta de dados |
 | `BRUNOS_FILES` | `/files` | cada subpasta vira um local (dentro de `mnt`/`media`, cada disco) |
 | `BRUNOS_ROOTS` | — | lista manual: `Fotos=/files/mnt/1TB_HDD/Fotos;Backups=/files/mnt/1TB_HDD2:ro` |
+| `BRUNOS_TERMINAL` | `true` | `false` esconde e desliga o terminal SSH |
 | `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi montada |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | ou `tcp://brunos-docker-proxy:2375`; `off` desliga |
 | `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
@@ -82,3 +83,13 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 - **Ícones dos apps** em `web/static/assets/icons`: projeto [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). As marcas pertencem aos respectivos donos.
 - **Fonte Inter**: SIL Open Font License 1.1 (`web/static/assets/fonts/LICENSE-Inter.txt`).
 - Inspiração visual: umbrelOS. A interface foi escrita do zero; os valores das sombras de vidro, da curva de ampliação do dock e da animação de abertura das janelas foram adaptados do `tailwind.config.ts` e do `index.css` do Umbrel.
+
+## Terminal
+
+Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor **por SSH**, com o seu usuário e senha (ou chave privada). Assim o container continua sem nenhum privilégio: é a mesma coisa que abrir um terminal no seu computador e rodar `ssh`.
+
+- A senha ou chave é usada só para abrir a conexão e não é gravada em lugar nenhum.
+- Na primeira conexão, o BrunOS mostra a impressão digital da chave do servidor para você conferir (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Ela fica em `/data/known_hosts.json` e, se mudar, a conexão é recusada até você confirmar de novo.
+- Sessões sem ninguém olhando fecham sozinhas em 3 minutos; sair do BrunOS ou trocar a senha fecha todas.
+- Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`).
+- O terminal é o xterm.js (MIT), servido pelo próprio BrunOS. O SSH usa o `golang.org/x/crypto/ssh`, guardado em `vendor/` e conferido no CI contra os módulos oficiais.

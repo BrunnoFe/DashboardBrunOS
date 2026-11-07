@@ -22,10 +22,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - name: go vet e build
-        run: go vet ./... && CGO_ENABLED=0 go build ./...
+      - name: Confere o vendor/ com os módulos oficiais (verificados no sum.golang.org)
+        run: |
+          set -euo pipefail
+          declare -A dirs
+          for m in golang.org/x/crypto@v0.48.0 golang.org/x/sys@v0.41.0; do
+            d=$(cd "$(mktemp -d)" && go mod download -json "$m" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Dir"])')
+            dirs[${m%@*}]=$d
+          done
+          n=0
+          while IFS= read -r f; do
+            mod=$(echo "$f" | cut -d/ -f1-3); rel=${f#"$mod"/}
+            cmp -s "vendor/$f" "${dirs[$mod]}/$rel" || { echo "DIFERENTE: $f"; exit 1; }
+            n=$((n+1))
+          done < <(cd vendor && find golang.org -type f)
+          echo "vendor confere com os módulos oficiais ($n arquivos)"
+      - name: go vet, testes e build
+        run: go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...
       - name: gofmt
-        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+        run: test -z "$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))" || (gofmt -l . && exit 1)
       - name: Gera a imagem
         run: docker build -t brunos:ci --build-arg VERSION=ci .
       - name: Teste de fumaça (container + proxy do Docker + checagens da API)

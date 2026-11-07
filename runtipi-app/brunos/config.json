@@ -8,8 +8,8 @@
   "port": 8790,
   "categories": ["utilities"],
   "description": "",
-  "tipi_version": 2,
-  "version": "0.2.0",
+  "tipi_version": 3,
+  "version": "0.3.0",
   "source": "https://github.com/BrunnoFe/DashboardBrunOS",
   "exposable": true,
   "dynamic_config": true,
@@ -47,8 +47,15 @@
       "hint": "Habilita o item “Reiniciar app” no menu dos ícones.",
       "env_variable": "BRUNOS_DOCKER_ACTIONS",
       "default": false
+    },
+    {
+      "type": "boolean",
+      "label": "Permitir terminal (SSH) pelo BrunOS",
+      "hint": "Mostra Configurações → Terminal. A conexão usa o seu usuário e senha do SSH, que não ficam guardados.",
+      "env_variable": "BRUNOS_TERMINAL",
+      "default": true
     }
   ],
   "created_at": 1794018606000,
-  "updated_at": 1794071288000
+  "updated_at": 1794073368000
 }

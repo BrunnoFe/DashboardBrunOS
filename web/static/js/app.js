@@ -25,6 +25,10 @@ function runtipiAuto() {
   const port = S.tipi.port && S.tipi.port !== 80 ? `:${S.tipi.port}` : '';
   return `http://${host}${port}`;
 }
+function openTerminal() {
+  import('./terminal.js').then((m) => m.terminalWindow({ settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, defaultHost: S.tipi.internalIp || location.hostname }))
+    .catch((e) => toastError(e, 'Não deu para abrir o terminal'));
+}
 function openUrl(href) { const l = document.createElement('a'); l.href = href; l.target = '_blank'; l.rel = 'noopener'; l.click(); }
 const S = {
   pub: {}, me: null, settings: structuredClone(DEFAULTS), apps: [], tipi: {}, docker: false, dockerActions: false,
@@ -548,6 +552,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'info', title: 'Informações do dispositivo', desc: `${esc(info.os || 'Linux')} · ${esc(info.cpuModel || '')}`, ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'device' },
     { group: 'Sistema', cat: 'system', icon: 'box', title: 'Runtipi', desc: S.tipi.found ? `${S.apps.length} apps instalados · domínio local ${esc(S.tipi.localDomain || '—')}` : 'Pasta do Runtipi não encontrada (monte em /runtipi)', ctrl: `<button class="pill-btn" data-act="open-runtipi">Abrir ${svg('external')}</button>` },
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
+    { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Abre um terminal no servidor por SSH, com o seu usuário e senha (nada fica guardado)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'copy', title: 'Exportar preferências', desc: 'Copia o JSON com apps, dock e aparência', ctrl: `<button class="pill-btn" data-act="copy-config">Copiar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
@@ -640,6 +645,7 @@ function wireSettings(body) {
       else if (a === 'password') passwordDialog();
       else if (a === 'add-link') linkDialog();
       else if (a === 'open-runtipi') SYS.runtipi.run();
+      else if (a === 'terminal') openTerminal();
       else if (a === 'map-disks') import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); }));
       else if (a === 'unhide') { for (const k of Object.keys(st.apps)) if (st.apps[k].hidden) st.apps[k].hidden = false; save(); renderApps(); redraw(); }
       else if (a === 'reset-order') { st.order = []; save(); renderApps(); redraw(); }
@@ -874,6 +880,7 @@ function commandPalette() {
     { icon: 'palette', label: 'Cor de destaque: automática', run: () => { set().accentMode = 'auto'; save(); applyBrand(); } },
     { icon: 'sparkles', label: 'Cor de destaque: vibrante', run: () => { set().accentMode = 'vibrant'; save(); applyBrand(); } },
     { icon: 'box', label: 'Abrir o Runtipi', run: () => SYS.runtipi.run() },
+    { icon: 'terminal', label: 'Abrir o terminal (SSH)', hidden: S.terminal === false, run: () => openTerminal() },
     { icon: 'logout', label: 'Sair', run: () => logout() },
   ];
   const d = openDialog(`<div class="cmdk-input">${svg('search')}<input placeholder="Pesquisar apps, ações e arquivos…" aria-label="Pesquisar"></div><div class="cmdk-list"></div>`, { cls: 'cmdk', wrapCls: 'cmdk-wrap', closeBtn: false });
@@ -999,7 +1006,7 @@ async function enterDesktop(animate) {
   ]);
   S.me = me; S.system = system; S.roots = roots; S.wallpapers = wallpapers;
   S.settings = { ...structuredClone(DEFAULTS), ...settings };
-  if (system) { S.tipi = system.runtipi || {}; S.docker = system.docker; S.dockerActions = system.dockerActions; }
+  if (system) { S.tipi = system.runtipi || {}; S.docker = system.docker; S.dockerActions = system.dockerActions; S.terminal = system.terminal !== false; }
   applyPrefs();
   setWallpaper(set().wallpaper, { instant: !animate });
   renderDock();
@@ -1031,6 +1038,7 @@ function applyPrefs() {
 /* ── Eventos globais ───────────────────────────────────────────── */
 document.addEventListener('keydown', (e) => {
   if (document.body.classList.contains('is-locked')) return;
+  if (e.target.closest?.('.xterm')) return; // dentro do terminal, Esc e Ctrl+K são do shell
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); commandPalette(); }
   else if (e.key === 'Escape') {
     if (menuOpen()) closeMenu();

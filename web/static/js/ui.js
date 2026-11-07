@@ -55,6 +55,8 @@ const P = {
   plug: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',
   plugOff: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4M3 3l18 18"/>',
   bag: '<path d="M5.5 8h13l-1 12.5h-11z"/><path d="M9 10.5V7a3 3 0 0 1 6 0v3.5"/>',
+  minus: '<path d="M5 12h14"/>',
+  alert: '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.5h.01"/>',
   caret: '<path d="M10 8l5 4-5 4z" fill="currentColor" stroke-linejoin="round"/>',
   temp: '<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/><path d="M12 9v8"/>',
   fan: '<circle cx="12" cy="12" r="2"/><path d="M12 10c0-4 1-7 4-7s3 4-2 7M14 12c4 0 7 1 7 4s-4 3-7-2M12 14c0 4-1 7-4 7s-3-4 2-7M10 12c-4 0-7-1-7-4s4-3 7 2"/>',
@@ -163,7 +165,7 @@ export const menuOpen = () => !!menuCloser;
 
 /* ── Diálogos ──────────────────────────────────────────────────── */
 export const dialogs = [];
-export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onClose, width } = {}) {
+export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onClose, width, backdropClose = true } = {}) {
   const wrap = html(`<div class="dlg-wrap ${wrapCls}"><div class="dialog ${cls}" role="dialog" aria-modal="true">${inner}</div>${closeBtn ? `<button class="dlg-x" aria-label="Fechar">${svg('x')}</button>` : ''}</div>`);
   const dlg = $('.dialog', wrap);
   if (width) dlg.style.width = `min(${width}px, 100%)`;
@@ -175,7 +177,7 @@ export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onC
     onClose?.();
     setTimeout(() => wrap.remove(), 180);
   };
-  wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
+  wrap.addEventListener('mousedown', (e) => { if (backdropClose && e.target === wrap) close(); });
   $('.dlg-x', wrap)?.addEventListener('click', close);
   $('#dialog-host').append(wrap);
   dialogs.push(close);
