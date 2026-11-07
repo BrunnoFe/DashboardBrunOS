@@ -1,0 +1,53 @@
+{
+  "services": [
+    {
+      "name": "brunos",
+      "image": "ghcr.io/brunnofe/brunos:0.1.0",
+      "isMain": true,
+      "internalPort": 8080,
+      "user": "${BRUNOS_PUID}:${BRUNOS_PGID}",
+      "readOnly": true,
+      "capDrop": ["ALL"],
+      "securityOpt": ["no-new-privileges:true"],
+      "environment": {
+        "DOCKER_HOST": "tcp://brunos-docker-proxy:2375",
+        "BRUNOS_DOCKER_ACTIONS": "${BRUNOS_DOCKER_ACTIONS}",
+        "BRUNOS_MAX_UPLOAD_GB": "50"
+      },
+      "volumes": [
+        { "hostPath": "${APP_DATA_DIR}/data", "containerPath": "/data" },
+        { "hostPath": "${BRUNOS_RUNTIPI_PATH}", "containerPath": "/runtipi", "readOnly": true },
+        { "hostPath": "/home", "containerPath": "/files/home" },
+        { "hostPath": "/mnt", "containerPath": "/files/mnt" },
+        { "hostPath": "${BRUNOS_RUNTIPI_PATH}", "containerPath": "/files${BRUNOS_RUNTIPI_PATH}", "readOnly": true },
+        { "hostPath": "/proc", "containerPath": "/host/proc", "readOnly": true },
+        { "hostPath": "/etc/os-release", "containerPath": "/host/os-release", "readOnly": true },
+        { "hostPath": "/etc/hostname", "containerPath": "/host/hostname", "readOnly": true }
+      ],
+      "dependsOn": ["brunos-docker-proxy"],
+      "deploy": { "resources": { "limits": { "memory": "128M" } } }
+    },
+    {
+      "name": "brunos-docker-proxy",
+      "image": "wollomatic/socket-proxy:1",
+      "user": "0:0",
+      "readOnly": true,
+      "capDrop": ["ALL"],
+      "securityOpt": ["no-new-privileges:true"],
+      "command": [
+        "-loglevel=warn",
+        "-listenip=0.0.0.0",
+        "-allowfrom=brunos",
+        "-allowGET=/v1\\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/stats)",
+        "-allowPOST=/v1\\..{1,2}/containers/[a-zA-Z0-9_.-]+/restart",
+        "-watchdoginterval=3600",
+        "-stoponwatchdog",
+        "-shutdowngracetime=5"
+      ],
+      "volumes": [
+        { "hostPath": "/var/run/docker.sock", "containerPath": "/var/run/docker.sock", "readOnly": true }
+      ],
+      "deploy": { "resources": { "limits": { "memory": "32M" } } }
+    }
+  ]
+}

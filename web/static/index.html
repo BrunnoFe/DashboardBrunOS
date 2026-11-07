@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0e">
+<title>BrunOS</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/extra.css">
+</head>
+<body class="is-locked is-booting">
+
+<div id="wallpaper" aria-hidden="true">
+  <div class="wp-layer wp-sharp"></div>
+  <div class="wp-layer wp-blur"></div>
+  <div class="wp-shade"></div>
+</div>
+
+<!-- Primeira execução / login -->
+<section id="login" aria-label="Entrar">
+  <form id="login-form" autocomplete="on">
+    <div class="logo logo-lg" aria-hidden="true"></div>
+    <h1 id="login-title">Boas-vindas</h1>
+    <p class="login-sub" id="login-sub">Entre com seu usuário do BrunOS</p>
+    <div class="login-fields"></div>
+    <p class="login-error" id="login-error" role="alert"></p>
+    <button class="btn-white" type="submit" id="login-btn">Entrar</button>
+    <p class="login-hint" id="login-hint"></p>
+  </form>
+</section>
+
+<main id="desktop" aria-label="Início">
+  <header class="home-header">
+    <div class="logo" aria-hidden="true"></div>
+    <h1 id="greeting"></h1>
+  </header>
+  <div id="widgets" class="widget-row"></div>
+  <div id="app-grid" class="app-grid" role="list"></div>
+</main>
+
+<button id="search-pill" class="search-pill" type="button">
+  <span class="orb" aria-hidden="true"></span><span>Pesquisar</span><kbd>Ctrl+K</kbd>
+</button>
+<nav id="dock" aria-label="Dock"><div class="dock-glass"></div><div class="dock-items"></div></nav>
+<div id="dock-tip" class="dark-tip" role="tooltip"></div>
+
+<div id="sheet-host"></div>
+<div id="dialog-host"></div>
+<div id="toast-host"></div>
+<div id="menu-host"></div>
+<div id="upload-host"></div>
+<input type="file" id="wp-file" accept="image/*" hidden>
+<div id="drop-hint">Solte a imagem para usar como papel de parede</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

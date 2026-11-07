@@ -1,0 +1,54 @@
+{
+  "$schema": "../app-info-schema.json",
+  "name": "BrunOS",
+  "id": "brunos",
+  "available": true,
+  "short_desc": "Painel bonito e leve para o seu servidor, no estilo do umbrelOS.",
+  "author": "Bruno",
+  "port": 8790,
+  "categories": ["utilities"],
+  "description": "",
+  "tipi_version": 1,
+  "version": "0.1.0",
+  "source": "https://github.com/BrunnoFe/DashboardBrunOS",
+  "exposable": true,
+  "dynamic_config": true,
+  "supported_architectures": ["amd64", "arm64"],
+  "uid": 1000,
+  "gid": 1000,
+  "form_fields": [
+    {
+      "type": "text",
+      "label": "Pasta do Runtipi no servidor",
+      "hint": "Onde o Runtipi está instalado. O BrunOS lê os apps daqui, sem alterar nada.",
+      "env_variable": "BRUNOS_RUNTIPI_PATH",
+      "default": "/home/ptbruno/runtipi",
+      "required": true
+    },
+    {
+      "type": "number",
+      "label": "UID do seu usuário",
+      "hint": "Rode `id -u` no servidor. Os arquivos que você criar pelo BrunOS ficam com este dono.",
+      "env_variable": "BRUNOS_PUID",
+      "default": 1000,
+      "required": true
+    },
+    {
+      "type": "number",
+      "label": "GID do seu usuário",
+      "hint": "Rode `id -g` no servidor.",
+      "env_variable": "BRUNOS_PGID",
+      "default": 1000,
+      "required": true
+    },
+    {
+      "type": "boolean",
+      "label": "Permitir reiniciar apps pelo BrunOS",
+      "hint": "Habilita o item “Reiniciar app” no menu dos ícones.",
+      "env_variable": "BRUNOS_DOCKER_ACTIONS",
+      "default": false
+    }
+  ],
+  "created_at": 1794018606000,
+  "updated_at": 1794018606000
+}

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.ruff_cache/
+/brunos
+/tmp/
+.DS_Store
