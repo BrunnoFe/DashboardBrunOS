@@ -20,6 +20,23 @@
 
 ## ai-memory: passos únicos (no Windows, PowerShell)
 
+Jeito fácil: rode o script que faz tudo abaixo perguntando antes de cada passo (provedor de LLM,
+chave, `config.toml`, reinício do servidor, teste, hooks e bootstrap):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\configurar-ai-memory.ps1
+```
+
+Provedores de LLM (servem para resumir as sessões e para o `bootstrap`; sem provedor o ai-memory
+ainda grava as sessões, mas com resumos simples): **Gemini** (plano grátis, chave em
+aistudio.google.com/apikey; no plano grátis o Google pode usar os dados para melhorar os produtos),
+**Codex** (login do Codex CLI, assinatura ChatGPT), **LM Studio** (local e privado; modelo sem
+"thinking"), **Anthropic** (pago, `claude-haiku-4-5`). A chave fica numa variável de ambiente do
+usuário (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`), nunca em arquivo. Configuração em
+`%LOCALAPPDATA%\ai-memory\config.toml` (`llm_provider`, `llm_model`, `llm_base_url`, `language`).
+
+Passo a passo manual, se preferir:
+
 ```powershell
 # 1. Conferir se o servidor do ai-memory está rodando e ligado ao Claude Code
 ai-memory status --json
