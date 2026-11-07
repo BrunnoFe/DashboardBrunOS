@@ -22,7 +22,7 @@ tests/                   fixture, testes da API e teste de fumaça com Docker
 
 ## Instalação no Runtipi
 
-1. **Imagem:** cada tag `v*` neste repositório roda o teste com Docker de verdade (`tests/smoke.sh`) e, se passar, publica `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64). Na primeira publicação, abra o pacote em *Your profile → Packages → brunos → Package settings* e mude a visibilidade para **Public**; assim o servidor baixa a imagem sem login.
+1. **Imagem:** cada push na `main` roda o teste com Docker de verdade (`tests/smoke.sh`). Quando o arquivo `VERSION` traz uma versão nova e o teste passa, o GitHub Actions publica `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64). Na primeira publicação, abra o pacote em *Your profile → Packages → brunos → Package settings* e mude a visibilidade para **Public**; assim o servidor baixa a imagem sem login.
 2. **App store:** o app fica em [`BrunnoFe/RuntipiAppStore`](https://github.com/BrunnoFe/RuntipiAppStore), na pasta `apps/brunos` (mesmo conteúdo de `runtipi-app/brunos` aqui). O formato é o `docker-compose.json` legado, igual aos outros apps da loja.
 3. No Runtipi, atualize a loja e instale o **BrunOS**. Confira no formulário a pasta do Runtipi (`/home/ptbruno/runtipi`) e o UID/GID (`id -u`, `id -g`).
 4. Abra o app pela porta 8790 ou pelo domínio local e crie seu usuário.

@@ -1,5 +1,6 @@
-# Testa a cada push e, quando você cria uma tag de versão (git tag v0.1.0 && git push --tags),
-# publica a imagem em ghcr.io/<seu-usuario>/brunos. A publicação só acontece se o teste passar.
+# Testa a cada push. Na main, publica ghcr.io/<seu-usuario>/brunos:<VERSION> (e latest) quando o
+# arquivo VERSION traz uma versão que ainda não existe no registro. Para lançar: mude VERSION e faça push.
+# Tags v* também publicam. A publicação só acontece se o teste passar.
 name: teste e imagem docker
 
 on:
@@ -33,34 +34,52 @@ jobs:
   publish:
     name: publica a imagem
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - id: ver
+        name: Decide a versão
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="$(tr -d ' \n' < VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/brunos:$v"
+          if [[ "$GITHUB_REF" != refs/tags/v* ]] && echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1 && docker manifest inspect "$img" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$img já existe; nada a publicar."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"; echo "publicando $img"
+          fi
+      - if: steps.ver.outputs.skip != 'true'
+        uses: docker/setup-qemu-action@v3
+      - if: steps.ver.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.ver.outputs.skip != 'true'
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
+        if: steps.ver.outputs.skip != 'true'
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/brunos
           tags: |
-            type=semver,pattern={{version}}
+            type=raw,value=${{ steps.ver.outputs.version }}
             type=raw,value=latest
-      - uses: docker/build-push-action@v6
+      - if: steps.ver.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ steps.ver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
