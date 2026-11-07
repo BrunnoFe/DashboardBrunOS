@@ -43,11 +43,13 @@ const real = {
   },
   deleteWallpaper: (name) => call('DELETE', `/api/wallpapers/${encodeURIComponent(name)}`),
   stats: () => call('GET', '/api/stats'),
-  streamStats(onInit, onPoint) {
+  // estatísticas ao vivo; os avisos novos da central chegam pela mesma conexão (event: notify)
+  streamStats(onInit, onPoint, onNotify) {
     let es, stopped = false, retry;
     const open = () => {
       es = new EventSource('/api/stats/stream');
       es.addEventListener('init', (e) => onInit(JSON.parse(e.data)));
+      es.addEventListener('notify', (e) => onNotify?.(JSON.parse(e.data)));
       es.onmessage = (e) => onPoint(JSON.parse(e.data));
       es.onerror = () => { es.close(); if (!stopped) retry = setTimeout(open, 4000); };
     };
@@ -55,6 +57,18 @@ const real = {
     return () => { stopped = true; clearTimeout(retry); es?.close(); };
   },
   system: () => call('GET', '/api/system'),
+  events: {
+    list: () => call('GET', '/api/events'),
+    read: (ids = []) => call('POST', '/api/events/read', { ids }),
+    clear: () => call('POST', '/api/events/clear', {}),
+  },
+  power: {
+    get: () => call('GET', '/api/power'),
+    save: (cfg) => call('PUT', '/api/power/config', cfg),
+    cancel: () => call('POST', '/api/power/cancel', {}),
+    setup: () => call('GET', '/api/power/setup'),
+    test: (b) => call('POST', '/api/power/test', b),
+  },
   term: {
     open: (b) => call('POST', '/api/terminal/open', b),
     input: (id, data) => call('POST', '/api/terminal/input', { id, data }),
@@ -182,6 +196,26 @@ function makeDemo() {
   let demoMapped = ['1TB_HDD', '1TB_HDD2', '1TB_HDD3'];
   const demoRoots = () => rootsMeta.filter(([id, name]) => id === 'home' || demoMapped.includes(name)).map(([id, name, t, u]) => ({ id, name, kind: id === 'home' ? 'place' : 'disk', readOnly: false, total: t * GB, free: (t - u) * GB }));
   const trashItems = [];
+
+  // Central de avisos e energia simuladas (#contagem no endereço mostra a contagem regressiva)
+  let evId = 0;
+  const E = (ago, kind, level, title, body, read = true) => ({ id: `d${++evId}`, time: now - ago, kind, level, title, body, read });
+  let demoEvents = [
+    E(60 * 40, 'power-restored', 'info', 'A energia voltou', 'Ficou 12 min na bateria e gastou 9% da carga.', false),
+    E(60 * 52, 'power-outage', 'aviso', 'A energia caiu', 'O servidor está funcionando na bateria (97%). Autonomia estimada: 2 h 10 min.', false),
+    E(86400 * 2, 'disk-mounted', 'info', 'O disco 1TB_HDD3 voltou', 'O disco está montado de novo.'),
+    E(86400 * 2 + 600, 'disk-unmounted', 'critico', 'O disco 1TB_HDD3 se desmontou', 'A pasta continua mapeada, mas não tem disco montado nela. O que for gravado ali vai para o disco do sistema. Confira o cabo e a montagem (sudo mount -a).'),
+  ];
+  const countdown = location.hash === '#contagem';
+  let powerCfg = { enabled: countdown, threshold: 20, graceSec: 120, simulate: true, host: '', port: 22, user: 'brunos-power', testedAt: 0 };
+  const powerStatus = () => countdown
+    ? { phase: 'countdown', deadline: now + 95, remaining: Math.max(0, now + 95 - Math.floor(Date.now() / 1000)), hasBattery: true, onBattery: true, percent: 19, simulate: true }
+    : { phase: powerCfg.enabled ? 'armed' : 'off', hasBattery: true, onBattery: false, percent: 86, simulate: powerCfg.simulate };
+  const outages = [
+    { start: now - 60 * 52, end: now - 60 * 40, startPct: 97, endPct: 88, minPct: 88 },
+    { start: now - 86400 * 6, end: now - 86400 * 6 + 3600 * 1.5, startPct: 100, endPct: 41, minPct: 41, shutdown: 'simulado' },
+  ];
+  const demoKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstracaoChaveFalsaDoBrunOSqueNaoServe brunos-power';
   const nodeAt = (root, path) => {
     let n = tree[root];
     for (const p of (path || '').split('/').filter(Boolean)) { n = n?.children?.find((c) => c.name === p); }
@@ -209,6 +243,29 @@ function makeDemo() {
     uploadWallpaper: () => Promise.reject(new Error('No modo demonstração a imagem fica só nesta aba')),
     deleteWallpaper: () => wait({ ok: true }),
     stats: () => wait({ snapshot: snap(), history }),
+    events: {
+      list: () => wait({ events: demoEvents, unread: demoEvents.filter((e) => !e.read).length }),
+      read: (ids = []) => { demoEvents.forEach((e) => { if (!ids.length || ids.includes(e.id)) e.read = true; }); return wait({ unread: demoEvents.filter((e) => !e.read).length }); },
+      clear: () => { demoEvents = []; return wait({ unread: 0 }); },
+    },
+    power: {
+      get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50' }),
+      save: (c) => {
+        if (c.enabled && !c.simulate && !powerCfg.testedAt) return Promise.reject(new Error('teste a conexão com o servidor antes de desligar o modo simulação'));
+        powerCfg = { ...powerCfg, ...c, testedAt: powerCfg.testedAt };
+        return wait({ config: powerCfg, status: powerStatus() });
+      },
+      cancel: () => wait({ status: { ...powerStatus(), phase: 'cancelled' } }),
+      setup: () => wait({ publicKey: demoKey, fingerprint: 'SHA256:demo', user: 'brunos-power', command: 'sudo -n /usr/sbin/shutdown -h +1', suggestedHost: '192.168.1.50',
+        authorizedLine: `restrict,command="sudo -n /usr/sbin/shutdown -h +1" ${demoKey}`,
+        commands: ['sudo useradd --system --create-home --shell /bin/sh brunos-power', "sudo usermod -p '*' brunos-power", 'sudo install -d -m 700 -o brunos-power -g brunos-power /home/brunos-power/.ssh',
+          `echo 'restrict,command="sudo -n /usr/sbin/shutdown -h +1" ${demoKey}' | sudo tee /home/brunos-power/.ssh/authorized_keys >/dev/null`,
+          'sudo chown brunos-power:brunos-power /home/brunos-power/.ssh/authorized_keys', 'sudo chmod 600 /home/brunos-power/.ssh/authorized_keys',
+          "echo 'brunos-power ALL=(root) NOPASSWD: /usr/sbin/shutdown -h +1' | sudo tee /etc/sudoers.d/brunos-power >/dev/null", 'sudo chmod 440 /etc/sudoers.d/brunos-power', 'sudo visudo -c'].join('\n') }, 200),
+      test: (b) => b.trust
+        ? (() => { powerCfg = { ...powerCfg, host: b.host, port: b.port, user: b.user, testedAt: now }; return wait({ ok: true, config: powerCfg }, 600); })()
+        : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
+    },
     streamStats(onInit, onPoint) {
       onInit({ snapshot: snap(), history: [...history] });
       const t = setInterval(() => onPoint(tick()), 2000);

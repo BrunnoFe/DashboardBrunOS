@@ -15,6 +15,10 @@ internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos,
 internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
 internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, reiniciar)
 internal/files           gerenciador de arquivos (os.Root, lixeira, upload, zip, busca)
+internal/events          central de notificações (o sino da tela inicial)
+internal/power           quedas de energia e desligamento seguro pela bateria
+internal/hostcmd         comandos no servidor por SSH (usado pelo desligamento seguro)
+internal/terminal        terminal SSH embutido
 web/static               interface (HTML/CSS/JS puros, sem build), embutida no binário
 runtipi-app/brunos       pacote para a app store (config.json + docker-compose.json)
 tests/                   fixture, testes da API e teste de fumaça com Docker
@@ -75,7 +79,7 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## API (resumo)
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}`
+`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup`
 
 ## Créditos e licenças de terceiros
 
@@ -91,3 +95,9 @@ Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o Br
 Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`). Para desligar o recurso, use `BRUNOS_TERMINAL=false`.
 
 O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `golang.org/x/crypto/ssh` (BSD), ambos distribuídos junto com o código.
+
+## Energia e notificações
+
+O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, disco mapeado que se desmontou e o desligamento seguro.
+
+Em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.

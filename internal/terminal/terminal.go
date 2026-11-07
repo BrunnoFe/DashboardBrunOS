@@ -11,7 +11,6 @@ package terminal
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -19,68 +18,48 @@ import (
 	"log/slog"
 	"net"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
-	"brunos/internal/store"
+	"brunos/internal/sshknown"
 )
 
 const (
-	maxSessions  = 4
-	maxBuffered  = 512 << 10 // saída guardada enquanto ninguém lê (ex.: recarregou a página)
-	idleTimeout  = 3 * time.Minute
-	dialTimeout  = 10 * time.Second
-	openPerMin   = 12
-	knownVersion = 1
+	maxSessions = 4
+	maxBuffered = 512 << 10 // saída guardada enquanto ninguém lê (ex.: recarregou a página)
+	idleTimeout = 3 * time.Minute
+	dialTimeout = 10 * time.Second
+	openPerMin  = 12
 )
 
-var hostRe = regexp.MustCompile(`^[a-zA-Z0-9._\-]{1,253}$|^\[?[0-9a-fA-F:.]{2,45}\]?$`)
+// HostRe valida um nome de host ou IP (também usado pela configuração de energia).
+var HostRe = regexp.MustCompile(`^[a-zA-Z0-9._\-]{1,253}$|^\[?[0-9a-fA-F:.]{2,45}\]?$`)
 
 // ── Erros que a interface trata ──────────────────────────────────
 
 // UnknownHostError: primeira conexão a este servidor; peça para o usuário confirmar a impressão digital.
-type UnknownHostError struct{ Addr, KeyType, Fingerprint string }
-
-func (e *UnknownHostError) Error() string { return "servidor ainda não confirmado" }
+type UnknownHostError = sshknown.UnknownHostError
 
 // HostKeyMismatchError: a chave do servidor mudou desde a última vez.
-type HostKeyMismatchError struct{ Addr, KeyType, Fingerprint, Known string }
-
-func (e *HostKeyMismatchError) Error() string {
-	return "a chave deste servidor mudou desde a última conexão; a conexão foi recusada"
-}
+type HostKeyMismatchError = sshknown.HostKeyMismatchError
 
 var (
 	ErrBadRequest  = errors.New("pedido inválido")
 	ErrTooMany     = errors.New("muitas sessões abertas; feche alguma antes")
 	ErrRateLimited = errors.New("muitas tentativas; espere um minuto")
 	ErrNoSession   = errors.New("sessão de terminal não encontrada")
-	ErrAuth        = errors.New("usuário, senha ou chave do SSH recusados pelo servidor")
+	ErrAuth        = sshknown.ErrAuth
 	ErrBadKey      = errors.New("não consegui ler a chave privada (confira o texto e a senha da chave)")
 )
-
-// ── Servidores conhecidos ────────────────────────────────────────
-
-type knownHost struct {
-	Type        string `json:"type"`
-	Fingerprint string `json:"fingerprint"`
-	Key         string `json:"key"` // chave pública em base64 (formato do protocolo SSH)
-	AddedAt     int64  `json:"addedAt"`
-}
-
-type knownFile struct {
-	Version int                  `json:"version"`
-	Hosts   map[string]knownHost `json:"hosts"`
-}
 
 // ── Gerenciador e sessões ────────────────────────────────────────
 
 type Manager struct {
 	KnownFile string
+	Known     *sshknown.Store
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -108,8 +87,11 @@ type Session struct {
 	lastSeen time.Time
 }
 
-func NewManager(knownFile string) *Manager {
-	m := &Manager{KnownFile: knownFile, sessions: map[string]*Session{}, stop: make(chan struct{})}
+func NewManager(knownFile string) *Manager { return NewManagerWith(sshknown.New(knownFile)) }
+
+// NewManagerWith usa um arquivo de servidores conhecidos compartilhado com outras partes do BrunOS.
+func NewManagerWith(known *sshknown.Store) *Manager {
+	m := &Manager{KnownFile: known.File, Known: known, sessions: map[string]*Session{}, stop: make(chan struct{})}
 	go m.reaper()
 	return m
 }
@@ -132,7 +114,7 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 	if req.Port == 0 {
 		req.Port = 22
 	}
-	if !hostRe.MatchString(req.Host) || req.Port < 1 || req.Port > 65535 || req.User == "" || len(req.User) > 64 ||
+	if !HostRe.MatchString(req.Host) || req.Port < 1 || req.Port > 65535 || req.User == "" || len(req.User) > 64 ||
 		strings.ContainsAny(req.User, " \t\r\n:@/") || len(req.Password) > 1024 || len(req.Key) > 32<<10 {
 		return nil, ErrBadRequest
 	}
@@ -158,7 +140,7 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 	}
 	m.mu.Unlock()
 
-	addr := net.JoinHostPort(strings.Trim(req.Host, "[]"), strconv.Itoa(req.Port))
+	addr := sshknown.Addr(req.Host, req.Port)
 	var auths []ssh.AuthMethod
 	if strings.TrimSpace(req.Key) != "" {
 		var signer ssh.Signer
@@ -187,9 +169,9 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 		return nil, ErrBadRequest
 	}
 
-	known, _ := m.loadKnown()
+	known, _ := m.Known.Load()
 	keyOK := false // a chave do servidor foi aceita: um erro depois disso é da autenticação
-	check := m.hostKeyCallback(addr, req.Trust, known)
+	check := m.Known.Callback(addr, req.Trust, known)
 	cfg := &ssh.ClientConfig{
 		User:    req.User,
 		Auth:    auths,
@@ -199,21 +181,16 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 			keyOK = err == nil
 			return err
 		},
-		ClientVersion: "SSH-2.0-BrunOS",
-	}
-	if k, ok := known.Hosts[addr]; ok {
-		cfg.HostKeyAlgorithms = algorithmsFor(k.Type)
-	} else {
-		// mesma preferência do OpenSSH: assim a impressão digital é a que você já conhece (ED25519)
-		cfg.HostKeyAlgorithms = []string{ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+		HostKeyAlgorithms: sshknown.Algorithms(known, addr),
+		ClientVersion:     "SSH-2.0-BrunOS",
 	}
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
 		slog.Info("terminal: detalhe do erro do ssh", "destino", addr, "erro", err)
-		if keyOK && !isNetErr(err) {
+		if keyOK && !sshknown.IsNetErr(err) {
 			return nil, ErrAuth
 		}
-		return nil, friendlyDialError(err, addr)
+		return nil, sshknown.FriendlyDialError(err, addr)
 	}
 	sess, err := client.NewSession()
 	if err != nil {
@@ -429,108 +406,11 @@ func (s *Session) Notify() <-chan struct{} { return s.notify }
 
 // ── Chave do servidor (TOFU) ─────────────────────────────────────
 
-func (m *Manager) loadKnown() (knownFile, error) {
-	k := knownFile{Version: knownVersion, Hosts: map[string]knownHost{}}
-	if m.KnownFile == "" {
-		return k, nil
-	}
-	_, err := store.ReadJSON(m.KnownFile, &k)
-	if k.Hosts == nil {
-		k.Hosts = map[string]knownHost{}
-	}
-	return k, err
-}
-
-func (m *Manager) hostKeyCallback(addr, trust string, known knownFile) ssh.HostKeyCallback {
-	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
-		fp := ssh.FingerprintSHA256(key)
-		raw := base64.StdEncoding.EncodeToString(key.Marshal())
-		if k, ok := known.Hosts[addr]; ok {
-			if k.Key == raw {
-				return nil
-			}
-			return &HostKeyMismatchError{Addr: addr, KeyType: key.Type(), Fingerprint: fp, Known: k.Fingerprint}
-		}
-		if trust == "" || trust != fp {
-			return &UnknownHostError{Addr: addr, KeyType: key.Type(), Fingerprint: fp}
-		}
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		cur, _ := m.loadKnown()
-		cur.Hosts[addr] = knownHost{Type: key.Type(), Fingerprint: fp, Key: raw, AddedAt: time.Now().Unix()}
-		if m.KnownFile != "" {
-			return store.WriteJSON(m.KnownFile, cur, 0o600)
-		}
-		return nil
-	}
-}
+func (m *Manager) loadKnown() (sshknown.File, error) { return m.Known.Load() }
 
 // Forget apaga a chave guardada de um servidor (quando você reinstalou o sistema, por exemplo).
 func (m *Manager) Forget(host string, port int) error {
-	if port == 0 {
-		port = 22
-	}
-	addr := net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port))
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	cur, _ := m.loadKnown()
-	delete(cur.Hosts, addr)
-	if m.KnownFile == "" {
-		return nil
-	}
-	return store.WriteJSON(m.KnownFile, cur, 0o600)
-}
-
-func algorithmsFor(keyType string) []string {
-	switch keyType {
-	case ssh.KeyAlgoRSA:
-		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
-	case "":
-		return nil
-	default:
-		return []string{keyType}
-	}
-}
-
-func friendlyDialError(err error, addr string) error {
-	var unk *UnknownHostError
-	var mis *HostKeyMismatchError
-	if errors.As(err, &unk) {
-		return unk
-	}
-	if errors.As(err, &mis) {
-		return mis
-	}
-	msg := err.Error()
-	var ne net.Error
-	switch {
-	case strings.Contains(msg, "unable to authenticate"), strings.Contains(msg, "no supported methods remain"):
-		return ErrAuth
-	case strings.Contains(msg, "connection refused"):
-		return fmt.Errorf("%s recusou a conexão: o SSH está ligado nessa porta?", addr)
-	case errors.As(err, &ne) && ne.Timeout(), strings.Contains(msg, "i/o timeout"):
-		return fmt.Errorf("%s não respondeu a tempo", addr)
-	case strings.Contains(msg, "no such host"):
-		return fmt.Errorf("não encontrei o endereço %s", addr)
-	case strings.Contains(msg, "no route to host"), strings.Contains(msg, "network is unreachable"):
-		return fmt.Errorf("sem rota até %s", addr)
-	}
-	return fmt.Errorf("não deu para conectar em %s", addr)
-}
-
-// isNetErr separa falhas de rede (servidor fora, conexão caiu) das recusas de login.
-func isNetErr(err error) bool {
-	var ne net.Error
-	if errors.As(err, &ne) && ne.Timeout() {
-		return true
-	}
-	msg := err.Error()
-	for _, s := range []string{"connection refused", "no route to host", "network is unreachable", "no such host", "i/o timeout"} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
+	return m.Known.Forget(sshknown.Addr(host, port))
 }
 
 func clampSize(cols, rows int) (int, int) {

@@ -185,7 +185,7 @@ func (m *Manager) hForget(w http.ResponseWriter, r *http.Request) {
 		Host string `json:"host"`
 		Port int    `json:"port"`
 	}
-	if err := decode(r, &body, 4<<10); err != nil || !hostRe.MatchString(body.Host) {
+	if err := decode(r, &body, 4<<10); err != nil || !HostRe.MatchString(body.Host) {
 		writeErr(w, ErrBadRequest)
 		return
 	}

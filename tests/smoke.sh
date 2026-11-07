@@ -152,6 +152,38 @@ perm=$(stat -c '%a' "$FIX/data/known_hosts.json")
 if grep -q segredo-ssh "$FIX"/data/*.json; then echo "a senha do SSH foi parar no disco!"; exit 1; fi
 echo "✓ terminal: chave do servidor guardada (600) e senha fora do disco"
 
+# Desligamento seguro: a chave do BrunOS entra com command= forçado (aqui, um comando que só
+# cria um arquivo). O botão "Testar" precisa autenticar SEM abrir sessão, ou seja, sem rodar nada.
+python3 - "$PORT" "$FP" <<'EOF'
+import json, subprocess, sys, urllib.request, urllib.error, http.cookiejar
+B, FP = f"http://127.0.0.1:{sys.argv[1]}", sys.argv[2]
+op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+def req(m, p, b=None):
+    r = urllib.request.Request(B + p, data=json.dumps(b).encode() if b is not None else None, method=m,
+                               headers={"X-BrunOS": "1", "Content-Type": "application/json"})
+    try:
+        with op.open(r) as x:
+            return x.status, json.loads(x.read() or b"null")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"null")
+req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})
+code, su = req("GET", "/api/power/setup")
+assert code == 200, su
+line = 'restrict,command="touch /tmp/rodou-desligar" ' + su["publicKey"]
+subprocess.run(["docker", "exec", "brunos-ssh", "sh", "-c", f"echo '{line}' >> /config/.ssh/authorized_keys"], check=True)
+target = {"host": "brunos-ssh", "port": 2222, "user": "teste"}
+code, r = req("POST", "/api/power/test", target)
+# o terminal já confirmou este servidor (mesmo known_hosts), então não pede de novo
+assert code == 200 and r.get("ok"), f"teste de conexão deveria passar: {code} {r}"
+ran = subprocess.run(["docker", "exec", "brunos-ssh", "test", "-e", "/tmp/rodou-desligar"]).returncode == 0
+assert not ran, "o teste de conexão EXECUTOU o comando forçado (desligaria o servidor de verdade)!"
+print("✓ energia: teste de conexão autentica com a chave restrita e não executa nada")
+code, r = req("PUT", "/api/power/config", {"enabled": True, "simulate": False, "threshold": 20, "graceSec": 120, "host": "brunos-ssh", "port": 2222, "user": "teste"})
+assert code == 200 and r["config"]["simulate"] is False, f"depois do teste deveria aceitar sair da simulação: {code} {r}"
+req("PUT", "/api/power/config", {"enabled": False, "simulate": True, "threshold": 20, "graceSec": 120, "host": "brunos-ssh", "port": 2222, "user": "teste"})
+print("✓ energia: depois do teste dá para desligar o modo simulação")
+EOF
+
 # O proxy precisa recusar quem não é o BrunOS e qualquer rota fora da lista
 code=$(docker run --rm --network "$NET" curlimages/curl:8.10.1 -s -o /dev/null -w '%{http_code}' http://brunos-docker-proxy:2375/v1.41/containers/json || true)
 [ "$code" = "403" ] || { echo "proxy deveria recusar outros containers (HTTP $code)"; exit 1; }

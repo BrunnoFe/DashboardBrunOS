@@ -104,6 +104,14 @@ func fileReadable(p string) bool {
 
 func (c *Collector) Info() Info { return c.info }
 
+// SetDrain informa o último consumo medido na bateria (guardado em disco pelo pacote power),
+// para a autonomia estimada aparecer logo depois de reiniciar. Chamar antes de Run.
+func (c *Collector) SetDrain(w float64) {
+	if w > 0 && c.batDrain == 0 {
+		c.batDrain = w
+	}
+}
+
 func (c *Collector) Run(ctx context.Context) {
 	time.Sleep(300 * time.Millisecond) // primeira amostra precisa de um intervalo para o delta da CPU
 	for {

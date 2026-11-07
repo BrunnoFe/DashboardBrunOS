@@ -1,10 +1,12 @@
 # Roadmap aprovado
 
 Em 07/11/2026 o Bruno aprovou **todas** as ideias abaixo ("Gostei de todas as suas sugestões e gostaria
-de implementar todas"), **exceto o tema claro** ("não vejo necessidade"). O plano de implementação
-ainda vai ser elaborado junto com ele, então nada aqui foi começado.
+de implementar todas"), **exceto o tema claro** ("não vejo necessidade"). No mesmo dia o plano de
+implementação foi montado com ele (seção **Plano de implementação** no fim deste arquivo). Também
+ficou combinado **adiar tudo que envolve o celular** (C2, A3, F6): "Vamos deixar para outro momento no
+futuro qualquer implementação que envolva o celular."
 
-Legenda: esforço B/M/A (baixo, médio, alto) · status `a fazer` / `em andamento` / `feito (versão)`.
+Legenda: esforço B/M/A (baixo, médio, alto) · status `a fazer` / `em andamento` / `feito (versão)` / `adiado`.
 Regra geral: nada de privilégios no container. O que precisar de root no host vai **por SSH com uma
 chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `decisoes.md`).
 
@@ -14,15 +16,15 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 |---|---|---|---|---|
 | A1 | Aviso de atualização de apps do Runtipi | M | a investigar | O Runtipi guarda a versão instalada no Postgres, não em arquivos. Opções: comparar `tipi_version` do repositório da loja com algo legível em `app-data` (verificar), ou API interna do Runtipi. Não abrir acesso ao banco. |
 | A2 | Widgets com dados dos apps (Immich: fotos/vídeos; AdGuard: consultas/bloqueios; Plex: tocando agora) | M | a fazer | Cada integração precisa de URL + token do app, guardados no servidor (criptografados? decidir) e **nunca** enviados ao navegador; o backend faz as chamadas. |
-| A3 | PWA (instalar no celular) | B | a fazer | `manifest.webmanifest`, ícones, service worker mínimo (só cache da casca; API nunca em cache). Base para F6 e C2. |
+| A3 | PWA (instalar no celular) | B | adiado (celular) | `manifest.webmanifest`, ícones, service worker mínimo (só cache da casca; API nunca em cache). Base para F6 e C2. |
 | A4 | Monitor de disponibilidade dos apps com alerta | M | a fazer | Checagem HTTP periódica (porta/domínio de cada app) + estado do container; histórico de uptime; alertas pela central (C1). |
 
 ## B. Energia e bateria (o notebook é o servidor; a bateria é o nobreak)
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| B1 | **Desligamento seguro** quando a bateria cai abaixo de X% fora da tomada | M | a fazer | Prioridade 1. Config: limite %, tempo de espera, aviso antes. Execução via SSH com chave restrita a `sudo /sbin/shutdown -h +1` (ou `systemctl poweroff`). Precisa de assistente de configuração (gera a chave, mostra a linha do `authorized_keys` e do sudoers). Testar sem desligar de verdade (modo simulação). |
-| B2 | Registro de quedas de energia | B | a fazer | Detectar transições AC→bateria→AC; gravar em `/data/power-events.json` (início, fim, % gasto). Persistir também o último consumo medido (hoje `estimate` some ao reiniciar). |
+| B1 | **Desligamento seguro** quando a bateria cai abaixo de X% fora da tomada | M | feito (0.4.0) | Prioridade 1. Config: limite %, tempo de espera, aviso antes. Execução via SSH com chave restrita a `sudo /sbin/shutdown -h +1` (ou `systemctl poweroff`). Precisa de assistente de configuração (gera a chave, mostra a linha do `authorized_keys` e do sudoers). Testar sem desligar de verdade (modo simulação). |
+| B2 | Registro de quedas de energia | B | feito (0.4.0) | Detectar transições AC→bateria→AC; gravar em `/data/power-events.json` (início, fim, % gasto). Persistir também o último consumo medido (hoje `estimate` some ao reiniciar). |
 | B3 | Consumo do servidor (W) e custo (R$/mês) | B–M | a fazer | Intel RAPL (`/sys/class/powercap/intel-rapl:0/energy_uj`, pode exigir permissão de leitura) + consumo da bateria quando descarregando; tarifa em R$/kWh configurável. |
 | B4 | Limite de carga em 80% | M | a fazer | Depende do driver (`charge_control_end_threshold` na Dell via `dell_laptop`/`dell-smbios`?). Mostrar estado; aplicar via SSH restrito ou ensinar o comando/udev rule. |
 
@@ -30,14 +32,14 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| C1 | Central de notificações (sino) | M | a fazer | Eventos: app caiu, disco > 90%, disco desmontado, energia caiu/voltou, temperatura alta, atualização disponível, login novo. `/data/events.json` com rotação; marcar como lido. |
-| C2 | Avisos no celular (ntfy, Telegram, push do PWA) | M | a fazer | ntfy tem app no Runtipi; Telegram via bot token; Web Push exige VAPID (implementar com stdlib: ECDSA P-256 + JWT, viável). Regras de quais eventos vão para onde. |
+| C1 | Central de notificações (sino) | M | feito (0.4.0): energia e discos; os outros eventos entram nas etapas deles | Eventos: app caiu, disco > 90%, disco desmontado, energia caiu/voltou, temperatura alta, atualização disponível, login novo. `/data/events.json` com rotação; marcar como lido. |
+| C2 | Avisos no celular (ntfy, Telegram, push do PWA) | M | adiado (celular) | ntfy tem app no Runtipi; Telegram via bot token; Web Push exige VAPID (implementar com stdlib: ECDSA P-256 + JWT, viável). Regras de quais eventos vão para onde. |
 
 ## D. Discos
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| D1 | Alerta de disco mapeado que se desmontou | B | a fazer | Disco mapeado com `isMountPoint == false` → evento crítico (risco de o mergerfs/apps gravarem no SSD do sistema). |
+| D1 | Alerta de disco mapeado que se desmontou | B | feito (0.4.0) | Disco mapeado com `isMountPoint == false` → evento crítico (risco de o mergerfs/apps gravarem no SSD do sistema). |
 | D2 | Temperatura dos HDs | B | a fazer | hwmon `drivetemp` (módulo do kernel: `sudo modprobe drivetemp` + `/etc/modules-load.d`). Associar hwmon ao `/dev/sdX`. |
 | D3 | Saúde SMART | M | a fazer | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
 | D4 | Previsão de disco cheio | B | a fazer | Guardar uso diário por disco (`/data/disk-history.json`), regressão linear simples. |
@@ -62,7 +64,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | F3 | Link de compartilhamento com expiração e senha | M | a fazer | Desligado por padrão. Token aleatório, `/s/<token>` público só leitura, expiração, contador, revogar. Cuidado: expõe arquivo para fora. |
 | F4 | Envio em pedaços com retomada | M | a fazer | Protocolo simples (offset) ou tus; arquivo temporário por id; limpeza de pendentes. |
 | F5 | Extrair zip e encontrar duplicados | B–M | a fazer | `archive/zip` com proteção contra zip-slip e bomba (limites); duplicados por tamanho → hash. |
-| F6 | Enviar do celular pelo menu Compartilhar | B | a fazer | Depende de A3 (Web Share Target no manifest) → pasta configurável. |
+| F6 | Enviar do celular pelo menu Compartilhar | B | adiado (celular) | Depende de A3 (Web Share Target no manifest) → pasta configurável. |
 
 ## G. Monitoramento
 
@@ -106,12 +108,50 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | K2 | Abas | M | a fazer | Várias sessões (limite já é 4 no backend). |
 | K3 | Lembrar a chave SSH (criptografada) | M | a fazer | Cifrar com chave derivada da senha do BrunOS (PBKDF2 → AES-GCM); só decifra com a senha digitada na sessão. Avaliar riscos. |
 
-## Ordem sugerida (a confirmar com o Bruno)
+## Plano de implementação (combinado em 07/11/2026)
 
-1. B1 + B2 (desligamento seguro, quedas de energia) e D1 (disco desmontado).
-2. D2 + D4 (temperatura dos HDs, previsão de cheio).
-3. C1 + C2 (central de notificações + ntfy/Telegram) → depois A4, H3, I1 usam a central.
-4. H1 + H2 (TOTP, sessões).
-5. A3 + F6 (PWA + compartilhar do celular).
-6. Arquivos (F1 → F2 → F4 → F5 → D5 → F3), apps (E1, E2, E3, E4, E5), monitoramento (G1, G2, G3).
-7. Integrações com apps (A2, I3, J2) e o resto da aparência (J1, J3), terminal (K1–K3), A1, B3, B4, D3, H4.
+Decisões do Bruno: **uma versão por etapa** (ele testa no servidor antes da próxima); **central de
+notificações (C1) já na etapa 1**; desligamento por SSH com **usuário dedicado** `brunos-power` (sem
+senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **nada de celular por ora**.
+
+| Etapa | Versão | Itens |
+|---|---|---|
+| 1 | 0.4.0 | Fundações (`internal/events`, `internal/hostcmd`) · C1 · B1 · B2 · D1 — **feito, aguardando teste no servidor** |
+| 2 | 0.5.0 | H3 · D2 · D4 |
+| 3 | 0.6.0 | H1 · H2 |
+| 4 | 0.7.0 | F1 → F2 → F4 → F5 → D5 → F3 |
+| 5 | 0.8.0 | E1 · E2 · E3 · E4 · E5 · A4 |
+| 6 | 0.9.0 | G1 · G2 · G3 |
+| 7 | 0.10.0 | A2 · I1 · I3 · J2 |
+| 8 | 0.11.0 | J1 · J3 · K1 · K2 · K3 |
+| 9 | 0.12.0 | A1 · B3 · B4 · D3 · I2 · H4 |
+| — | futuro | C2 · A3 · F6 (celular) |
+
+**Decisões que ficam para o início de cada etapa** (perguntar com opções): A2/I3 como guardar tokens;
+F2 qual editor; J1 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais
+permissões; A1 como saber a versão instalada sem tocar no Postgres.
+
+### Etapa 1 (0.4.0) em detalhe
+
+- **`internal/events`**: `/data/events.json` (`id, time, kind, level info|aviso|critico, title, body,
+  read, key`), rotação 500 eventos / 30 dias, deduplicação por `key` + `Resolve(key)`. Eventos novos
+  vão pelo SSE que já existe (`/api/stats/stream`, `event: notify`), sem conexão extra. Rotas
+  `GET /api/events`, `POST /api/events/read`, `POST /api/events/clear`.
+- **`internal/hostcmd`**: chave ED25519 em `/data/hostcmd_key`; TOFU reaproveitando o
+  `known_hosts.json` do terminal (extrair helper comum); assistente mostra as linhas de `useradd`,
+  `authorized_keys` (`restrict,command="sudo /sbin/shutdown -h +1 ..."`) e sudoers.
+  **Pegadinha:** com `command=` forçado, qualquer sessão desliga o servidor; o botão "Testar" só
+  autentica e fecha **sem abrir sessão** (teste automatizado obrigatório).
+- **B2 (`internal/power`)**: assina as amostras do `sysinfo.Collector`, detecta tomada → bateria →
+  tomada, grava `/data/power-events.json`, persiste o último consumo (o `estimate` deixa de sumir).
+- **B1 (`internal/power`)**: limite % (20), espera (2 min), **simulação ligada por padrão**;
+  `armado → contagem (evento crítico + faixa "Cancelar") → executa via hostcmd`; voltar a tomada
+  cancela. Rotas `GET/PUT /api/power/config`, `GET /api/power/events`, `POST /api/power/cancel`,
+  `GET /api/power/setup`, `POST /api/power/test`.
+- **D1**: a cada 60 s, `files.Service.Disks()`; mapeado e não montado → evento crítico
+  `disk-unmounted:<nome>`; voltou → resolve.
+- **Frontend**: `js/notifications.js` (sino, painel, toasts), `js/power.js` (seção Energia com
+  assistente e faixa de contagem), quedas no diálogo da bateria, modo demonstração em `api.js`.
+- **Testes**: unitários de events/power (relógio falso)/hostcmd (SSH em processo); apitest;
+  smoke com usuário `brunos-power` no OpenSSH de teste apontando para um script que só registra.
+  No servidor real: Testar → simulação tirando da tomada → só depois desligar a simulação.

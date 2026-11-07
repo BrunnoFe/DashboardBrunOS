@@ -27,9 +27,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     shell root no host). Mantém o container sem privilégios. TOFU da chave do servidor, nada de segredo
     gravado. Usa `golang.org/x/crypto` **vendorizado** (o proxy do Go está bloqueado no ambiente da
     nuvem; o código veio do espelho oficial `github.com/golang/crypto` e o CI compara com o sum.golang.org).
-11. **Ações privilegiadas futuras via SSH com chave restrita** (planejado). Desligamento seguro, SMART,
-    limite de carga: uma chave com `command="..."` no `authorized_keys` que só executa o necessário.
-    Nunca dar `privileged` ao container.
+11. **Ações privilegiadas via SSH com chave restrita** (implementado na 0.4.0 para o desligamento).
+    Desligamento seguro, SMART, limite de carga: uma chave com `command="..."` no `authorized_keys` que
+    só executa o necessário. Nunca dar `privileged` ao container. O Bruno escolheu um **usuário
+    dedicado** (`brunos-power`, sem senha, `usermod -p '*'`) em vez do usuário dele. O teste de conexão
+    nunca abre sessão (abrir executaria o comando forçado); o CI prova isso com OpenSSH real.
 12. **Detalhes de segurança fora do README** (pedido do Bruno, commit `1713d35`). Ficam em
     `docs/privado/seguranca.md`, fora do git.
 13. **Modo demonstração no frontend.** Sem backend, `api.js` simula tudo. Serve para testar visual com
@@ -38,3 +40,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     dispositivos. Papel de parede "local" (arrastado sem enviar) é a única exceção.
 15. **Formato da loja: `docker-compose.json` dinâmico do Runtipi** validado pelo `@runtipi/common` (zod).
     Pegadinhas em `runtipi-e-loja.md`.
+16. **Plano em etapas, uma versão por etapa** (07/11/2026, escolha do Bruno). Nada que envolva o
+    celular por enquanto (C2, A3, F6 adiados). Plano em `roadmap.md`.
+17. **Avisos da central pelo mesmo SSE das estatísticas** (0.4.0). O navegador limita conexões por
+    host e o terminal já usa SSE; um `event: notify` a mais no stream existente não custa nada. A cada
+    reconexão (`init`) a interface relê a lista, então nada se perde.
+18. **Desligamento seguro começa em modo simulação** (0.4.0) e só sai dele depois de um teste de
+    conexão que passou para o mesmo host/porta/usuário. `shutdown -h +1` deixa 1 minuto para cancelar
+    no servidor (`sudo shutdown -c`).

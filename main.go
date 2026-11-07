@@ -27,8 +27,12 @@ import (
 
 	"brunos/internal/auth"
 	"brunos/internal/dockerc"
+	"brunos/internal/events"
 	"brunos/internal/files"
+	"brunos/internal/hostcmd"
+	"brunos/internal/power"
 	"brunos/internal/runtipi"
+	"brunos/internal/sshknown"
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
 	"brunos/internal/terminal"
@@ -91,6 +95,8 @@ type server struct {
 	docker    *dockerc.Client
 	files     *files.Service
 	term      *terminal.Manager
+	events    *events.Store
+	power     *power.Monitor
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -147,9 +153,16 @@ func main() {
 	for _, e := range errs {
 		slog.Warn("pasta ignorada", "erro", e)
 	}
+	known := sshknown.New(filepath.Join(cfg.DataDir, "known_hosts.json")) // terminal e desligamento usam o mesmo arquivo
 	if cfg.Terminal {
-		s.term = terminal.NewManager(filepath.Join(cfg.DataDir, "known_hosts.json"))
+		s.term = terminal.NewManagerWith(known)
 	}
+	s.events = events.New(filepath.Join(cfg.DataDir, "events.json"))
+	power.HostOK = terminal.HostRe.MatchString
+	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
+		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key"), known))
+	s.power.SuggestHost = func() string { _, info := s.tipi.Apps(); return info.InternalIP }
+	s.stats.SetDrain(s.power.DrainW())
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
 	if err := fsvc.LoadMapping(); err != nil {
 		slog.Warn("discos mapeados", "erro", err)
@@ -163,6 +176,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go s.stats.Run(ctx)
+	go s.power.Run(ctx, s.batteryReading)
+	go s.watchDisks(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -233,6 +248,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/apps/restart", a(s.hAppRestart))
 
 	s.files.Register(mux, a)
+	s.events.Register(mux, a)
+	s.power.Register(mux, a)
 	if s.term != nil {
 		s.term.Register(mux, a)
 	}
@@ -669,6 +686,8 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	ch, unsub := s.stats.Subscribe()
 	defer unsub()
+	evs, unsubEv := s.events.Subscribe() // avisos novos vão pela mesma conexão (event: notify)
+	defer unsubEv()
 	first, _ := json.Marshal(map[string]any{"snapshot": s.stats.Latest(), "history": s.stats.History()})
 	fmt.Fprintf(w, "retry: 3000\nevent: init\ndata: %s\n\n", first)
 	flusher.Flush()
@@ -680,6 +699,10 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case msg := <-ch:
 			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case e := <-evs:
+			b, _ := json.Marshal(e)
+			fmt.Fprintf(w, "event: notify\ndata: %s\n\n", b)
 			flusher.Flush()
 		case <-keep.C:
 			fmt.Fprint(w, ": ping\n\n")

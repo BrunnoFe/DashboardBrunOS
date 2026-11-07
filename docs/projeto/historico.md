@@ -42,5 +42,25 @@ Pedidos (com prints):
   genérico → erro depois da chave aceita = recusa de login.
 - Medido no CI: 9,7 MiB de RAM, imagem de 4 MB, 63 checagens da API.
 
+## 0.4.0 (07/11/2026): energia, discos e central de notificações (etapa 1 do plano)
+- **Central de notificações** (sino no canto da tela inicial): `internal/events`, `/data/events.json`
+  (500 avisos / 30 dias), avisos repetidos não se acumulam enquanto o problema continua aberto; os
+  avisos novos chegam pelo mesmo SSE das estatísticas (`event: notify`) e viram toast.
+- **Quedas de energia**: `internal/power` registra tomada → bateria → tomada em
+  `/data/power-events.json`, com duração e % gasto; o último consumo medido agora sobrevive a reinícios.
+  Lista na janela da bateria e na janela Energia.
+- **Desligamento seguro**: limite %, espera (1–10 min), faixa vermelha com contagem regressiva e
+  "Cancelar", modo simulação ligado por padrão. Desliga por SSH com a chave própria do BrunOS
+  (`/data/hostcmd_key`) num usuário dedicado (`brunos-power`) com `command=` forçado e sudoers de uma
+  linha. Assistente em Configurações → Energia mostra os comandos e testa a conexão. Sair da
+  simulação exige um teste de conexão que passou. Até 3 tentativas se o servidor não responder.
+- **Disco mapeado desmontado**: verificação a cada minuto, aviso crítico e aviso de volta.
+- TOFU do SSH extraído para `internal/sshknown` (terminal e desligamento usam o mesmo `known_hosts.json`).
+- Testes: unitários de events/power (relógio falso)/hostcmd (servidor SSH em processo, conferindo que o
+  "Testar" não abre sessão); apitest com as rotas novas; smoke com OpenSSH real e `command=` que só
+  cria um arquivo (prova que o teste não executa o comando).
+- Problema no caminho: `bytes.Buffer` compartilhado entre stdout e stderr da sessão SSH perdia a saída
+  (as duas cópias rodam ao mesmo tempo) → buffers separados.
+
 ## Próximas
 Veja `roadmap.md`.

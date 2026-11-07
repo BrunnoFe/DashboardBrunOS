@@ -80,7 +80,8 @@ export function paintBattery(root, b) {
 
 // Janela com detalhes e o histórico de carga das últimas horas.
 let open = false;
-export function batteryDialog(getBattery, onStats) {
+// extra.loadOutages() devolve o HTML da lista de quedas de energia; extra.openPower abre a janela Energia.
+export function batteryDialog(getBattery, onStats, extra = {}) {
   if (open) return;
   open = true;
   let hist = getBattery()?.history || [];
@@ -93,8 +94,13 @@ export function batteryDialog(getBattery, onStats) {
     <div class="spark-box"><div class="lbl"><span data-bh-title>Carga</span><span data-bh-extra></span></div>
       <svg class="spark bat-spark" viewBox="0 0 300 70" preserveAspectRatio="none"><path data-bh-ac class="bh-ac"/><path data-bh-area class="bh-area"/><path data-bh-line class="bh-line" vector-effect="non-scaling-stroke"/></svg></div>
     <div class="bat-grid" data-bh-grid></div>
+    ${extra.loadOutages ? `<div class="live-sec bat-sec"><span>Quedas de energia</span>${extra.openPower ? `<button class="pill-btn" data-bat-power>${svg('power')}Desligamento seguro</button>` : ''}</div><div data-bat-outages><div class="empty-note">Carregando…</div></div>` : ''}
     <p class="bat-note">A autonomia vem do consumo medido pela bateria. Na tomada, o BrunOS usa o último consumo medido enquanto ela descarregava; desligue o carregador por alguns minutos para ele aprender.</p>`,
   { width: 560, onClose: () => { open = false; off(); } });
+  if (extra.loadOutages) {
+    extra.loadOutages().then((h) => { const el = $('[data-bat-outages]', d.el); if (el) el.innerHTML = h; }).catch(() => { const el = $('[data-bat-outages]', d.el); if (el) el.innerHTML = ''; });
+    $('[data-bat-power]', d.el)?.addEventListener('click', () => { d.close(); extra.openPower(); });
+  }
   const draw = () => {
     const b = getBattery();
     if (b?.history) hist = b.history;

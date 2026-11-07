@@ -1,6 +1,8 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { batteryWidgetHTML, paintBattery, batteryDialog } from './battery.js';
 import { api, initApi } from './api.js';
+import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
+import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog,
@@ -28,6 +30,12 @@ function runtipiAuto() {
 function openTerminal() {
   import('./terminal.js').then((m) => m.terminalWindow({ settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, defaultHost: S.tipi.internalIp || location.hostname }))
     .catch((e) => toastError(e, 'Não deu para abrir o terminal'));
+}
+const openPower = () => powerDialog({ openTerminal: S.terminal === false ? null : openTerminal });
+function openBattery() {
+  batteryDialog(() => S.snapshot?.battery, (fn) => on('stats', fn), {
+    loadOutages: async () => outagesHTML((await api.power.get()).outages, 5), openPower,
+  });
 }
 function openUrl(href) { const l = document.createElement('a'); l.href = href; l.target = '_blank'; l.rel = 'noopener'; l.click(); }
 const S = {
@@ -549,6 +557,7 @@ function settingsRows() {
     { group: 'Conta', cat: 'account', icon: 'user', title: 'Nome de exibição', desc: 'Usado na saudação e na tela de login', ctrl: `<input class="text-input" data-input="displayName" value="${esc(displayName())}" aria-label="Nome de exibição">` },
     { group: 'Conta', cat: 'account', icon: 'key', title: 'Trocar senha', desc: `Usuário: ${esc(S.me?.username || '—')}. Ao trocar, as outras sessões abertas são encerradas`, ctrl: `<button class="pill-btn" data-act="password">Trocar</button>` },
     { group: 'Conta', cat: 'account', icon: 'logout', title: 'Sair', desc: 'Encerra esta sessão neste navegador', ctrl: `<button class="pill-btn" data-act="logout">Sair</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'power', title: 'Energia e desligamento seguro', desc: S.snapshot?.battery ? 'Desliga o servidor com segurança quando a bateria acabar e registra as quedas de energia' : 'Registra as quedas de energia e desliga o servidor com segurança (precisa de bateria)', ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'power' },
     { group: 'Sistema', cat: 'system', icon: 'info', title: 'Informações do dispositivo', desc: `${esc(info.os || 'Linux')} · ${esc(info.cpuModel || '')}`, ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'device' },
     { group: 'Sistema', cat: 'system', icon: 'box', title: 'Runtipi', desc: S.tipi.found ? `${S.apps.length} apps instalados · domínio local ${esc(S.tipi.localDomain || '—')}` : 'Pasta do Runtipi não encontrada (monte em /runtipi)', ctrl: `<button class="pill-btn" data-act="open-runtipi">Abrir ${svg('external')}</button>` },
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
@@ -642,6 +651,7 @@ function wireSettings(body) {
       if (a === 'live') liveUsageDialog();
       else if (a === 'logout') logout();
       else if (a === 'device') deviceDialog();
+      else if (a === 'power') openPower();
       else if (a === 'password') passwordDialog();
       else if (a === 'add-link') linkDialog();
       else if (a === 'open-runtipi') SYS.runtipi.run();
@@ -874,6 +884,9 @@ function commandPalette() {
     { icon: 'sliders', label: 'Abrir Configurações', run: () => openSheet('settings', $('[data-sys="settings"]')) },
     { icon: 'activity', label: 'Uso ao vivo', run: () => liveUsageDialog() },
     { icon: 'info', label: 'Informações do dispositivo', run: () => deviceDialog() },
+    { icon: 'bell', label: 'Notificações', run: () => toggleNotifications() },
+    { icon: 'power', label: 'Energia e desligamento seguro', run: () => openPower() },
+    { icon: 'battery', label: 'Bateria e quedas de energia', run: () => openBattery() },
     { icon: 'link', label: 'Novo atalho…', run: () => linkDialog() },
     { icon: 'image', label: 'Próximo papel de parede', run: () => { const ids = BUILTIN_WALLPAPERS.map((i) => `builtin:${i}`); set().wallpaper = ids[(ids.indexOf(set().wallpaper) + 1) % ids.length]; save(); setWallpaper(set().wallpaper); } },
     { icon: 'upload', label: 'Enviar papel de parede…', run: () => $('#wp-file').click() },
@@ -986,7 +999,7 @@ async function logout() {
 }
 function lock() {
   dialogs.slice().forEach((c) => c());
-  closeSheet(); closeMenu();
+  closeSheet(); closeMenu(); closePanel(); paintBanner(null);
   S.stopStream?.(); S.stopStream = null;
   document.body.classList.add('is-locked');
   renderLogin('login');
@@ -1013,8 +1026,10 @@ async function enterDesktop(animate) {
   await loadApps();
   S.stopStream?.();
   S.stopStream = api.streamStats(
-    (d) => { S.snapshot = d.snapshot; S.history = d.history || []; bindStats(); emit('stats'); },
+    // init chega ao conectar e a cada reconexão: relê avisos e a contagem para não perder nada
+    (d) => { S.snapshot = d.snapshot; S.history = d.history || []; bindStats(); emit('stats'); refreshNotifications(); refreshPowerBanner(); },
     (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); emit('stats'); },
+    (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); },
   );
   document.body.classList.remove('is-locked');
   if (animate) { document.body.classList.add('just-unlocked'); setTimeout(() => document.body.classList.remove('just-unlocked'), 1600); }
@@ -1042,6 +1057,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); commandPalette(); }
   else if (e.key === 'Escape') {
     if (menuOpen()) closeMenu();
+    else if (notificationsOpen()) closePanel();
     else if (dialogs.length) dialogs[dialogs.length - 1]();
     else if (currentSheet) closeSheet();
   }
@@ -1049,7 +1065,7 @@ document.addEventListener('keydown', (e) => {
 $('#search-pill').addEventListener('click', commandPalette);
 $('#desktop').addEventListener('click', (e) => {
   if (e.target.closest('[data-action="live"]')) liveUsageDialog();
-  if (e.target.closest('[data-action="battery"]')) batteryDialog(() => S.snapshot?.battery, (fn) => on('stats', fn));
+  if (e.target.closest('[data-action="battery"]')) openBattery();
   const fav = e.target.closest('[data-fav-root]');
   if (fav) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath });
 });

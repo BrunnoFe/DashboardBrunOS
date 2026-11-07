@@ -68,6 +68,22 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   de 512 KB enquanto ninguém lê). TOFU em `/data/known_hosts.json`
   (`{"version":1,"hosts":{"host:porta":{type,fingerprint,key,addedAt}}}`). Prefere chave ED25519 como
   o OpenSSH. Erro depois da chave aceita = recusa de login (403 com `sshAuth`).
+- **`internal/sshknown`** (0.4.0): TOFU compartilhado (`Store.Callback`, `Forget`, `Algorithms`,
+  `FriendlyDialError`). Uma única instância por arquivo, usada pelo terminal e pelo hostcmd.
+- **`internal/events`** (0.4.0): central de notificações. `/data/events.json`
+  (`{"version":1,"events":[{id,time,kind,level,title,body,read,key,meta}],"active":[...]}`), 500 avisos /
+  30 dias. `Emit` com `Key` não repete enquanto o problema está em `active`; `Resolve(key, &ev)` fecha e
+  registra a volta ao normal. `Subscribe` alimenta o SSE das estatísticas (`event: notify`).
+- **`internal/hostcmd`** (0.4.0): chave ED25519 própria em `/data/hostcmd_key` (0600). `Test` conecta e
+  autentica **sem abrir sessão** (o `command=` forçado executaria); `Run` abre a sessão e roda o comando
+  forçado (`sudo -n /usr/sbin/shutdown -h +1`). Só aceita servidor já confirmado no `known_hosts.json`.
+- **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
+  Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown}]}`,
+  100 quedas); configuração em `/data/power.json` (`enabled, threshold, graceSec, simulate, host, port,
+  user, testedAt`). Fases: off → armed → countdown → running → done/cancelled/failed; a energia voltando
+  rearma. Sair da simulação exige `testedAt` (zera se host/porta/usuário mudarem). 3 tentativas, 1 min.
+- **`watch.go`** (pacote main): `batteryReading` e `watchDisks` (a cada 1 min: disco mapeado e não
+  montado → evento crítico `disk-unmounted:<nome>`).
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 
 ### API
@@ -87,14 +103,21 @@ GET  /api/files/roots · disks · list · raw · zip · search · trash
 PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty
 GET  /api/terminal/sessions · stream?id= (SSE base64; eventos ready/exit/replaced)
 POST /api/terminal/open · input · resize · close · forget
+GET  /api/events                      POST /api/events/read {ids:[]} (vazio = todos) · /api/events/clear
+GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
+PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}
 ```
+
+O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central.
+`POST /api/power/test` responde 409 `{unknownHost, fingerprint}` na primeira vez, igual ao terminal.
 
 `POST /api/terminal/open` devolve 409 com `{unknownHost, addr, keyType, fingerprint}` na primeira
 conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente reenvia com `trust`.
 
 ### Dados em `/data` (todos 0600)
 
-`auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`.
+`auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
+`events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento).
 
 ## Frontend (`web/static`)
 
@@ -114,6 +137,12 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 - `js/files.js`: janela Arquivos; exporta `mountFiles`, `navigate`, `mapDisksDialog(ctx, onDone)`.
 - `js/battery.js`: `batteryWidgetHTML`, `paintBattery(root, battery)`, `batteryDialog`.
 - `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.
+- `js/notifications.js` (0.4.0): sino `#bell` (no `index.html`), painel, `onNotify(e)` (toast),
+  `refreshNotifications()` (chamado no `init` do stream, ou seja, também a cada reconexão).
+- `js/power.js` (0.4.0): `powerDialog({openTerminal})` (Configurações → Sistema → Energia),
+  `paintBanner(status)`/`refreshPowerBanner()` (faixa da contagem; usa `status.remaining` do servidor),
+  `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço
+  mostra a faixa de contagem.
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
