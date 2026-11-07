@@ -196,6 +196,9 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 	}
 	if k, ok := known.Hosts[addr]; ok {
 		cfg.HostKeyAlgorithms = algorithmsFor(k.Type)
+	} else {
+		// mesma preferência do OpenSSH: assim a impressão digital é a que você já conhece (ED25519)
+		cfg.HostKeyAlgorithms = []string{ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
 	}
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
