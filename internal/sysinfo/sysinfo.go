@@ -5,6 +5,7 @@ package sysinfo
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -292,6 +293,27 @@ func unescapeMount(s string) string {
 	return b.String()
 }
 
+var diskFS = map[string]bool{"ext2": true, "ext3": true, "ext4": true, "xfs": true, "btrfs": true, "f2fs": true, "zfs": true,
+	"ntfs": true, "ntfs3": true, "fuseblk": true, "exfat": true, "vfat": true, "jfs": true, "reiserfs": true, "bcachefs": true}
+
+// devName descobre o nome real do dispositivo de um ponto de montagem pelo st_dev
+// (/sys/dev/block/MAJ:MIN/uevent → DEVNAME=sda1).
+func devName(sys, mnt string) string {
+	var st syscall.Stat_t
+	if err := syscall.Stat(mnt, &st); err != nil {
+		return ""
+	}
+	dev := uint64(st.Dev)
+	major := ((dev >> 8) & 0xfff) | ((dev >> 32) &^ 0xfff)
+	minor := (dev & 0xff) | ((dev >> 12) &^ 0xff)
+	for _, line := range strings.Split(readFile(filepath.Join(sys, "dev/block", fmt.Sprintf("%d:%d", major, minor), "uevent")), "\n") {
+		if v, ok := strings.CutPrefix(line, "DEVNAME="); ok && v != "" {
+			return "/dev/" + v
+		}
+	}
+	return ""
+}
+
 func baseDevice(dev string) string {
 	name := strings.TrimPrefix(dev, "/dev/")
 	if m := partSuffix.FindStringSubmatch(name); m != nil {
@@ -313,17 +335,25 @@ func readDisks(proc, sys string) []Disk {
 		fstype string
 		system bool
 	}
+	// Agrupa pelo dispositivo real (st_dev), não pelo nome: em muitos sistemas o disco
+	// raiz aparece como /dev/root ou /dev/disk/by-uuid/…, e o mesmo disco pode ter vários nomes.
 	byDev := map[string]*cand{}
 	order := []string{}
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
 		fs := strings.Fields(sc.Text())
-		if len(fs) < 3 || !blockDev.MatchString(fs[0]) {
+		if len(fs) < 3 || !(blockDev.MatchString(fs[0]) || diskFS[fs[2]] && strings.HasPrefix(fs[0], "/dev/")) {
+			continue
+		}
+		if strings.HasPrefix(fs[0], "/dev/loop") {
 			continue
 		}
 		dev, mnt := fs[0], unescapeMount(fs[1])
 		if strings.HasPrefix(mnt, "/boot") || strings.Contains(mnt, "/boot/efi") || fs[2] == "vfat" && strings.Contains(mnt, "efi") {
 			continue
+		}
+		if real := devName(sys, mnt); real != "" {
+			dev = real
 		}
 		c, ok := byDev[dev]
 		if !ok {
