@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"regexp"
 	"strconv"
@@ -187,12 +188,18 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 	}
 
 	known, _ := m.loadKnown()
+	keyOK := false // a chave do servidor foi aceita: um erro depois disso é da autenticação
+	check := m.hostKeyCallback(addr, req.Trust, known)
 	cfg := &ssh.ClientConfig{
-		User:            req.User,
-		Auth:            auths,
-		Timeout:         dialTimeout,
-		HostKeyCallback: m.hostKeyCallback(addr, req.Trust, known),
-		ClientVersion:   "SSH-2.0-BrunOS",
+		User:    req.User,
+		Auth:    auths,
+		Timeout: dialTimeout,
+		HostKeyCallback: func(h string, a net.Addr, k ssh.PublicKey) error {
+			err := check(h, a, k)
+			keyOK = err == nil
+			return err
+		},
+		ClientVersion: "SSH-2.0-BrunOS",
 	}
 	if k, ok := known.Hosts[addr]; ok {
 		cfg.HostKeyAlgorithms = algorithmsFor(k.Type)
@@ -202,6 +209,10 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 	}
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
+		slog.Info("terminal: detalhe do erro do ssh", "destino", addr, "erro", err)
+		if keyOK && !isNetErr(err) {
+			return nil, ErrAuth
+		}
 		return nil, friendlyDialError(err, addr)
 	}
 	sess, err := client.NewSession()
@@ -505,6 +516,21 @@ func friendlyDialError(err error, addr string) error {
 		return fmt.Errorf("sem rota até %s", addr)
 	}
 	return fmt.Errorf("não deu para conectar em %s", addr)
+}
+
+// isNetErr separa falhas de rede (servidor fora, conexão caiu) das recusas de login.
+func isNetErr(err error) bool {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	msg := err.Error()
+	for _, s := range []string{"connection refused", "no route to host", "network is unreachable", "no such host", "i/o timeout"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func clampSize(cols, rows int) (int, int) {
