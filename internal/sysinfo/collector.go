@@ -55,9 +55,14 @@ type Snapshot struct {
 }
 
 type Collector struct {
-	cfg     Config
-	info    Info
-	netPath string
+	batPower  float64
+	batStatus string
+	batHist   []BatPt
+	batTick   int
+	batDrain  float64 // último consumo medido descarregando (W)
+	cfg       Config
+	info      Info
+	netPath   string
 
 	mu      sync.RWMutex
 	latest  Snapshot
@@ -142,6 +147,33 @@ func (c *Collector) sample() {
 	s.Mem = readMem(c.cfg.Proc)
 	s.Sensors, s.Temp, s.FanRPM = readHwmon(c.cfg.Sys)
 	s.Battery = readBattery(c.cfg.Sys)
+	if s.Battery != nil {
+		if s.Battery.Status != c.batStatus {
+			c.batPower = 0 // mudou de carregando para descarregando: recomeça a média
+		}
+		c.batStatus = s.Battery.Status
+		c.batPower = finishBattery(s.Battery, c.batPower)
+		if s.Battery.Status == "Discharging" && c.batPower > 0.3 {
+			c.batDrain = c.batPower
+		} else if c.batDrain > 0 && s.Battery.EnergyWh > 0 && s.Battery.MinutesLeft == nil {
+			m := int(s.Battery.EnergyWh / c.batDrain * 60)
+			s.Battery.Estimate = &m
+		}
+		c.batTick++
+		c.mu.Lock()
+		if len(c.batHist) == 0 || now.Unix()-c.batHist[len(c.batHist)-1].T >= 300 {
+			c.batHist = append(c.batHist, BatPt{T: now.Unix(), Percent: s.Battery.Percent, AC: s.Battery.AC != nil && *s.Battery.AC})
+			if len(c.batHist) > 288 {
+				c.batHist = c.batHist[len(c.batHist)-288:]
+			}
+			c.batTick = 0
+		}
+		c.mu.Unlock()
+		// o histórico (até 24 h) vai junto só de vez em quando, para o stream continuar leve
+		if c.batTick%30 == 0 {
+			s.Battery.History = append([]BatPt(nil), c.batHist...)
+		}
+	}
 	s.Uptime = readUptime(c.cfg.Proc)
 
 	if n, ok := readNet(c.netPath); ok {
@@ -186,7 +218,13 @@ func (c *Collector) sample() {
 func (c *Collector) Latest() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.latest
+	s := c.latest
+	if s.Battery != nil && s.Battery.History == nil {
+		b := *s.Battery
+		b.History = append([]BatPt(nil), c.batHist...)
+		s.Battery = &b
+	}
+	return s
 }
 
 func (c *Collector) History() []Point {

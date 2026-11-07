@@ -91,7 +91,7 @@ func isCrossDevice(err error) bool { return errors.Is(err, syscall.EXDEV) }
 
 func (s *Service) TrashList() []TrashItem {
 	items := []TrashItem{}
-	for _, r := range s.roots {
+	for _, r := range s.Roots() {
 		matches, _ := filepath.Glob(filepath.Join(r.trashDir(), "*.json"))
 		for _, m := range matches {
 			var it TrashItem
@@ -171,7 +171,7 @@ func (s *Service) TrashDelete(rootID, id string) error {
 
 // TrashEmpty esvazia a lixeira de uma raiz (ou de todas, se rootID == "").
 func (s *Service) TrashEmpty(rootID string) error {
-	for _, r := range s.roots {
+	for _, r := range s.Roots() {
 		if rootID != "" && r.ID != rootID {
 			continue
 		}

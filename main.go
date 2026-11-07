@@ -139,10 +139,13 @@ func main() {
 		}
 	}
 
-	roots := files.ParseRoots(cfg.Roots, cfg.FilesDir)
-	fsvc, errs := files.New(roots)
+	fsvc, errs := files.New(func() []files.RootConfig { return files.ParseRoots(cfg.Roots, cfg.FilesDir) })
 	for _, e := range errs {
 		slog.Warn("pasta ignorada", "erro", e)
+	}
+	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
+	if err := fsvc.LoadMapping(); err != nil {
+		slog.Warn("discos mapeados", "erro", err)
 	}
 	fsvc.MaxUpload = cfg.MaxUploadGB << 30
 	s.files = fsvc

@@ -23,8 +23,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"brunos/internal/store"
 )
 
 const trashDirName = ".brunos-trash"
@@ -44,18 +47,27 @@ type RootConfig struct {
 	Name     string `json:"name"`
 	Path     string `json:"-"`
 	ReadOnly bool   `json:"readOnly"`
+	Kind     string `json:"kind"` // "place" (Home etc.) ou "disk" (pastas dentro de /mnt e /media)
 }
 
 type Root struct {
 	RootConfig
 	real string
 	r    *os.Root
+	dev  uint64 // dispositivo da pasta quando a raiz foi aberta
 }
 
+// Service guarda todas as raízes descobertas. Discos (Kind "disk") só ficam acessíveis
+// quando mapeados pelo usuário; os mapeamentos ficam em MapFile (/data/disks.json).
 type Service struct {
-	roots     []*Root
+	mu        sync.RWMutex
+	all       []*Root
+	roots     []*Root // raízes ativas: lugares + discos mapeados
 	byID      map[string]*Root
+	mapped    map[string]bool // nomes dos discos mapeados; nil = nunca configurado
+	cfgs      func() []RootConfig
 	MaxUpload int64
+	MapFile   string
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -96,6 +108,9 @@ func ParseRoots(spec, base string) []RootConfig {
 			}
 			addCfg(strings.TrimSpace(name), strings.TrimSpace(p), ro)
 		}
+		for i := range out {
+			out[i].Kind = "place"
+		}
 		return out
 	}
 	entries, err := os.ReadDir(base)
@@ -112,6 +127,7 @@ func ParseRoots(spec, base string) []RootConfig {
 			for _, s := range subs {
 				if s.IsDir() && !strings.HasPrefix(s.Name(), ".") {
 					addCfg(s.Name(), filepath.Join(p, s.Name()), false)
+					out[len(out)-1].Kind = "disk"
 				}
 			}
 			continue
@@ -121,32 +137,200 @@ func ParseRoots(spec, base string) []RootConfig {
 			name = "Home"
 		}
 		addCfg(name, p, false)
+		out[len(out)-1].Kind = "place"
 	}
 	return out
 }
 
-func New(cfgs []RootConfig) (*Service, []error) {
-	s := &Service{byID: map[string]*Root{}, MaxUpload: 50 << 30}
-	var errs []error
-	for _, c := range cfgs {
-		real, err := filepath.EvalSymlinks(c.Path)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("raiz %q (%s): %w", c.Name, c.Path, err))
-			continue
-		}
-		r, err := os.OpenRoot(real)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("raiz %q: %w", c.Name, err))
-			continue
-		}
-		if !c.ReadOnly && mountReadOnly(real) {
-			c.ReadOnly = true
-		}
-		root := &Root{RootConfig: c, real: real, r: r}
-		s.roots = append(s.roots, root)
-		s.byID[c.ID] = root
-	}
+// New abre as raízes. discover é chamado de novo em Refresh para achar pastas novas.
+func New(discover func() []RootConfig) (*Service, []error) {
+	s := &Service{byID: map[string]*Root{}, MaxUpload: 50 << 30, cfgs: discover}
+	errs := s.open(discover())
+	s.apply()
 	return s, errs
+}
+
+func openRoot(c RootConfig) (*Root, error) {
+	real, err := filepath.EvalSymlinks(c.Path)
+	if err != nil {
+		return nil, fmt.Errorf("raiz %q (%s): %w", c.Name, c.Path, err)
+	}
+	r, err := os.OpenRoot(real)
+	if err != nil {
+		return nil, fmt.Errorf("raiz %q: %w", c.Name, err)
+	}
+	if !c.ReadOnly && mountReadOnly(real) {
+		c.ReadOnly = true
+	}
+	return &Root{RootConfig: c, real: real, r: r, dev: devOf(real)}, nil
+}
+
+// open acrescenta as raízes que ainda não existem (pelo caminho) e reabre as que
+// mudaram de dispositivo (um disco montado por cima de uma pasta vazia, por exemplo).
+func (s *Service) open(cfgs []RootConfig) []error {
+	var errs []error
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byPath := map[string]int{}
+	for i, r := range s.all {
+		byPath[r.Path] = i
+	}
+	for _, c := range cfgs {
+		if i, ok := byPath[c.Path]; ok {
+			old := s.all[i]
+			if d := devOf(old.real); d != 0 && d != old.dev {
+				if nr, err := openRoot(old.RootConfig); err == nil {
+					_ = old.r.Close()
+					s.all[i] = nr
+				}
+			}
+			continue
+		}
+		used := false
+		for _, r := range s.all {
+			used = used || r.ID == c.ID
+		}
+		if used {
+			c.ID = fmt.Sprintf("%s-%d", c.ID, len(s.all)+1)
+		}
+		root, err := openRoot(c)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		s.all = append(s.all, root)
+	}
+	return errs
+}
+
+// apply recalcula as raízes ativas a partir dos mapeamentos. Chamar com s.mu livre.
+func (s *Service) apply() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roots = s.roots[:0:0]
+	s.byID = map[string]*Root{}
+	for _, r := range s.all {
+		if r.Kind == "disk" {
+			if s.mapped == nil && !isMountPoint(r.real) {
+				continue // sem configuração: mostra só o que tem disco montado
+			}
+			if s.mapped != nil && !s.mapped[r.Name] {
+				continue
+			}
+		}
+		s.roots = append(s.roots, r)
+		s.byID[r.ID] = r
+	}
+}
+
+func devOf(p string) uint64 {
+	var st syscall.Stat_t
+	if syscall.Stat(p, &st) != nil {
+		return 0
+	}
+	return uint64(st.Dev)
+}
+
+// isMountPoint diz se a pasta é a raiz de outro sistema de arquivos (um disco montado),
+// comparando o dispositivo dela com o da pasta pai.
+func isMountPoint(p string) bool {
+	d, parent := devOf(p), devOf(filepath.Dir(p))
+	return d != 0 && parent != 0 && d != parent
+}
+
+// ── Discos mapeados ──────────────────────────────────────────────
+
+type mapFile struct {
+	Version int      `json:"version"`
+	Mapped  []string `json:"mapped"`
+}
+
+// LoadMapping lê MapFile. Sem arquivo, valem os discos que têm algo montado.
+func (s *Service) LoadMapping() error {
+	if s.MapFile == "" {
+		return nil
+	}
+	var m mapFile
+	ok, err := store.ReadJSON(s.MapFile, &m)
+	if err != nil || !ok {
+		return err
+	}
+	s.mu.Lock()
+	s.mapped = map[string]bool{}
+	for _, n := range m.Mapped {
+		s.mapped[n] = true
+	}
+	s.mu.Unlock()
+	s.apply()
+	return nil
+}
+
+type DiskInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Mounted bool   `json:"mounted"`
+	Mapped  bool   `json:"mapped"`
+	Total   uint64 `json:"total"`
+	Free    uint64 `json:"free"`
+}
+
+// Refresh procura pastas novas em /mnt e /media e recalcula as raízes ativas.
+func (s *Service) Refresh() {
+	if s.cfgs != nil {
+		s.open(s.cfgs())
+	}
+	s.apply()
+}
+
+// Disks lista todas as pastas candidatas a disco, mapeadas ou não.
+func (s *Service) Disks() []DiskInfo {
+	s.Refresh()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []DiskInfo{}
+	for _, r := range s.all {
+		if r.Kind != "disk" {
+			continue
+		}
+		d := DiskInfo{ID: r.ID, Name: r.Name, Mounted: isMountPoint(r.real)}
+		_, d.Mapped = s.byID[r.ID]
+		if d.Mounted {
+			var st syscall.Statfs_t
+			if syscall.Statfs(r.real, &st) == nil {
+				d.Total, d.Free = st.Blocks*uint64(st.Bsize), st.Bavail*uint64(st.Bsize)
+			}
+		}
+		out = append(out, d)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out
+}
+
+// SetMapped grava a lista de discos mapeados (por nome da pasta) e aplica na hora.
+func (s *Service) SetMapped(names []string) error {
+	s.Refresh()
+	s.mu.Lock()
+	valid := map[string]bool{}
+	for _, r := range s.all {
+		if r.Kind == "disk" {
+			valid[r.Name] = true
+		}
+	}
+	m := map[string]bool{}
+	list := []string{}
+	for _, n := range names {
+		if valid[n] && !m[n] {
+			m[n] = true
+			list = append(list, n)
+		}
+	}
+	s.mapped = m
+	s.mu.Unlock()
+	s.apply()
+	if s.MapFile == "" {
+		return nil
+	}
+	return store.WriteJSON(s.MapFile, mapFile{Version: 1, Mapped: list}, 0o600)
 }
 
 func mountReadOnly(p string) bool {
@@ -157,10 +341,16 @@ func mountReadOnly(p string) bool {
 	return st.Flags&0x1 != 0 // ST_RDONLY
 }
 
-func (s *Service) Roots() []*Root { return s.roots }
+func (s *Service) Roots() []*Root {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]*Root(nil), s.roots...)
+}
 
 func (s *Service) root(id string) (*Root, error) {
+	s.mu.RLock()
 	r, ok := s.byID[id]
+	s.mu.RUnlock()
 	if !ok {
 		return nil, ErrUnknownRoot
 	}
@@ -682,8 +872,9 @@ type RootInfo struct {
 }
 
 func (s *Service) RootInfos() []RootInfo {
-	out := make([]RootInfo, 0, len(s.roots))
-	for _, r := range s.roots {
+	roots := s.Roots()
+	out := make([]RootInfo, 0, len(roots))
+	for _, r := range roots {
 		ri := RootInfo{RootConfig: r.RootConfig}
 		var st syscall.Statfs_t
 		if syscall.Statfs(r.real, &st) == nil {

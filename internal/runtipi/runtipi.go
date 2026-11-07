@@ -22,7 +22,7 @@ import (
 
 var allowedEnv = map[string]bool{
 	"APP_PORT": true, "APP_DOMAIN": true, "APP_LOCAL_DOMAIN": true, "APP_PROTOCOL": true,
-	"APP_EXPOSED": true, "APP_EXPOSED_DOMAIN": true, "LOCAL_DOMAIN": true, "INTERNAL_IP": true,
+	"APP_EXPOSED": true, "APP_EXPOSED_DOMAIN": true, "LOCAL_DOMAIN": true, "INTERNAL_IP": true, "NGINX_PORT": true,
 }
 
 type App struct {
@@ -46,6 +46,7 @@ type Info struct {
 	Found       bool   `json:"found"`
 	LocalDomain string `json:"localDomain"`
 	InternalIP  string `json:"internalIp"`
+	Port        int    `json:"port"` // porta do painel do Runtipi (padrão 80)
 }
 
 type Discoverer struct {
@@ -173,6 +174,7 @@ func (d *Discoverer) readGlobal(info *Info) {
 	var settings struct {
 		LocalDomain string `json:"localDomain"`
 		InternalIP  string `json:"internalIp"`
+		Port        int    `json:"port"`
 	}
 	if data, err := os.ReadFile(filepath.Join(d.dir, "state", "settings.json")); err == nil {
 		_ = json.Unmarshal(data, &settings)
@@ -186,6 +188,13 @@ func (d *Discoverer) readGlobal(info *Info) {
 	info.InternalIP = settings.InternalIP
 	if info.InternalIP == "" {
 		info.InternalIP = env["INTERNAL_IP"]
+	}
+	info.Port = settings.Port
+	if info.Port == 0 {
+		info.Port, _ = strconv.Atoi(env["NGINX_PORT"])
+	}
+	if info.Port <= 0 || info.Port > 65535 {
+		info.Port = 80
 	}
 }
 

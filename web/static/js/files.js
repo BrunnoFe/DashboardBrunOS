@@ -86,17 +86,74 @@ function restore(h) { F.root = h.root; F.path = h.path; F.mode = h.mode === 'tra
 const up = () => { if (F.mode === 'browse' && F.path) go(F.root, parentOf(F.path)); };
 
 /* ── Desenho ───────────────────────────────────────────────────── */
+const isDisk = (r) => r.kind ? r.kind === 'disk' : !(r.id === 'home' || /home/i.test(r.name));
 function drawSide() {
   const favs = F.ctx.favorites || [];
   const usage = (r) => r.total ? `<span class="f-mini-track"><i style="width:${clamp(((r.total - r.free) / r.total) * 100, 0, 100)}%"></i></span>` : '';
+  const link = (r) => `<button class="f-link ${F.mode === 'browse' && F.root === r.id && !F.path ? 'on' : ''}" data-root="${esc(r.id)}" data-drop-root="${esc(r.id)}" data-drop-path="">
+      ${svg(isDisk(r) ? 'disk' : 'home')}<span class="f-link-txt"><span>${esc(r.name)}${r.readOnly ? ' <small class="ro">leitura</small>' : ''}</span>${usage(r)}</span></button>`;
+  const places = F.ctx.roots.filter((r) => !isDisk(r)), disks = F.ctx.roots.filter(isDisk);
+  const open = F.ctx.settings?.filesDisksOpen !== false;
   $('.f-side-list', F.body).innerHTML = `
     <div class="f-sec">Locais</div>
-    ${F.ctx.roots.map((r) => `<button class="f-link ${F.mode === 'browse' && F.root === r.id && !F.path ? 'on' : ''}" data-root="${esc(r.id)}" data-drop-root="${esc(r.id)}" data-drop-path="">
-      ${svg(r.id === 'home' || /home/i.test(r.name) ? 'home' : 'disk')}<span class="f-link-txt"><span>${esc(r.name)}${r.readOnly ? ' <small class="ro">leitura</small>' : ''}</span>${usage(r)}</span></button>`).join('')}
+    ${places.map(link).join('')}
+    <div class="f-disks-head ${open ? 'open' : ''}">
+      <button class="f-link f-disks-label" data-f="disks-menu" aria-haspopup="menu" title="Discos de /mnt">${svg('disks')}<span class="f-link-txt"><span>Discos</span></span></button>
+      <button class="f-caret" data-f="disks-toggle" aria-expanded="${open}" aria-label="${open ? 'Recolher' : 'Mostrar'} discos">${svg('caret')}</button>
+    </div>
+    <div class="f-disks" ${open ? '' : 'hidden'}>
+      ${disks.map(link).join('') || '<button class="f-disks-empty" data-f="map-disks">' + svg('plus') + 'Mapear discos</button>'}
+    </div>
     ${favs.length ? `<div class="f-sec">Favoritos</div>${favs.map((f, i) => `<button class="f-link ${F.mode === 'browse' && F.root === f.root && F.path === f.path && f.path ? 'on' : ''}" data-fav="${i}" data-drop-root="${esc(f.root)}" data-drop-path="${esc(f.path)}">${folderSVG()}<span class="f-link-txt"><span>${esc(f.name)}</span></span></button>`).join('')}` : ''}
     <div class="f-sec">Outros</div>
     <button class="f-link ${F.mode === 'trash' ? 'on' : ''}" data-f="trash">${svg('trash')}<span class="f-link-txt"><span>Lixeira</span></span></button>`;
 }
+
+/* ── Discos mapeados (pastas de /mnt e /media escolhidas pelo usuário) ── */
+export async function mapDisksDialog(ctx, onDone) {
+  let disks;
+  try { disks = await api.files.disks(); } catch (e) { toastError(e, 'Não foi possível listar os discos'); return; }
+  const row = (d) => `<label class="map-row ${d.mounted ? '' : 'unmounted'}">
+      <input type="checkbox" name="d" value="${esc(d.name)}" ${d.mapped ? 'checked' : ''}>
+      <span class="map-check">${svg('check')}</span>
+      <span class="map-ico">${svg('disk')}</span>
+      <span class="map-txt"><b>${esc(d.name)}</b><small>${d.mounted ? `${fmtBytes(d.total - d.free)} usados de ${fmtBytes(d.total)}` : 'Pasta vazia: nenhum disco montado aqui'}</small></span>
+      ${d.mounted ? `<span class="map-track"><i style="width:${d.total ? clamp(((d.total - d.free) / d.total) * 100, 0, 100) : 0}%"></i></span>` : '<span class="map-tag">sem disco</span>'}
+    </label>`;
+  const d = openDialog(`<form class="map-form">
+      <h2>Mapear discos</h2>
+      <p>Escolha quais pastas de <code>/mnt</code> aparecem no gerenciador. Discos não mapeados ficam fora do alcance do BrunOS. A escolha fica salva no servidor.</p>
+      <div class="map-list">${disks.length ? disks.map(row).join('') : '<div class="empty-note">Nenhuma pasta encontrada em <code>/mnt</code> ou <code>/media</code>.</div>'}</div>
+      <div class="dlg-actions">${disks.some((x) => x.mounted) ? '<button type="button" class="pill-btn" data-c="mounted" style="margin-right:auto">Só os montados</button>' : ''}<button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn primary">Salvar</button></div>
+    </form>`, { closeBtn: false, width: 520 });
+  const f = $('form', d.el);
+  $('[data-c="no"]', d.el).onclick = () => d.close();
+  const mounted = $('[data-c="mounted"]', d.el);
+  if (mounted) mounted.onclick = () => $$('input[name="d"]', f).forEach((i) => { i.checked = disks.find((x) => x.name === i.value)?.mounted; });
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const mapped = $$('input[name="d"]:checked', f).map((i) => i.value);
+    try {
+      ctx.roots = await api.files.setDisks(mapped);
+      d.close();
+      toast('Discos atualizados', mapped.length ? `${mapped.length} disco(s) no gerenciador.` : 'Nenhum disco mapeado.');
+      onDone?.();
+    } catch (err) { toastError(err, 'Não deu para salvar'); }
+  };
+}
+function disksMenu(el) {
+  const r = el.getBoundingClientRect();
+  contextMenu(r.left + 10, r.bottom + 4, [
+    { icon: 'plus', label: 'Mapear', run: () => mapDisksDialog(F.ctx, afterMap) },
+  ]);
+}
+function afterMap() {
+  if (!F) return;
+  F.ctx.settings && F.ctx.saveSetting('filesDisksOpen', true);
+  if (F.mode === 'browse' && !rootById(F.root)) go(F.ctx.roots[0]?.id, '', false);
+  else drawSide();
+}
+
 function drawToolbar() {
   $('[data-f="back"]', F.body).disabled = !F.hist.length;
   $('[data-f="fwd"]', F.body).disabled = !F.fwd.length;
@@ -482,7 +539,13 @@ function wire() {
   body.addEventListener('click', async (e) => {
     const t = e.target;
     let el;
-    if ((el = t.closest('[data-root]'))) go(el.dataset.root, '');
+    if ((el = t.closest('[data-f="disks-toggle"]'))) {
+      const open = !(F.ctx.settings?.filesDisksOpen !== false);
+      F.ctx.saveSetting?.('filesDisksOpen', open); drawSide();
+    }
+    else if ((el = t.closest('[data-f="disks-menu"]'))) disksMenu(el);
+    else if (t.closest('[data-f="map-disks"]')) mapDisksDialog(F.ctx, afterMap);
+    else if ((el = t.closest('[data-root]'))) go(el.dataset.root, '');
     else if ((el = t.closest('[data-fav]'))) { const f = F.ctx.favorites[+el.dataset.fav]; if (f) go(f.root, f.path); }
     else if (t.closest('[data-f="trash"]')) openTrash();
     else if (t.closest('[data-f="back"]')) back();

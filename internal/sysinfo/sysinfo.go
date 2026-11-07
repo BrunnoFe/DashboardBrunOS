@@ -52,9 +52,34 @@ type Sensor struct {
 	Value float64 `json:"value"`
 }
 
+// Battery descreve a bateria (notebooks usados como servidor: ela funciona como nobreak).
+// Campos em zero/nil quando o driver não informa.
 type Battery struct {
-	Percent int    `json:"percent"`
-	Status  string `json:"status"`
+	Percent      int     `json:"percent"`
+	Status       string  `json:"status"`      // Charging, Discharging, Full, Not charging
+	AC           *bool   `json:"ac"`          // na tomada (fonte "Mains" online)
+	EnergyWh     float64 `json:"energyWh"`    // carga atual
+	FullWh       float64 `json:"fullWh"`      // capacidade atual quando cheia
+	DesignWh     float64 `json:"designWh"`    // capacidade de fábrica
+	PowerW       float64 `json:"powerW"`      // potência entrando ou saindo (média móvel)
+	Health       *int    `json:"health"`      // FullWh / DesignWh em %
+	Cycles       *int    `json:"cycles"`      // ciclos de carga
+	MinutesLeft  *int    `json:"minutesLeft"` // autonomia estimada (descarregando)
+	MinutesFull  *int    `json:"minutesFull"` // tempo até encher (carregando)
+	Estimate     *int    `json:"estimate"`    // na tomada: autonomia se a energia cair, pelo último consumo medido na bateria
+	Voltage      float64 `json:"voltage"`     // V
+	Tech         string  `json:"tech"`        // Li-ion etc.
+	Model        string  `json:"model"`
+	Manufacturer string  `json:"manufacturer"`
+	ChargeLimit  *int    `json:"chargeLimit"` // limite de carga configurado (charge_control_end_threshold)
+	History      []BatPt `json:"history,omitempty"`
+}
+
+// BatPt é um ponto do histórico de carga (um a cada 5 minutos, até 24 h).
+type BatPt struct {
+	T       int64 `json:"t"`
+	Percent int   `json:"p"`
+	AC      bool  `json:"ac"`
 }
 
 type cpuTimes struct{ idle, total uint64 }
@@ -219,11 +244,98 @@ func readHwmon(sys string) (sensors []Sensor, cpu *float64, fan *int) {
 func readBattery(sys string) *Battery {
 	bats, _ := filepath.Glob(filepath.Join(sys, "class/power_supply/BAT*"))
 	for _, b := range bats {
-		if v, ok := readInt(filepath.Join(b, "capacity")); ok {
-			return &Battery{Percent: int(v), Status: readFile(filepath.Join(b, "status"))}
+		v, ok := readInt(filepath.Join(b, "capacity"))
+		if !ok {
+			continue
+		}
+		bat := &Battery{Percent: int(v), Status: readFile(filepath.Join(b, "status")),
+			Tech: readFile(filepath.Join(b, "technology")), Model: readFile(filepath.Join(b, "model_name")),
+			Manufacturer: readFile(filepath.Join(b, "manufacturer"))}
+		num := func(name string) float64 { n, _ := readInt(filepath.Join(b, name)); return float64(n) }
+		volt := num("voltage_now") / 1e6
+		vDesign := num("voltage_min_design") / 1e6
+		if vDesign == 0 {
+			vDesign = volt
+		}
+		bat.Voltage = round1(volt)
+		if e := num("energy_full"); e > 0 { // µWh
+			bat.EnergyWh, bat.FullWh, bat.DesignWh = num("energy_now")/1e6, e/1e6, num("energy_full_design")/1e6
+		} else if c := num("charge_full"); c > 0 { // µAh × V
+			bat.EnergyWh, bat.FullWh, bat.DesignWh = num("charge_now")/1e6*vDesign, c/1e6*vDesign, num("charge_full_design")/1e6*vDesign
+		}
+		if p := num("power_now"); p > 0 {
+			bat.PowerW = p / 1e6
+		} else if cur := num("current_now"); cur > 0 && volt > 0 {
+			bat.PowerW = cur / 1e6 * volt
+		}
+		if bat.DesignWh > 0 && bat.FullWh > 0 {
+			h := int(bat.FullWh/bat.DesignWh*100 + 0.5)
+			bat.Health = &h
+		}
+		if c, ok := readInt(filepath.Join(b, "cycle_count")); ok && c > 0 {
+			n := int(c)
+			bat.Cycles = &n
+		}
+		if l, ok := readInt(filepath.Join(b, "charge_control_end_threshold")); ok && l > 0 && l < 100 {
+			n := int(l)
+			bat.ChargeLimit = &n
+		}
+		if ac := readAC(sys); ac != nil {
+			bat.AC = ac
+		} else if bat.Status != "" {
+			on := bat.Status != "Discharging"
+			bat.AC = &on
+		}
+		return bat
+	}
+	return nil
+}
+
+// readAC procura a fonte de energia externa (tipo "Mains": AC, ADP1, ACAD...).
+func readAC(sys string) *bool {
+	all, _ := filepath.Glob(filepath.Join(sys, "class/power_supply/*"))
+	for _, p := range all {
+		if readFile(filepath.Join(p, "type")) != "Mains" {
+			continue
+		}
+		if v, ok := readInt(filepath.Join(p, "online")); ok {
+			on := v == 1
+			return &on
 		}
 	}
 	return nil
+}
+
+// finishBattery suaviza a potência e calcula as estimativas de tempo.
+func finishBattery(b *Battery, prevPower float64) float64 {
+	if b == nil {
+		return 0
+	}
+	p := b.PowerW
+	if prevPower > 0 && p > 0 {
+		p = prevPower*0.8 + p*0.2
+	}
+	b.PowerW = round1(p)
+	if p > 0.3 {
+		switch b.Status {
+		case "Discharging":
+			if b.EnergyWh > 0 {
+				m := int(b.EnergyWh / p * 60)
+				b.MinutesLeft = &m
+			}
+		case "Charging":
+			target := b.FullWh
+			if b.ChargeLimit != nil {
+				target = b.FullWh * float64(*b.ChargeLimit) / 100
+			}
+			if target > b.EnergyWh {
+				m := int((target - b.EnergyWh) / p * 60)
+				b.MinutesFull = &m
+			}
+		}
+	}
+	b.EnergyWh, b.FullWh, b.DesignWh = round1(b.EnergyWh), round1(b.FullWh), round1(b.DesignWh)
+	return p
 }
 
 // ── Rede ─────────────────────────────────────────────────────────

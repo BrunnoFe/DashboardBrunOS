@@ -42,7 +42,7 @@ FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste   # mesmo teste do GitHub
 | `${APP_DATA_DIR}/data` | `/data` | usuário, sessões, preferências, papéis de parede enviados |
 | pasta do Runtipi | `/runtipi` (ro) | descobrir apps, logos, portas e domínios |
 | `/home` | `/files/home` | gerenciador de arquivos |
-| `/mnt` | `/files/mnt` | cada disco em `/mnt/*` vira um local separado |
+| `/mnt` | `/files/mnt` | cada pasta em `/mnt/*` pode virar um disco no gerenciador. Em *Arquivos → Discos → Mapear* você escolhe quais aparecem (fica salvo em `/data/disks.json`); sem escolha, aparecem só as pastas com um disco montado |
 | pasta do Runtipi | `/files<mesmo caminho>` (ro) | impede apagar o Runtipi pelo gerenciador |
 | `/proc`, `/etc/os-release`, `/etc/hostname` | `/host/...` (ro) | rede do servidor e informações do sistema |
 

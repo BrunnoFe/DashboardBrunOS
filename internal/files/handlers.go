@@ -18,6 +18,8 @@ import (
 // Register liga as rotas /api/files/* ao mux. wrap aplica autenticação/CSRF.
 func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("GET /api/files/roots", wrap(s.hRoots))
+	mux.HandleFunc("GET /api/files/disks", wrap(s.hDisks))
+	mux.HandleFunc("PUT /api/files/disks", wrap(s.hSetDisks))
 	mux.HandleFunc("GET /api/files/list", wrap(s.hList))
 	mux.HandleFunc("GET /api/files/raw", wrap(s.hRaw))
 	mux.HandleFunc("GET /api/files/zip", wrap(s.hZip))
@@ -68,6 +70,26 @@ func decode(r *http.Request, v any) error {
 }
 
 func (s *Service) hRoots(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.RootInfos())
+}
+
+func (s *Service) hDisks(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.Disks())
+}
+
+func (s *Service) hSetDisks(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Mapped []string `json:"mapped"`
+	}
+	if err := decode(r, &body); err != nil || len(body.Mapped) > 200 {
+		writeJSON(w, 400, map[string]string{"error": "pedido inválido"})
+		return
+	}
+	if err := s.SetMapped(body.Mapped); err != nil {
+		slog.Warn("discos", "erro", err)
+		writeJSON(w, 500, map[string]string{"error": "não deu para salvar os discos"})
+		return
+	}
 	writeJSON(w, 200, s.RootInfos())
 }
 

@@ -1,4 +1,5 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
+import { batteryWidgetHTML, paintBattery, batteryDialog } from './battery.js';
 import { api, initApi } from './api.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
@@ -11,8 +12,20 @@ const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', '
 const DEFAULTS = {
   wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
   widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, openIn: 'tab',
-  urlMode: 'auto', serverHost: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
+  urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
+// Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
+function runtipiBase() {
+  const custom = (set().runtipiUrl || '').trim().replace(/\/+$/, '');
+  if (custom) return /^https?:\/\//.test(custom) ? custom : `http://${custom}`;
+  return runtipiAuto();
+}
+function runtipiAuto() {
+  const host = set().serverHost || S.tipi.internalIp || location.hostname;
+  const port = S.tipi.port && S.tipi.port !== 80 ? `:${S.tipi.port}` : '';
+  return `http://${host}${port}`;
+}
+function openUrl(href) { const l = document.createElement('a'); l.href = href; l.target = '_blank'; l.rel = 'noopener'; l.click(); }
 const S = {
   pub: {}, me: null, settings: structuredClone(DEFAULTS), apps: [], tipi: {}, docker: false, dockerActions: false,
   system: null, snapshot: null, history: [], roots: [], wallpapers: [], localWallpaper: null, stopStream: null,
@@ -191,7 +204,9 @@ const WIDGETS = {
   storage: { label: 'Armazenamento', title: 'Espaço em disco' },
   system: { label: 'Sistema', title: 'CPU, memória e temperatura' },
   network: { label: 'Rede', title: 'Download e upload' },
+  battery: { label: 'Bateria', title: 'Carga, tomada, autonomia e saúde da bateria' },
 };
+const MAX_WIDGETS = 6;
 function favorites() {
   const fav = set().favorites.filter((f) => S.roots.some((r) => r.id === f.root));
   if (fav.length) return fav.slice(0, 4);
@@ -223,6 +238,8 @@ function renderWidgets() {
       body = `<button class="widget" data-action="live"><span class="w-net">
         <span class="cell"><span class="k">${svg('download')} Download</span><span class="v" data-bind="rx">—</span></span>
         <span class="cell"><span class="k">${svg('upload')} Upload</span><span class="v" data-bind="tx">—</span></span></span></button>`;
+    } else if (w === 'battery') {
+      body = batteryWidgetHTML();
     }
     return `<div class="widget-wrap" style="--i:${i}">${body}<div class="widget-label">${WIDGETS[w].label}</div></div>`;
   }).join('');
@@ -254,6 +271,7 @@ function bindStats(root = document) {
   const { vals, widths } = statValues();
   $$('[data-bind]', root).forEach((el) => { const v = vals[el.dataset.bind]; if (v != null && el.textContent !== v) el.textContent = v; });
   $$('[data-bind-w]', root).forEach((el) => { const v = widths[el.dataset.bindW]; if (v != null) el.style.width = clamp(v, 0, 100) + '%'; });
+  if (S.snapshot) paintBattery(root, S.snapshot.battery);
 }
 
 /* ── Grade de apps ─────────────────────────────────────────────── */
@@ -340,7 +358,8 @@ async function restartApp(a) {
 /* ── Dock (ampliação igual à do Umbrel: 50 → 80 px em ±150 px) ─── */
 const SYS = {
   files: { label: 'Arquivos', glyph: 'folder', tile: 'linear-gradient(160deg,#ffb199 0%,#ff6a88 45%,#c04fd0 100%)', run: (el) => openSheet('files', el) },
-  runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => { const l = document.createElement('a'); l.href = `http://${set().serverHost || S.tipi.internalIp || location.hostname}`; l.target = '_blank'; l.rel = 'noopener'; l.click(); } },
+  runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => openUrl(runtipiBase()) },
+  store: { label: 'Loja de apps', glyph: 'bag', tile: 'linear-gradient(160deg,#5fd0ff 0%,#3a7bff 48%,#5b3df0 100%)', run: () => openUrl(`${runtipiBase()}/app-store`) },
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
 };
@@ -420,7 +439,7 @@ export function openSheet(kind, originEl, opts = {}) {
   sheetCleanup?.(); sheetCleanup = null;
   host.innerHTML = '';
   const backdrop = html('<div class="sheet-backdrop"></div>');
-  const sheet = html(`<section class="sheet" role="dialog" aria-modal="true" aria-label="${kind === 'files' ? 'Arquivos' : 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
+  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${kind === 'files' ? 'Arquivos' : 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
   if (originEl) {
     const r = originEl.getBoundingClientRect(), w = Math.min(1100, innerWidth - 32), left = (innerWidth - w) / 2;
     sheet.style.setProperty('--origin', `${r.left + r.width / 2 - left}px ${innerHeight - 20}px`);
@@ -438,6 +457,7 @@ export function openSheet(kind, originEl, opts = {}) {
   } else renderSettings(body);
 }
 export function closeSheet() {
+  pickClose?.();
   const sheet = $('#sheet-host .sheet');
   if (!sheet) return;
   sheetCleanup?.(); sheetCleanup = null;
@@ -461,6 +481,44 @@ const filesCtx = {
 /* ── Configurações ─────────────────────────────────────────────── */
 const SWATCH_HUES = [209, 259, 330, 6, 24, 45, 145, 174];
 let settingsTab = 'all', settingsQuery = '';
+// Apps no dock: botão com prévia dos ícones que abre uma lista suspensa com caixas de seleção.
+function dockPickerBtn() {
+  const pins = set().dock.map(appById).filter(Boolean);
+  return `<button class="pick-btn" data-act="dock-pick" aria-haspopup="listbox">
+    <span class="pick-icons">${pins.slice(0, 5).map((a) => appIconHTML(a, 'mini')).join('')}${pins.length > 5 ? `<span class="pick-more">+${pins.length - 5}</span>` : ''}</span>
+    <span>${pins.length ? `${pins.length} ${pins.length === 1 ? 'app' : 'apps'}` : 'Escolher apps'}</span>${svg('chevD')}</button>`;
+}
+let pickClose = null;
+function dockPicker(anchor, onChange) {
+  closeMenu();
+  if (pickClose) { pickClose(); return; }
+  const apps = allApps();
+  const pop = html(`<div class="ctx pick-pop" role="listbox" aria-multiselectable="true">
+    ${apps.length > 8 ? `<label class="search-field pick-search">${svg('search')}<input placeholder="Procurar app" aria-label="Procurar app"></label>` : ''}
+    <div class="pick-list">${apps.map((a) => `<label class="pick-row" data-name="${esc(a.name.toLowerCase())}">
+      <input type="checkbox" value="${esc(a.id)}" ${set().dock.includes(a.id) ? 'checked' : ''}><span class="map-check">${svg('check')}</span>
+      ${appIconHTML(a, 'mini')}<span class="pick-name">${esc(a.name)}</span></label>`).join('') || '<div class="empty-note">Nenhum app</div>'}</div>
+    <div class="pick-foot"><button class="pick-clear" type="button">Limpar</button><span data-count></span></div></div>`);
+  $('#menu-host').append(pop);
+  const r = anchor.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+  pop.style.left = clamp(r.right - pr.width, 8, innerWidth - pr.width - 8) + 'px';
+  pop.style.top = (r.bottom + 6 + pr.height < innerHeight - 8 ? r.bottom + 6 : Math.max(8, r.top - pr.height - 6)) + 'px';
+  const count = () => { $('[data-count]', pop).textContent = `${set().dock.length} no dock`; };
+  count();
+  pop.addEventListener('change', (e) => {
+    const id = e.target.value, st = set();
+    st.dock = e.target.checked ? [...st.dock.filter((x) => x !== id), id] : st.dock.filter((x) => x !== id);
+    save(); renderDock(); count(); onChange();
+  });
+  $('.pick-clear', pop).onclick = () => { set().dock = []; $$('input[type="checkbox"]', pop).forEach((i) => { i.checked = false; }); save(); renderDock(); count(); onChange(); };
+  const search = $('.pick-search input', pop);
+  if (search) { search.oninput = () => { const v = search.value.trim().toLowerCase(); $$('.pick-row', pop).forEach((row) => { row.hidden = v && !row.dataset.name.includes(v); }); }; setTimeout(() => search.focus(), 30); }
+  const close = () => { pop.remove(); pickClose = null; document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc_, true); };
+  pickClose = close;
+  const outside = (e) => { if (!pop.contains(e.target) && !e.target.closest('[data-act="dock-pick"]')) close(); };
+  const esc_ = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc_, true); });
+}
 function settingsRows() {
   const st = set();
   const range = (key, min, max, unit = '') => `<input type="range" min="${min}" max="${max}" value="${st[key]}" data-range="${key}" data-unit="${unit}" style="--p:${((st[key] - min) / (max - min)) * 100}%" aria-label="${key}"><span class="range-val">${st[key]}${unit}</span>`;
@@ -473,11 +531,12 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip"><i></i><span data-brand-label>hsl(${brandNow.h} ${brandNow.s}% ${brandNow.l}%)</span></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'Ícones da tela inicial', ctrl: range('iconSize', 48, 88, 'px') },
-    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Escolha e ordene clicando (até 4)', ctrl: `<div class="chips">${Object.entries(WIDGETS).map(([k, w]) => `<button class="chip ${st.widgets.includes(k) ? 'on' : ''}" data-widget="${k}" title="${w.title}">${st.widgets.includes(k) ? `<b class="chip-n">${st.widgets.indexOf(k) + 1}</b>` : ''}${w.label}</button>`).join('')}</div>` },
+    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: `Escolha e ordene clicando (até ${MAX_WIDGETS})`, ctrl: `<div class="chips">${Object.entries(WIDGETS).map(([k, w]) => `<button class="chip ${st.widgets.includes(k) ? 'on' : ''}" data-widget="${k}" title="${w.title}">${st.widgets.includes(k) ? `<b class="chip-n">${st.widgets.indexOf(k) + 1}</b>` : ''}${w.label}</button>`).join('')}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'sparkles', title: 'Reduzir animações', desc: 'Desliga a ampliação do dock e as transições', ctrl: sw('reduceMotion') },
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
+    { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelos ícones Runtipi e Loja de apps do dock. Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
     { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor para IP:porta', desc: `Vazio = o mesmo endereço que você usou para abrir o BrunOS (${esc(location.hostname || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
-    { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor', ctrl: `<div class="chips">${allApps().map((a) => `<button class="chip ${st.dock.includes(a.id) ? 'on' : ''}" data-pin="${esc(a.id)}">${appIconHTML(a, 'mini')}${esc(a.name)}</button>`).join('')}</div>` },
+    { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor, na ordem em que você marca', ctrl: dockPickerBtn() },
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
     { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando', ctrl: sw('showStatus') },
     { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'Nova aba ou na mesma aba', ctrl: `<div class="seg"><button class="${st.openIn === 'tab' ? 'on' : ''}" data-openin="tab">Nova aba</button><button class="${st.openIn === 'same' ? 'on' : ''}" data-openin="same">Mesma aba</button></div>` },
@@ -489,7 +548,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'info', title: 'Informações do dispositivo', desc: `${esc(info.os || 'Linux')} · ${esc(info.cpuModel || '')}`, ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'device' },
     { group: 'Sistema', cat: 'system', icon: 'box', title: 'Runtipi', desc: S.tipi.found ? `${S.apps.length} apps instalados · domínio local ${esc(S.tipi.localDomain || '—')}` : 'Pasta do Runtipi não encontrada (monte em /runtipi)', ctrl: `<button class="pill-btn" data-act="open-runtipi">Abrir ${svg('external')}</button>` },
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
-    { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: '' },
+    { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'copy', title: 'Exportar preferências', desc: 'Copia o JSON com apps, dock e aparência', ctrl: `<button class="pill-btn" data-act="copy-config">Copiar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
   ];
@@ -567,10 +626,10 @@ function wireSettings(body) {
     else if ((el = q('[data-toggle]'))) { const k = el.dataset.toggle; st[k] = !st[k]; save(); applyPrefs(); redraw(); }
     else if ((el = q('[data-widget]'))) {
       const k = el.dataset.widget;
-      st.widgets = st.widgets.includes(k) ? st.widgets.filter((w) => w !== k) : [...st.widgets, k].slice(-4);
+      st.widgets = st.widgets.includes(k) ? st.widgets.filter((w) => w !== k) : [...st.widgets, k].slice(-MAX_WIDGETS);
       save(); renderWidgets(); redraw();
     }
-    else if ((el = q('[data-pin]'))) { const id = el.dataset.pin; st.dock = st.dock.includes(id) ? st.dock.filter((x) => x !== id) : [...st.dock, id]; save(); renderDock(); el.classList.toggle('on'); }
+    else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
     else if ((el = q('[data-act]'))) {
@@ -581,6 +640,7 @@ function wireSettings(body) {
       else if (a === 'password') passwordDialog();
       else if (a === 'add-link') linkDialog();
       else if (a === 'open-runtipi') SYS.runtipi.run();
+      else if (a === 'map-disks') import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); }));
       else if (a === 'unhide') { for (const k of Object.keys(st.apps)) if (st.apps[k].hidden) st.apps[k].hidden = false; save(); renderApps(); redraw(); }
       else if (a === 'reset-order') { st.order = []; save(); renderApps(); redraw(); }
       else if (a === 'copy-config') {
@@ -603,7 +663,8 @@ function wireSettings(body) {
       applyPrefs();
     } else if (t.matches('[data-hue-range]')) {
       set().manualHue = +t.value; t.style.setProperty('--p', t.value / 3.59 + '%'); save(); applyBrand();
-    } else if (t.matches('[data-input="serverHost"]')) { set().serverHost = t.value.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, ''); save(); renderApps(); }
+    } else if (t.matches('[data-input="runtipiUrl"]')) { set().runtipiUrl = t.value.trim(); save(); }
+    else if (t.matches('[data-input="serverHost"]')) { set().serverHost = t.value.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, ''); save(); renderApps(); }
     else if (t.matches('[data-input="displayName"]')) {
       const v = t.value.trim(); if (!v) return;
       try { await api.updateMe({ displayName: v }); S.me.displayName = v; renderGreeting(); } catch (err) { toastError(err); }
@@ -980,6 +1041,7 @@ document.addEventListener('keydown', (e) => {
 $('#search-pill').addEventListener('click', commandPalette);
 $('#desktop').addEventListener('click', (e) => {
   if (e.target.closest('[data-action="live"]')) liveUsageDialog();
+  if (e.target.closest('[data-action="battery"]')) batteryDialog(() => S.snapshot?.battery, (fn) => on('stats', fn));
   const fav = e.target.closest('[data-fav-root]');
   if (fav) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath });
 });

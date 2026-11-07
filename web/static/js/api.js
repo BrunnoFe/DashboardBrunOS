@@ -61,6 +61,8 @@ const real = {
   logoUrl: (urn) => `/api/apps/logo?${q({ urn })}`,
   files: {
     roots: () => call('GET', '/api/files/roots'),
+    disks: () => call('GET', '/api/files/disks'),
+    setDisks: (mapped) => call('PUT', '/api/files/disks', { mapped }),
     list: (root, path) => call('GET', `/api/files/list?${q({ root, path })}`),
     search: (root, path, query) => call('GET', `/api/files/search?${q({ root, path, q: query })}`),
     mkdir: (root, path, name) => call('POST', '/api/files/mkdir', { root, path, name }),
@@ -116,7 +118,7 @@ function makeDemo() {
     mem: { total: 7.7 * GB, used: s.mem, available: 7.7 * GB - s.mem, swapTotal: 2 * GB, swapUsed: 0.1 * GB },
     temp: Math.round(s.temp * 10) / 10,
     sensors: [{ chip: 'coretemp', label: 'Package id 0', value: s.temp }, { chip: 'dell_smm', label: 'Ambient', value: 47 }],
-    fanRpm: 2321, battery: { percent: 100, status: 'Full' }, disks,
+    fanRpm: 2321, battery: { percent: 86, status: 'Charging', ac: true, energyWh: 35.4, fullWh: 41.2, designWh: 48.8, powerW: 7.6, health: 84, cycles: 213, minutesFull: 46, voltage: 12.4, tech: 'Li-ion', manufacturer: 'SMP', model: 'DELL 0X5', chargeLimit: null, history: Array.from({ length: 96 }, (_, i) => ({ t: Math.floor(Date.now() / 1000) - (95 - i) * 300, p: Math.round(i < 40 ? 100 - i * 1.3 : i < 50 ? 48 + (i - 40) * 0.2 : Math.min(86, 50 + (i - 50) * 0.9)), ac: !(i >= 10 && i < 50) })) }, disks,
     net: { rx: s.rx, tx: s.tx, ifaces: ['enp2s0'] }, uptime: 2 * 86400 + 4 * 3600,
   });
   const tick = () => {
@@ -155,7 +157,9 @@ function makeDemo() {
     '1tb-hdd2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
     '1tb-hdd3': D('', [D('Immich', []), D('Nextcloud', [])]),
   };
-  const rootsMeta = [['home', 'Home', 312, 33], ['1tb-hdd', '1TB_HDD', 984, 463], ['1tb-hdd2', '1TB_HDD2', 984, 246], ['1tb-hdd3', '1TB_HDD3', 984, 462]];
+  const rootsMeta = [['home', 'Home', 312, 33], ['1tb-hdd', '1TB_HDD', 984, 463], ['1tb-hdd2', '1TB_HDD2', 984, 246], ['1tb-hdd3', '1TB_HDD3', 984, 462], ['ssd', 'SSD', 0, 0], ['ssd-nvme', 'SSD_NVME', 0, 0]];
+  let demoMapped = ['1TB_HDD', '1TB_HDD2', '1TB_HDD3'];
+  const demoRoots = () => rootsMeta.filter(([id, name]) => id === 'home' || demoMapped.includes(name)).map(([id, name, t, u]) => ({ id, name, kind: id === 'home' ? 'place' : 'disk', readOnly: false, total: t * GB, free: (t - u) * GB }));
   const trashItems = [];
   const nodeAt = (root, path) => {
     let n = tree[root];
@@ -195,7 +199,9 @@ function makeDemo() {
     restart: () => Promise.reject(new Error('Indisponível na demonstração')),
     logoUrl: () => '',
     files: {
-      roots: () => wait(rootsMeta.map(([id, name, t, u]) => ({ id, name, readOnly: false, total: t * GB, free: (t - u) * GB }))),
+      roots: () => wait(demoRoots()),
+      disks: () => wait(rootsMeta.filter(([id]) => id !== 'home').map(([id, name, t, u]) => ({ id, name, mounted: t > 0, mapped: demoMapped.includes(name), total: t * GB, free: (t - u) * GB }))),
+      setDisks: (m) => { demoMapped = m; rootsMeta.forEach(([id]) => { tree[id] ||= D('', []); }); return wait(demoRoots()); },
       list: async (root, path) => wait({ root, path, entries: nodeAt(root, path).children.map(entryOf).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name, 'pt-BR')) }),
       search: async (root, path, query) => {
         const hits = []; const qq = query.toLowerCase();
