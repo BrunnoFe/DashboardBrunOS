@@ -18,6 +18,18 @@
 3. Peça algo como: "Leia o CLAUDE.md e o docs/projeto/roadmap.md e vamos planejar a próxima etapa".
 4. Ao terminar, peça para atualizar `roadmap.md`, `historico.md` e `docs/privado/sessoes.md`.
 
+## VS Code + Claude Code + ai-memory
+
+- A extensão **Claude Code** do VS Code usa as mesmas configurações do Claude Code de terminal
+  (`~/.claude.json` para MCP e `~/.claude/settings.json` para hooks). O que o `install-mcp`/
+  `install-hooks` instalou vale para os dois.
+- Recomendado: MCP "session-aware" (separa a memória certinha por sessão/projeto):
+  `ai-memory install-mcp --client claude-code --session-aware --apply`
+- Conferir: `ai-memory doctor` no terminal e `/mcp` dentro do Claude Code (deve listar `ai-memory`).
+- Uma vez por projeto, peça ao Claude Code: "Install ai-memory routing into this project." Ele
+  acrescenta um bloco marcado (`<!-- ai-memory:start -->`) ao `CLAUDE.md` ensinando quando consultar a memória.
+- O início de cada sessão recebe um resumo das anteriores (hook); o fim da sessão grava um resumo.
+
 ## ai-memory: passos únicos (no Windows, PowerShell)
 
 Jeito fácil: rode o script que faz tudo abaixo perguntando antes de cada passo (provedor de LLM,
