@@ -53,7 +53,7 @@
 
 ## Fluxo de PR na loja
 
-Histórico: PR #1 (0.1.0) mesclado; PR #2 (0.2.0 → 0.3.0, branch `brunos-0.2.0`) aberto em 07/11/2026.
+Histórico: PR #1 (0.1.0) mesclado; PR #2 (0.2.0 → 0.3.0, branch `brunos-0.2.0`) mesclado em 07/11/2026.
 A cada versão: branch nova a partir da `main` da loja, copiar os dois JSON, `bun test`, PR com
 descrição em pt-BR do que mudou e se o formulário/montagens mudaram.
 
