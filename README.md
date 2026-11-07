@@ -86,10 +86,8 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## Terminal
 
-Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor **por SSH**, com o seu usuário e senha (ou chave privada). Assim o container continua sem nenhum privilégio: é a mesma coisa que abrir um terminal no seu computador e rodar `ssh`.
+Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor por SSH, com o seu usuário e senha (ou chave privada). Na primeira conexão ele mostra a impressão digital da chave do servidor para você conferir com `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
 
-- A senha ou chave é usada só para abrir a conexão e não é gravada em lugar nenhum.
-- Na primeira conexão, o BrunOS mostra a impressão digital da chave do servidor para você conferir (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Ela fica em `/data/known_hosts.json` e, se mudar, a conexão é recusada até você confirmar de novo.
-- Sessões sem ninguém olhando fecham sozinhas em 3 minutos; sair do BrunOS ou trocar a senha fecha todas.
-- Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`).
-- O terminal é o xterm.js (MIT), servido pelo próprio BrunOS. O SSH usa o `golang.org/x/crypto/ssh`, guardado em `vendor/` e conferido no CI contra os módulos oficiais.
+Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`). Para desligar o recurso, use `BRUNOS_TERMINAL=false`.
+
+O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `golang.org/x/crypto/ssh` (BSD), ambos distribuídos junto com o código.

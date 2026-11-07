@@ -4,3 +4,6 @@ __pycache__/
 /brunos
 /tmp/
 .DS_Store
+
+# Memória privada do projeto (detalhes do servidor e de segurança): fica só na máquina do Bruno
+/docs/privado/

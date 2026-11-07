@@ -1,0 +1,4 @@
+# ai-memory (akitaonrails/ai-memory): escopo fixo deste repositório
+# Todas as sessões (Claude Code, Claude Desktop via MCP) caem na mesma memória.
+workspace = "pessoal"
+project = "dashboardbrunos"
