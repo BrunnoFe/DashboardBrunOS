@@ -201,9 +201,10 @@ func (c *Client) Logs(ctx context.Context, id string, tail int, follow bool) (io
 		resp.Body.Close()
 		return nil, false, fmt.Errorf("docker logs: %d %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
-	// container com TTY manda texto puro; sem TTY, quadros com cabeçalho de 8 bytes
-	raw := resp.Header.Get("Content-Type") == "application/vnd.docker.raw-stream"
-	return resp.Body, !raw, nil
+	// Sem TTY vêm quadros com cabeçalho de 8 bytes; com TTY, texto puro. Até a API 1.41 o Docker manda
+	// "raw-stream" nos dois casos, então não dá para confiar no Content-Type: Demux reconhece sozinho
+	// quando não há cabeçalho e copia o texto como está.
+	return resp.Body, true, nil
 }
 
 // Demux lê o formato multiplexado (cabeçalho [tipo,0,0,0,tamanho uint32 big-endian] + dados) e
