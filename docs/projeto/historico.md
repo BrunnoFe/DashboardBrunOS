@@ -146,5 +146,18 @@ Pedidos (com prints):
   controles largos embaixo; terminal em tela cheia com letra 11 e "Desconectar" só com ícone; porta do
   terminal vazia (usa 22); sem o texto `hsl(...)` na cor de destaque.
 
+## 0.9.0 (08/11/2026): widgets personalizáveis e integrações (etapa 7a)
+- **Janela Widgets** (dock): Meus widgets, Modelos e Integrações, com editor e prévia ao vivo. Formatos
+  Destaque, Grade, Lista, Gráfico (linha, barras, rosca) e Atalhos; Tamanhos Pequeno, Largo, Alto, Grande
+  e Faixa; por métrica: rótulo, unidade, casas, compacto, ícone, mini-gráfico e cor por faixa; por
+  widget: clique e aparência própria (padrão: segue o tema). Termos em `CONTEXT.md`, decisões 31–34.
+- **Área de widgets em cada página**; menu rápido no botão direito (ou segurar) e modo "Organizar
+  widgets" (arrastar, remover, adicionar). Os 6 widgets antigos viraram Modelos e são convertidos sozinhos.
+- **Integrações** AdGuard Home e Speedtest Tracker (`internal/integrations`), sugeridas a partir do
+  Runtipi; senha/token cifrado (AES-GCM, `/data/secret.key`) e nunca enviado ao navegador; Avisos prontos
+  (proteção desligada, download baixo, ping alto, sem responder).
+- **Leveza**: com a tela fechada não busca nada; aberta, só o que algum widget usa, no ritmo de cada app;
+  segundo plano (5 min) só para aviso ligado ou gráfico sem histórico no app.
+
 ## Próximas
 Veja `roadmap.md`.

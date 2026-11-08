@@ -143,6 +143,29 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   montado → evento crítico `disk-unmounted:<nome>`; disco quente `disk-hot:<nome>` (HD ≥ 55 °C, fecha
   ≤ 50; SSD ≥ 70, fecha ≤ 65); a cada hora grava o uso no `diskhist` e confere a previsão).
   `loginSeen`/`loginBlocked` emitem `login-new` e `login-blocked`.
+- **`internal/secret`** (0.9.0): `Load(path)` cria/lê `/data/secret.key` (32 bytes aleatórios, 0600);
+  `Box.Seal/Open` com AES-256-GCM (nonce aleatório, saída em base64). Só cifra as credenciais das
+  integrações (decisão 33).
+- **`internal/integrations`** (0.9.0; termos em `CONTEXT.md`, decisões 31–33):
+  - `kinds.go`: `Kind` (`Info()` + `Fetch(ctx, client, Config)`), `KindInfo` (campos do formulário,
+    frequência padrão, catálogo de Métricas `MetricDef{id,name,kind num|text|list|series,unit,icon,
+    ranges,history}`, Avisos prontos `AlertDef{id,metric,op < | > | down,default,fixed}`, ids de app do
+    Runtipi para sugerir), `Value{n,t,l,s}`, `SeriesData{step,start,points}` (NaN vira null). Métricas
+    que começam com `_` ficam só no cache (ex.: `_id` do último teste do Speedtest). `getJSON` limita a
+    resposta a 2 MB e traduz os erros para pt-BR. Um arquivo por Tipo: `adguard.go`
+    (`/control/stats` + `/control/status`, autenticação básica), `speedtest.go` (`/api/v1/results/latest`
+    e a lista de 7 dias, token Bearer; a lista só é baixada de novo quando aparece um teste novo).
+  - `store.go`: `/data/integrations.json` (`{"version":1,"integrations":[{id,kind,name,url,user,secret
+    (cifrado),interval,alerts:{id:{on,value}}}]}`); a API só devolve `Public` (`hasSecret`); editar sem
+    mandar `secret` mantém o atual. Frequência de 10 s a 1 h; até 50 integrações.
+  - `hub.go`: cache por integração e agendamento (volta a cada 5 s, mas só busca o que venceu): com
+    alguém no SSE e algum widget usando → no intervalo da integração; aviso ligado ou número num gráfico
+    sem histórico do app → a cada 5 min; senão, nada. `SetUsage(settings)` lê `widgets2` ao salvar as
+    preferências. Até 3 buscas simultâneas, timeout 15 s, sem seguir redirecionamentos. Avisos prontos
+    pela central (`integ:<id>:<aviso>`; "sem responder" só depois de 5 min).
+  - `series.go`: histórico próprio das métricas coletadas em segundo plano, `/data/metric-history.json`
+    (24 h a cada 5 min + 7 dias por hora; métrica sem amostra há 7 dias é descartada).
+  - `handlers.go`: rotas abaixo e `Suggest` (apps do Runtipi de tipo conhecido → `http://IP:porta`).
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 
 ### API
@@ -176,9 +199,15 @@ PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   
 POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})
 GET  /api/files/upload/status?id      POST /api/files/upload/finish {id} · upload/cancel {id}
 POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min · /api/files/usage?root&path[&refresh=1]
+GET  /api/integrations/kinds · /api/integrations ({integrations:[Public],views}) · /api/integrations/suggest
+POST /api/integrations {kind,name,url,user,secret?,interval,alerts}   PUT/DELETE /api/integrations/{id}
+POST /api/integrations/test {…, id?}  (busca uma vez sem salvar; com id usa o token guardado; 502 {error})
+GET  /api/metrics/series?id=<integração>.<métrica>&range=1h|24h|7d ({range,series:{step,start,points}})
 ```
 
-O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central.
+O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central e
+`event: metrics` (`{id,at,err,values}` ou `{id,removed}`) quando uma integração é buscada; o `init`
+traz `metrics` com o cache atual. Abrir o stream é o que faz o servidor começar a buscar.
 `POST /api/power/test` responde 409 `{unknownHost, fingerprint}` na primeira vez, igual ao terminal.
 
 `POST /api/terminal/open` devolve 409 com `{unknownHost, addr, keyType, fingerprint}` na primeira
@@ -189,7 +218,9 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 `auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
 `events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento),
 `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos), `uploads.json`
-(envios em pedaços pendentes), `history.json` (uso por minuto/hora), `internet.json` (quedas de internet).
+(envios em pedaços pendentes), `history.json` (uso por minuto/hora), `internet.json` (quedas de internet),
+`secret.key` (chave das credenciais), `integrations.json` (integrações, credencial cifrada),
+`metric-history.json` (séries coletadas em segundo plano).
 
 ## Frontend (`web/static`)
 
@@ -232,6 +263,21 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
   também `folder:<id>`), `perPage()` (colunas × linhas que cabem abaixo dos widgets, mínimo 2 linhas),
   páginas com `scroll-snap` + pontinhos + setas + roda do mouse; arrastar no meio de um ícone junta numa
   pasta, na borda reordena; pasta com 1 app se desfaz.
+- **Widgets (0.9.0)**:
+  - `js/widgets.js`: `SIZES` (s, w, t, l, f), `FORMATS` (stat, grid, list, chart, shortcuts),
+    `BRUNOS_METRICS` + `brunosValue(id, {snapshot, internet, apps})` (fonte BrunOS calculada no navegador,
+    sem coleta nova), `fmtVal`/`levelOf` (unidade, casas, compacto, cores por faixa `{warn, crit}`),
+    `modelGroups(integrações)`, `normalize`, `migrate(widgets antigos)`, `innerHTML(item, ctx)` (miolo,
+    redesenhado só quando o texto muda) e `widgetHTML` (moldura `wfm-<formato>` + rótulo).
+  - `js/charts.js`: `lineSVG`, `barSVG`, `donutSVG`, `sparkSVG`, `stats` (SVG puro, sem biblioteca).
+  - `js/widgetsapp.js`: janela Widgets (`mountWidgets(body, {ctx, edit, add})`, `focusWidgets`):
+    Meus widgets, Modelos, Integrações (formulário com Testar, frequência e Avisos prontos) e editor com
+    prévia ao vivo.
+  - `js/app.js`: `W2()` (preferência `widgets2`, converte a antiga na primeira vez), `widgetCtx()`
+    (`value`, `def`, `spark`, `series` com cache de `statsHistory` e `metricSeries`, redução para 240
+    pontos), Área de widgets no topo de cada página (`pagePer` mede quantos ícones cabem embaixo),
+    `paintWidgets()` a cada amostra/valor novo (nada com a aba escondida), menu rápido (botão direito ou
+    segurar), modo "Organizar widgets" (arrastar entre Áreas, `−` remove, `+` adiciona).
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
@@ -242,7 +288,11 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 (atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
 `sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio),
 `netMonitor` (0.8.0, padrão true), widget `internet` (0.8.0), `appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
-`[{id,name,apps:[ids]}]`), `apps[id].noMonitor`. **Nunca** guardar senhas aqui.
+`[{id,name,apps:[ids]}]`), `apps[id].noMonitor`, `widgets2` (0.9.0: `{v:1, areas:{"<página>":[ids]},
+items:{id:{model?, format, size, title, caption, slots:[{metric, label?, unit?, decimals?, compact?, icon?,
+spark?, max?, colors?:{warn,crit}|null}], layout, list:{max,bars}, chart:{type,range,stats}, bar,
+click:{kind:auto|app|window|url|none, target}, look:{follow, opacity?, hue?, hideLabel?}}}}`; a antiga
+`widgets` fica só para voltar de versão). **Nunca** guardar senhas aqui.
 
 ## Testes
 

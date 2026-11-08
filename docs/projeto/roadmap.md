@@ -98,7 +98,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
 | J1 | Tela de bloqueio com relógio grande | B | a fazer | Estilo umbrelOS; bloqueio por inatividade opcional (só visual ou exigindo senha? decidir). |
-| J2 | Papel de parede por horário ou fotos do Immich ("neste dia") | M | a fazer | Depende da integração Immich (A2) para as fotos. |
+| J2 | Papel de parede por horário | B | a fazer (0.9.1) | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
 | J3 | Widgets de relógio, clima e bloco de notas | B | a fazer | Clima: Open-Meteo (sem chave) chamado pelo backend; notas salvas em `/data`. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
@@ -123,7 +123,9 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 4 | 0.6.0 | F1 → F2 → F4 → F5 → D5 — **feito, aguardando teste no servidor** |
 | 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 (+ desinstalar pelo Runtipi) — **feito, aguardando teste no servidor** |
 | 6 | 0.8.0 | G1 · G2 · G3 (sem Speedtest) — **feito, aguardando teste no servidor** |
-| 7 | 0.9.0 | A2 · I1 · I3 · J2 · Speedtest Tracker (do G3) |
+| 7a | 0.9.0 | **Widgets personalizáveis** (motor: Área de widgets por página, Tamanhos, Formatos, gráficos, janela Widgets, fonte BrunOS, conversão dos widgets atuais, credenciais cifradas) + AdGuard (A2/I3) + Speedtest Tracker (G3) — **feito (0.9.0), aguardando teste no servidor** (Mídia entra junto com Immich/Plex na 0.9.1) |
+| 7b | 0.9.1 | Plex e Immich (A2, Immich só em Widget) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) |
+| 7c | 0.9.2 | Transmission · Syncthing · Nextcloud · Vaultwarden (pedidos do Bruno em 08/11/2026) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
 | 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
@@ -132,9 +134,28 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 Em 08/11/2026 o Bruno escolheu o **CodeMirror 6** para o editor (F2), em vez de um editor leve feito à
 mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob demanda.
 
-**Decisões que ficam para o início de cada etapa** (perguntar com opções): A2/I3 como guardar tokens;
-F2 qual editor; J1 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais
-permissões; A1 como saber a versão instalada sem tocar no Postgres.
+**Decisões que ficam para o início de cada etapa** (perguntar com opções): ~~A2/I3 como guardar
+tokens~~ (decidido em 08/11/2026: cifrados com chave em arquivo, decisão 33); ~~F2 qual editor~~; J1
+bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais permissões; A1 como saber a
+versão instalada sem tocar no Postgres.
+
+### Etapa 7 (0.9.0 → 0.9.2) combinada em 08/11/2026
+
+Pedido do Bruno: widgets com "sua própria guia de configuração e criação", flexíveis em apps, funções,
+fontes, posição, formato, gráficos e textos, **sem pesar** no servidor. Escolhas (termos em
+`CONTEXT.md`, porquês nas decisões 31–34):
+
+- Integração → Métricas → Widget; widgets prontos são Modelos; os 6 widgets atuais viram Modelos da
+  fonte BrunOS (Arquivos vira o formato Atalhos), convertidos sozinhos na atualização.
+- Área de widgets separada no topo de cada página; Tamanhos Pequeno 1×1, Largo 2×1, Alto 1×2,
+  Grande 2×2 e Faixa; Formatos Destaque, Grade, Lista, Gráfico, Mídia, Atalhos.
+- Gráficos SVG próprios: linha/área, barras, rosca e mini-gráfico; período 1 h / 24 h / 7 dias.
+- Por Espaço: rótulo, unidade, ícone, cor por faixa, casas decimais. Por Widget: clique (app, janela do
+  BrunOS, endereço ou nada) e aparência opcional — **por padrão segue o tema do BrunOS**.
+- Janela **Widgets** no dock (Meus widgets · Modelos · Integrações com avisos), prévia ao vivo; menu
+  rápido e modo edição na tela inicial.
+- Integração em qualquer endereço, várias do mesmo tipo, endereço sugerido pelo Runtipi; frequência
+  por tipo ajustável de 10 s a 1 h; coleta híbrida; Avisos prontos (sem regras livres).
 
 ### Etapa 1 (0.4.0) em detalhe
 

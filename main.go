@@ -33,11 +33,13 @@ import (
 	"brunos/internal/files"
 	"brunos/internal/history"
 	"brunos/internal/hostcmd"
+	"brunos/internal/integrations"
 	"brunos/internal/logins"
 	"brunos/internal/netmon"
 	"brunos/internal/power"
 	"brunos/internal/procs"
 	"brunos/internal/runtipi"
+	"brunos/internal/secret"
 	"brunos/internal/sshknown"
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
@@ -109,6 +111,7 @@ type server struct {
 	hist      *history.Store
 	procs     *procs.Reader
 	netmon    *netmon.Monitor
+	integ     *integrations.Hub
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -189,6 +192,14 @@ func main() {
 	s.procs.Self = procs.SelfID("/proc/self/mountinfo")
 	s.netmon = netmon.New(filepath.Join(cfg.DataDir, "internet.json"), s.events)
 	s.netmon.Enabled = func() bool { v, ok := s.readSettings()["netMonitor"].(bool); return !ok || v }
+	box, err := secret.Load(filepath.Join(cfg.DataDir, "secret.key")) // cifra as senhas/tokens das integrações
+	if err != nil {
+		slog.Error("não foi possível ler ou criar a chave das integrações", "erro", err)
+		os.Exit(1)
+	}
+	s.integ = integrations.NewHub(integrations.NewStore(filepath.Join(cfg.DataDir, "integrations.json"), box),
+		integrations.NewSeriesStore(filepath.Join(cfg.DataDir, "metric-history.json")), s.events)
+	s.integ.SetUsage(s.readSettings())
 	power.HostOK = terminal.HostRe.MatchString
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
 		// chave nova (script brunos-host) e a da configuração antiga, só para desligar até atualizar
@@ -213,6 +224,7 @@ func main() {
 	go s.watchDisks(ctx)
 	go s.watchApps(ctx)
 	go s.netmon.Run(ctx)
+	go s.integ.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -233,6 +245,7 @@ func main() {
 		os.Exit(1)
 	}
 	s.hist.Save() // guarda o histórico de 24 h / 7 dias antes de desligar
+	s.integ.Series.Save()
 }
 
 func healthcheck() int {
@@ -295,6 +308,7 @@ func (s *server) routes() http.Handler {
 	s.diskHist.Register(mux, a)
 	s.hist.Register(mux, a)
 	s.netmon.Register(mux, a)
+	s.integ.Register(mux, a, s.integrationApps)
 	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
 	if s.term != nil {
 		s.term.Register(mux, a)
@@ -604,7 +618,18 @@ func (s *server) hSettingsPut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "não foi possível salvar"})
 		return
 	}
+	s.integ.SetUsage(m) // os widgets dizem quais integrações precisam ser buscadas
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// integrationApps lista os apps do Runtipi para sugerir integrações já com endereço.
+func (s *server) integrationApps() ([]integrations.AppRef, string) {
+	apps, info := s.tipi.Apps()
+	out := make([]integrations.AppRef, 0, len(apps))
+	for _, a := range apps {
+		out = append(out, integrations.AppRef{ID: a.ID, Name: a.Name, Port: a.Port})
+	}
+	return out, info.InternalIP
 }
 
 // ── Papéis de parede enviados ─────────────────────────────────────
@@ -736,7 +761,9 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 	defer unsub()
 	evs, unsubEv := s.events.Subscribe() // avisos novos vão pela mesma conexão (event: notify)
 	defer unsubEv()
-	first, _ := json.Marshal(map[string]any{"snapshot": s.stats.Latest(), "history": s.stats.History()})
+	mets, unsubMet := s.integ.Subscribe() // valores das integrações (event: metrics); aba aberta = buscar
+	defer unsubMet()
+	first, _ := json.Marshal(map[string]any{"snapshot": s.stats.Latest(), "history": s.stats.History(), "metrics": s.integ.Snapshot()})
 	fmt.Fprintf(w, "retry: 3000\nevent: init\ndata: %s\n\n", first)
 	flusher.Flush()
 	keep := time.NewTicker(25 * time.Second)
@@ -751,6 +778,9 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 		case e := <-evs:
 			b, _ := json.Marshal(e)
 			fmt.Fprintf(w, "event: notify\ndata: %s\n\n", b)
+			flusher.Flush()
+		case b := <-mets:
+			fmt.Fprintf(w, "event: metrics\ndata: %s\n\n", b)
 			flusher.Flush()
 		case <-keep.C:
 			fmt.Fprint(w, ": ping\n\n")

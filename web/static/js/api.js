@@ -105,13 +105,15 @@ const real = {
   },
   deleteWallpaper: (name) => call('DELETE', `/api/wallpapers/${encodeURIComponent(name)}`),
   stats: () => call('GET', '/api/stats'),
-  // estatísticas ao vivo; os avisos novos da central chegam pela mesma conexão (event: notify)
-  streamStats(onInit, onPoint, onNotify) {
+  // estatísticas ao vivo; os avisos novos da central (event: notify) e os valores das integrações
+  // (event: metrics) chegam pela mesma conexão
+  streamStats(onInit, onPoint, onNotify, onMetrics) {
     let es, stopped = false, retry;
     const open = () => {
       es = new EventSource('/api/stats/stream');
       es.addEventListener('init', (e) => onInit(JSON.parse(e.data)));
       es.addEventListener('notify', (e) => onNotify?.(JSON.parse(e.data)));
+      es.addEventListener('metrics', (e) => onMetrics?.(JSON.parse(e.data)));
       es.onmessage = (e) => onPoint(JSON.parse(e.data));
       es.onerror = () => { es.close(); if (!stopped) retry = setTimeout(open, 4000); };
     };
@@ -121,6 +123,16 @@ const real = {
   system: () => call('GET', '/api/system'),
   statsHistory: (range) => call('GET', `/api/stats/history?${q({ range })}`),
   internet: () => call('GET', '/api/internet'),
+  metricSeries: (id, range) => call('GET', `/api/metrics/series?${q({ id, range })}`),
+  integrations: {
+    kinds: () => call('GET', '/api/integrations/kinds'),
+    list: () => call('GET', '/api/integrations'),
+    suggest: () => call('GET', '/api/integrations/suggest'),
+    add: (b) => call('POST', '/api/integrations', b),
+    update: (id, b) => call('PUT', `/api/integrations/${encodeURIComponent(id)}`, b),
+    del: (id) => call('DELETE', `/api/integrations/${encodeURIComponent(id)}`),
+    test: (b) => call('POST', '/api/integrations/test', b),
+  },
   processes: (kernel = false) => call('GET', `/api/processes${kernel ? '?kernel=1' : ''}`),
   events: {
     list: () => call('GET', '/api/events'),
@@ -342,6 +354,56 @@ function makeDemo() {
     { start: now - 86400 * 6, end: now - 86400 * 6 + 3600 * 1.5, startPct: 100, endPct: 41, minPct: 41, shutdown: 'simulado' },
   ];
   const demoKey = demoKeyConst();
+
+  // Integrações simuladas (mesmo formato da API real)
+  const R = (max, level) => ({ max, level });
+  const demoKinds = [
+    { id: 'adguard', name: 'AdGuard Home', desc: 'Consultas DNS, bloqueios e quem mais usa a rede', interval: 60,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8104', required: true }, { id: 'user', label: 'Usuário', type: 'text', help: 'O mesmo usuário do painel do AdGuard' }, { id: 'secret', label: 'Senha', type: 'secret' }],
+      metrics: [
+        { id: 'queries', name: 'Consultas DNS', kind: 'num', icon: 'globe', history: 'queries_series' }, { id: 'blocked', name: 'Bloqueadas', kind: 'num', icon: 'shield', history: 'blocked_series' },
+        { id: 'blocked_pct', name: '% bloqueado', kind: 'num', unit: '%', icon: 'shield' }, { id: 'avg_time', name: 'Tempo médio de resposta', kind: 'num', unit: 'ms', icon: 'clock', ranges: [R(50, 'ok'), R(200, 'aviso'), R(null, 'critico')] },
+        { id: 'protection', name: 'Proteção', kind: 'text', icon: 'shield' }, { id: 'protection_on', name: 'Proteção ligada (1 = sim)', kind: 'num', icon: 'shield' }, { id: 'version', name: 'Versão', kind: 'text', icon: 'info' },
+        { id: 'top_domains', name: 'Domínios mais consultados', kind: 'list', icon: 'globe' }, { id: 'top_blocked', name: 'Domínios mais bloqueados', kind: 'list', icon: 'shield' }, { id: 'top_clients', name: 'Aparelhos que mais consultam', kind: 'list', icon: 'monitor' },
+        { id: 'queries_series', name: 'Consultas por hora', kind: 'series', icon: 'chart' }, { id: 'blocked_series', name: 'Bloqueios por hora', kind: 'series', icon: 'chart' },
+      ],
+      alerts: [{ id: 'protection_off', name: 'Proteção desligada', desc: 'Avisa quando a proteção do AdGuard é desligada', metric: 'protection_on', op: '<', default: 1, level: 'aviso', fixed: true }, { id: 'down', name: 'AdGuard sem responder', desc: 'Avisa quando o AdGuard para de responder por 5 minutos', op: 'down', level: 'aviso', fixed: true }] },
+    { id: 'speedtest', name: 'Speedtest Tracker', desc: 'Velocidade da internet medida pelos testes agendados', interval: 600,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8765', required: true }, { id: 'secret', label: 'Token da API', type: 'secret', required: true, help: 'No Speedtest Tracker: menu do usuário → API Tokens → criar com a permissão “Read results”' }],
+      metrics: [
+        { id: 'download', name: 'Download', kind: 'num', unit: 'Mb/s', icon: 'download', history: 'download_series' }, { id: 'upload', name: 'Upload', kind: 'num', unit: 'Mb/s', icon: 'upload', history: 'upload_series' },
+        { id: 'ping', name: 'Ping', kind: 'num', unit: 'ms', icon: 'clock', history: 'ping_series', ranges: [R(40, 'ok'), R(100, 'aviso'), R(null, 'critico')] }, { id: 'jitter', name: 'Variação do ping (jitter)', kind: 'num', unit: 'ms', icon: 'clock' },
+        { id: 'last_test', name: 'Último teste', kind: 'num', unit: 'ts', icon: 'clock' }, { id: 'isp', name: 'Provedor', kind: 'text', icon: 'globe' }, { id: 'server', name: 'Servidor do teste', kind: 'text', icon: 'server' },
+        { id: 'download_series', name: 'Download (7 dias)', kind: 'series', unit: 'Mb/s', icon: 'chart' }, { id: 'upload_series', name: 'Upload (7 dias)', kind: 'series', unit: 'Mb/s', icon: 'chart' }, { id: 'ping_series', name: 'Ping (7 dias)', kind: 'series', unit: 'ms', icon: 'chart' },
+      ],
+      alerts: [{ id: 'slow_download', name: 'Download baixo', desc: 'Avisa quando o último teste der menos que isto', metric: 'download', op: '<', default: 100, unit: 'Mb/s', level: 'aviso' }, { id: 'high_ping', name: 'Ping alto', desc: 'Avisa quando o último teste der mais que isto', metric: 'ping', op: '>', default: 100, unit: 'ms', level: 'info' }, { id: 'down', name: 'Speedtest sem responder', desc: 'Avisa quando o Speedtest Tracker para de responder', op: 'down', level: 'info', fixed: true }] },
+  ];
+  let demoInteg = [
+    { id: 'ag1', kind: 'adguard', name: 'AdGuard Home', url: 'http://192.168.1.50:8104', user: 'admin', hasSecret: true, interval: 60, alerts: { protection_off: { on: true } } },
+    { id: 'st1', kind: 'speedtest', name: 'Speedtest Tracker', url: 'http://192.168.1.50:8765', hasSecret: true, interval: 600, alerts: { slow_download: { on: true, value: 100 } } },
+  ];
+  const hourStart = Math.floor(Date.now() / 3600e3) * 3600;
+  const qSeries = Array.from({ length: 24 }, (_, i) => { const h = new Date((hourStart - (23 - i) * 3600) * 1000).getHours(); return Math.round((h >= 8 && h <= 23 ? 900 : 180) * (0.7 + Math.random() * 0.6)); });
+  const bSeries = qSeries.map((q) => Math.round(q * (0.18 + Math.random() * 0.1)));
+  const speedPts = (base, spread) => Array.from({ length: 168 }, (_, i) => (i % 6 === 5 ? +(base + (Math.random() - 0.5) * spread).toFixed(1) : null));
+  const dlS = speedPts(290, 60), ulS = speedPts(95, 20), pgS = speedPts(10, 6);
+  const agValues = () => {
+    const queries = qSeries.reduce((s, v) => s + v, 0), blocked = bSeries.reduce((s, v) => s + v, 0);
+    return {
+      queries: { n: queries }, blocked: { n: blocked }, blocked_pct: { n: +(blocked / queries * 100).toFixed(1) }, avg_time: { n: +(12 + Math.random() * 6).toFixed(1) },
+      protection: { t: 'Ligada' }, protection_on: { n: 1 }, version: { t: 'v0.107.52' },
+      top_domains: { l: [['connectivitycheck.gstatic.com', 2210], ['api.spotify.com', 1630], ['graph.instagram.com', 1222], ['i.ytimg.com', 940], ['web.whatsapp.com', 812], ['plex.tv', 433]].map(([k, n]) => ({ k, n })) },
+      top_blocked: { l: [['doubleclick.net', 712], ['app-measurement.com', 588], ['ads.youtube.com', 421], ['graph.facebook.com', 301], ['metrics.icloud.com', 187], ['telemetry.microsoft.com', 140], ['adservice.google.com', 98], ['tracking.miui.com', 61]].map(([k, n]) => ({ k, n })) },
+      top_clients: { l: [['192.168.1.20 (celular)', 6120], ['192.168.1.31 (TV)', 4410], ['192.168.1.50 (servidor)', 2980]].map(([k, n]) => ({ k, n })) },
+      queries_series: { s: { step: 3600, start: hourStart - 23 * 3600, points: qSeries } }, blocked_series: { s: { step: 3600, start: hourStart - 23 * 3600, points: bSeries } },
+    };
+  };
+  const stValues = () => ({
+    download: { n: 287.4 }, upload: { n: 94.1 }, ping: { n: 9.8 }, jitter: { n: 1.2 }, last_test: { n: now - 1800 }, isp: { t: 'Vivo Fibra' }, server: { t: 'Claro · São Paulo' },
+    download_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: dlS } }, upload_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: ulS } }, ping_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: pgS } },
+  });
+  const demoValues = (it) => (it.kind === 'adguard' ? agValues() : stValues());
+  const demoViews = () => demoInteg.map((it) => ({ id: it.id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }));
   const nodeAt = (root, path) => {
     let n = tree[root];
     for (const p of (path || '').split('/').filter(Boolean)) { n = n?.children?.find((c) => c.name === p); }
@@ -400,10 +462,39 @@ function makeDemo() {
         ? (() => { powerCfg = { ...powerCfg, host: b.host, port: b.port, user: b.user, testedAt: now, hostSetup: powerCfg.testedAt ? powerCfg.hostSetup : 2 }; return wait({ ok: true, config: powerCfg }, 600); })()
         : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
     },
-    streamStats(onInit, onPoint) {
-      onInit({ snapshot: snap(), history: [...history] });
+    streamStats(onInit, onPoint, onNotify, onMetrics) {
+      onInit({ snapshot: snap(), history: [...history], metrics: demoViews() });
       const t = setInterval(() => onPoint(tick()), 2000);
-      return () => clearInterval(t);
+      // o AdGuard "responde" a cada 15 s na demonstração
+      const m = setInterval(() => { const ag = demoViews().find((v) => v.id === 'ag1'); if (ag) onMetrics?.(ag); }, 15000);
+      return () => { clearInterval(t); clearInterval(m); };
+    },
+    metricSeries: (id, range) => {
+      const step = range === '7d' ? 3600 : 300, n = range === '7d' ? 168 : range === '1h' ? 12 : 288;
+      const t0 = Math.floor(Date.now() / 1000 / step) * step - (n - 1) * step;
+      return wait({ range, series: { step, start: t0, points: Array.from({ length: n }, (_, i) => +(1 + Math.sin(i / 9) * 0.4 + Math.random() * 0.4).toFixed(2)) } }, 200);
+    },
+    integrations: {
+      kinds: () => wait(demoKinds, 30),
+      list: () => wait({ integrations: demoInteg, views: demoViews() }, 60),
+      suggest: () => wait([{ kind: 'adguard', name: 'AdGuard Home', url: 'http://192.168.1.50:8104', app: 'adguard' }, { kind: 'speedtest', name: 'Speedtest Tracker', url: 'http://192.168.1.50:8765', app: 'speedtest-tracker' }], 80),
+      add: (b) => {
+        const k = demoKinds.find((x) => x.id === b.kind);
+        if (!k) return Promise.reject(new Error('tipo de integração desconhecido'));
+        if (!/^https?:\/\/[^/@]+/.test(b.url || '')) return Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'));
+        const it = { id: Math.random().toString(16).slice(2, 14), kind: b.kind, name: b.name || k.name, url: b.url.replace(/\/+$/, ''), user: b.user || '', hasSecret: !!b.secret, interval: b.interval || k.interval, alerts: b.alerts || {} };
+        demoInteg.push(it);
+        return wait(it, 200);
+      },
+      update: (id, b) => {
+        const it = demoInteg.find((x) => x.id === id);
+        if (!it) return Promise.reject(new Error('integração não encontrada'));
+        Object.assign(it, { name: b.name || it.name, url: (b.url || it.url).replace(/\/+$/, ''), user: b.user ?? it.user, interval: b.interval || it.interval, alerts: b.alerts || it.alerts, hasSecret: b.secret != null ? !!b.secret : it.hasSecret });
+        return wait(it, 200);
+      },
+      del: (id) => { demoInteg = demoInteg.filter((x) => x.id !== id); return wait({ ok: true }, 120); },
+      test: (b) => (/^https?:\/\//.test(b.url || '') ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
+        : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
     },
     statsHistory: (range) => {
       const step = range === '7d' ? 3600 : 60, n = range === '7d' ? 168 : range === '1h' ? 60 : 1440;

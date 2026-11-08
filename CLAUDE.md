@@ -74,6 +74,9 @@ internal/hostcmd/           chave SSH própria + comando forçado no servidor (d
 internal/power/             quedas de energia e desligamento seguro (máquina de estados)
 internal/diskhist/          uso diário dos discos e previsão de disco cheio
 internal/logins/            aparelhos conhecidos (aviso de login novo)
+internal/secret/            AES-GCM com chave em /data/secret.key (credenciais das integrações)
+internal/integrations/      Tipos de integração (adguard.go, speedtest.go...), store cifrado, Hub (coleta
+                            só do que os widgets usam), séries em segundo plano, rotas /api/integrations
 watch.go                    bateria para o power; vigia de discos (desmontado, quente, cheio); avisos de login
 web/web.go                  serve web/static com gzip + ETag
 web/static/index.html       casca da página
@@ -89,7 +92,10 @@ web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previs�
 web/static/js/editor.js     editor de texto (CodeMirror 6 de web/static/vendor/codemirror, sob demanda)
 web/static/js/filetools.js  mapa do espaço (treemap) e arquivos duplicados
 web/static/js/appinfo.js    janela Detalhes do app (logs, uso 24 h, disponibilidade, ligar/parar, desinstalar)
-web/static/js/internet.js   widget e janela Internet (latência, quedas)
+web/static/js/internet.js   janela Internet (latência, quedas)
+web/static/js/widgets.js    Formatos, Tamanhos, Métricas da fonte BrunOS, Modelos, desenho dos widgets
+web/static/js/charts.js     gráficos SVG (linha, barras, rosca, mini-gráfico)
+web/static/js/widgetsapp.js janela Widgets (meus widgets, modelos, integrações, editor com prévia)
 tools/codemirror/           receita (npm + esbuild) que gera o bundle do CodeMirror; não roda no build
 web/static/css/app.css      base visual (adaptada do umbrelOS)
 web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)
@@ -98,7 +104,8 @@ tests/                      fixture.sh, apitest.py, smoke.sh
 Dockerfile, VERSION, .github/workflows/docker.yml
 ```
 
-Detalhes completos: `docs/projeto/arquitetura.md`.
+Detalhes completos: `docs/projeto/arquitetura.md`. Vocabulário dos widgets (Integração, Métrica,
+Formato, Tamanho, Quadro...): `CONTEXT.md` na raiz.
 
 ## Comandos do dia a dia
 

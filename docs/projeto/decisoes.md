@@ -102,3 +102,25 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     cada início (e não gravar "sem suporte" para sempre) é o que permite trocar de notebook sem mexer em
     nada. Sem suporte, o vigia não faz mais nada até reiniciar. Com suporte e um limite pedido, relê um
     arquivo a cada 10 min (alguns notebooks esquecem o limite ao reiniciar).
+31. **Widgets = Integração → Métricas → Widget com Formatos** (etapa 7, escolhas do Bruno em
+    08/11/2026; termos em `CONTEXT.md`). Cada Tipo de integração traduz a API do app em Métricas com
+    nome em pt-BR; o Widget não conhece o app, só preenche os Espaços de um Formato (Destaque, Grade,
+    Lista, Gráfico, Mídia, Atalhos) com Métricas de qualquer Fonte. Os widgets prontos são Modelos.
+    Alternativas recusadas: um catálogo fixo por app (não mistura apps num widget) e um widget de "API
+    crua" com caminho JSON (exige conhecer a API). Formatos, e não blocos livres, porque cada Formato é
+    desenhado para os 5 Tamanhos e sempre fica bonito.
+32. **Coleta híbrida das integrações** (etapa 7). O servidor só busca Métricas que algum Widget usa e só
+    enquanto há alguém conectado ao fluxo ao vivo; uma busca serve todas as abas. Gráficos usam o
+    histórico do próprio app quando ele tem (AdGuard, Speedtest). Só é coletado em segundo plano (a
+    cada 5 min) o que estiver num gráfico sem histórico próprio ou tiver um Aviso pronto ligado. Assim o
+    gasto cresce só com o que o Bruno escolhe, e com a tela fechada ele é zero.
+33. **Credenciais das integrações cifradas com chave em arquivo** (etapa 7, escolha do Bruno). AES-GCM
+    (biblioteca padrão) com chave aleatória em `/data/secret.key` (0600) e os dados em
+    `/data/integrations.json`. Protege contra vazar só o arquivo das integrações (cópia, backup
+    parcial); quem leva a pasta `/data` inteira já teria também a chave SSH do desligamento. Recusado:
+    chave derivada da senha do BrunOS, que pararia a coleta e os avisos depois de reiniciar até alguém
+    entrar. As credenciais nunca vão para o navegador (a API responde só `hasSecret`).
+34. **Fotos do Immich só em Widget** (etapa 7, escolha do Bruno). O papel de parede com fotos do Immich
+    saiu do plano; fica o formato Mídia (tamanho "prévia", foto atual guardada em `/data`). O papel de
+    parede por horário (J2) continua. O Tailscale entra por SSH restrito (`tailscale status --json` no
+    `brunos-host`), sem token da nuvem.

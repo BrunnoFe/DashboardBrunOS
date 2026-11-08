@@ -1,10 +1,11 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
-import { batteryWidgetHTML, paintBattery, batteryDialog } from './battery.js';
+import { paintBattery, batteryDialog } from './battery.js';
+import { SIZES, BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId } from './widgets.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML, driveTempHelp } from './disks.js';
-import { internetWidgetHTML, paintInternet, internetDialog } from './internet.js';
+import { internetDialog } from './internet.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -15,7 +16,7 @@ const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
   wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
-  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
+  widgets: ['files', 'storage', 'system'], widgets2: null, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
@@ -43,6 +44,7 @@ function openUrl(href) { const l = document.createElement('a'); l.href = href; l
 const S = {
   pub: {}, me: null, settings: structuredClone(DEFAULTS), apps: [], tipi: {}, docker: false, dockerActions: false,
   system: null, snapshot: null, history: [], roots: [], wallpapers: [], localWallpaper: null, stopStream: null,
+  kinds: [], integrations: [], metrics: {}, internet: null,
 };
 const set = () => S.settings;
 const saveNow = async () => { try { await api.saveSettings(S.settings); } catch (e) { toastError(e, 'Não foi possível salvar as preferências'); } };
@@ -211,62 +213,232 @@ function greeting() {
 }
 const renderGreeting = () => { $('#greeting').textContent = greeting(); };
 
-/* ── Widgets ───────────────────────────────────────────────────── */
-const WIDGETS = {
-  files: { label: 'Arquivos', title: 'Atalhos de pastas' },
-  storage: { label: 'Armazenamento', title: 'Espaço em disco' },
-  system: { label: 'Sistema', title: 'CPU, memória e temperatura' },
-  network: { label: 'Rede', title: 'Download e upload' },
-  battery: { label: 'Bateria', title: 'Carga, tomada, autonomia e saúde da bateria' },
-  internet: { label: 'Internet', title: 'Latência e quedas da internet' },
-};
-const MAX_WIDGETS = 6;
+/* ── Widgets (etapa 7; termos em CONTEXT.md) ───────────────────── */
 function favorites() {
   const fav = set().favorites.filter((f) => S.roots.some((r) => r.id === f.root));
-  if (fav.length) return fav.slice(0, 4);
-  return S.roots.slice(0, 4).map((r) => ({ root: r.id, path: '', name: r.name }));
+  if (fav.length) return fav;
+  return S.roots.map((r) => ({ root: r.id, path: '', name: r.name }));
 }
 function storageTotals() {
   const disks = S.snapshot?.disks || [];
   return disks.reduce((acc, d) => ({ used: acc.used + d.used, total: acc.total + d.total }), { used: 0, total: 0 });
 }
-function renderWidgets() {
-  const row = $('#widgets');
-  const ws = set().widgets.filter((w) => WIDGETS[w]);
-  row.style.display = ws.length ? '' : 'none';
-  row.innerHTML = ws.map((w, i) => {
-    let body = '';
-    if (w === 'files') {
-      const fav = favorites();
-      body = `<div class="widget"><div class="w-files">${fav.length ? fav.map((f) => `<button class="cell cell-btn" data-fav-root="${esc(f.root)}" data-fav-path="${esc(f.path)}" title="${esc(f.name)}">${folderSVG()}<span>${esc(f.name)}</span></button>`).join('') : '<span class="w-empty">Nenhuma pasta disponível</span>'}</div></div>`;
-    } else if (w === 'storage') {
-      body = `<button class="widget" data-action="live"><span class="w-caption">Armazenamento</span>
-        <span class="w-value"><span data-bind="storageUsed">—</span><span class="w-unit" data-bind="storageTotal"></span></span>
-        <span class="w-sub" data-bind="storageFree"></span><span class="track white"><i data-bind-w="storage"></i></span></button>`;
-    } else if (w === 'system') {
-      body = `<button class="widget" data-action="live"><span class="w-stats">
-        <span class="cell">${svg('cpu')}<span class="k">CPU</span><span class="v" data-bind="cpu">—</span></span>
-        <span class="cell">${svg('memory')}<span class="k">Memória</span><span class="v" data-bind="memShort">—</span></span>
-        <span class="cell">${svg('temp')}<span class="k">Temp.</span><span class="v" data-bind="temp">—</span></span></span></button>`;
-    } else if (w === 'network') {
-      body = `<button class="widget" data-action="live"><span class="w-net">
-        <span class="cell"><span class="k">${svg('download')} Download</span><span class="v" data-bind="rx">—</span></span>
-        <span class="cell"><span class="k">${svg('upload')} Upload</span><span class="v" data-bind="tx">—</span></span></span></button>`;
-    } else if (w === 'battery') {
-      body = batteryWidgetHTML();
-    } else if (w === 'internet') {
-      body = internetWidgetHTML();
-    }
-    return `<div class="widget-wrap" style="--i:${i}">${body}<div class="widget-label">${WIDGETS[w].label}</div></div>`;
-  }).join('');
-  bindStats();
-  if (ws.includes('internet')) refreshInternet();
+// preferência widgets2 = { v, areas: { página: [ids] }, items: { id: widget } }; a antiga `widgets` vira Modelos
+function W2() {
+  const st = set();
+  if (!st.widgets2 || typeof st.widgets2 !== 'object' || !st.widgets2.items) { st.widgets2 = migrate(st.widgets); save(); }
+  st.widgets2.areas ||= {};
+  return st.widgets2;
 }
-// widget Internet: o servidor mede a cada minuto; aqui só busca o resultado
-async function refreshInternet() {
-  if (!set().widgets.includes('internet')) return;
+const widgetById = (id) => { const it = W2().items[id]; return it ? normalize(it) : null; };
+function widgetsOn(page) {
+  const w = W2();
+  return (w.areas[page] || []).filter((id) => w.items[id]).map((id) => [id, normalize(w.items[id])]);
+}
+const widgetPages = () => Object.keys(W2().areas).map(Number).filter((p) => widgetsOn(p).length).sort((a, b) => a - b);
+function pageOfWidget(id) { for (const [p, ids] of Object.entries(W2().areas)) if (ids.includes(id)) return +p; return 0; }
+function removeFromAreas(id) { const w = W2(); for (const p of Object.keys(w.areas)) { w.areas[p] = w.areas[p].filter((x) => x !== id); if (!w.areas[p].length) delete w.areas[p]; } }
+function putWidget(id, item, page, beforeId) {
+  const w = W2();
+  w.items[id] = item;
+  removeFromAreas(id);
+  const list = (w.areas[page] ||= []);
+  const at = beforeId ? list.indexOf(beforeId) : -1;
+  list.splice(at < 0 ? list.length : at, 0, id);
+}
+function deleteWidget(id) { removeFromAreas(id); delete W2().items[id]; save(); renderApps(); }
+
+// Definições das Métricas: fonte BrunOS + cada Integração (nomes "Integração › Métrica")
+let defsCache = null;
+function metricDefs() {
+  if (defsCache) return defsCache;
+  const m = new Map(BRUNOS_METRICS.map((d) => [d.id, { ...d, chartable: !!d.hist }]));
+  for (const it of S.integrations || []) {
+    const k = (S.kinds || []).find((x) => x.id === it.kind);
+    for (const d of k?.metrics || []) {
+      m.set(`${it.id}.${d.id}`, { ...d, id: `${it.id}.${d.id}`, local: d.id, name: `${it.name} › ${d.name}`, source: it.name, iid: it.id, kindId: it.kind, chartable: d.kind === 'num' });
+    }
+  }
+  return (defsCache = m);
+}
+const resetDefs = () => { defsCache = null; };
+
+// Séries para gráficos: BrunOS (histórico do servidor) e coleta em segundo plano das integrações
+const seriesCache = new Map(); // chave → { pts, at, busy }
+function cachedSeries(key, maxAge, load) {
+  const c = seriesCache.get(key);
+  if (!c || (!c.busy && Date.now() - c.at > maxAge)) {
+    const next = { pts: c?.pts || null, at: Date.now(), busy: true };
+    seriesCache.set(key, next);
+    load().then((pts) => { next.pts = pts; }).catch(() => { /* tenta de novo depois */ }).finally(() => { next.busy = false; next.at = Date.now(); paintWidgets(); emit('widgets:data'); });
+  }
+  return seriesCache.get(key);
+}
+const RANGE_S = { live: 300, '1h': 3600, '24h': 86400, '7d': 7 * 86400 };
+function downsample(pts, max = 240) {
+  if (pts.length <= max) return pts;
+  const out = [], step = pts.length / max;
+  for (let i = 0; i < max; i++) {
+    const part = pts.slice(Math.floor(i * step), Math.floor((i + 1) * step)), ok = part.filter((p) => p.v != null);
+    out.push({ t: part[0].t, v: ok.length ? ok.reduce((s, p) => s + p.v, 0) / ok.length : null });
+  }
+  return out;
+}
+const seriesPts = (sd) => (sd?.points || []).map((v, i) => ({ t: sd.start + i * sd.step, v })).filter((p) => p.v != null);
+const integValue = (id) => { const i = id.indexOf('.'); return S.metrics[id.slice(0, i)]?.values?.[id.slice(i + 1)]; };
+function widgetCtx() {
+  const defs = metricDefs();
+  const S2 = { snapshot: S.snapshot, internet: S.internet, apps: S.apps };
+  const netPts = () => (S.internet?.points || []).map((p) => ({ t: p.t, v: p.ms >= 0 ? p.ms : null }));
+  const ctx = {
+    def: (id) => defs.get(id),
+    value: (id) => (id.startsWith('brunos.') ? brunosValue(id, S2) : integValue(id)),
+    err: (id) => (id.startsWith('brunos.') ? '' : S.metrics[id.split('.')[0]]?.err || ''),
+    favorites,
+    maxGap: (id) => (id === 'brunos.net_latency' ? 180 : undefined),
+    spark(id) {
+      const d = defs.get(id); if (!d) return null;
+      if (d.hist === 'net') return netPts().slice(-120);
+      if (d.hist) return S.history.map((p) => ({ t: p.t, v: p[d.hist] ?? null }));
+      if (d.kind === 'series') return seriesPts(ctx.value(id)?.s).slice(-48);
+      if (d.history) return seriesPts(integValue(`${d.iid}.${d.history}`)?.s).slice(-48);
+      if (d.iid) return cachedSeries(`bg:${id}:24h`, 300e3, async () => seriesPts((await api.metricSeries(id, '24h')).series)).pts;
+      return null;
+    },
+    series(id, range) {
+      const d = defs.get(id); if (!d) return null;
+      const since = Date.now() / 1000 - (RANGE_S[range] || 86400);
+      const crop = (pts) => downsample((pts || []).filter((p) => p.t >= since));
+      if (d.hist === 'net') return crop(netPts());
+      if (d.hist) {
+        if (range === 'live') return S.history.map((p) => ({ t: p.t, v: p[d.hist] ?? null }));
+        const c = cachedSeries(`stats:${range}`, 60e3, async () => (await api.statsHistory(range)).points || []);
+        return c.pts ? crop(c.pts.map((p) => ({ t: p.t, v: d.hist === 'temp' && !p.temp ? null : p[d.hist] }))) : null;
+      }
+      if (d.kind === 'series') return crop(seriesPts(ctx.value(id)?.s));
+      if (d.history) return crop(seriesPts(integValue(`${d.iid}.${d.history}`)?.s));
+      if (d.iid) { const r = range === 'live' ? '1h' : range; return cachedSeries(`bg:${id}:${r}`, 300e3, async () => seriesPts((await api.metricSeries(id, r)).series)).pts; }
+      return null;
+    },
+    loading: (item) => item.slots.some((s) => [...seriesCache.entries()].some(([k, c]) => c.busy && k.includes(s.metric.startsWith('brunos.') ? 'stats:' : s.metric))),
+  };
+  return ctx;
+}
+
+// Área de widgets: colunas calculadas para centralizar (Faixa ocupa a largura toda)
+function areaCols(list) {
+  const mobile = innerWidth < 640, wu = mobile ? Math.min(240, innerWidth * 0.44) : 240, gap = mobile ? 10 : 28;
+  const fit = clamp(Math.floor((Math.min(innerWidth - 32, 1640) + gap) / (wu + gap)), 1, 6);
+  const need = list.reduce((s, [, it]) => s + (SIZES[it.size].c || fit), 0);
+  const wide = list.some(([, it]) => SIZES[it.size].c === 2);
+  return clamp(Math.max(need, wide ? 2 : 1), 1, fit);
+}
+let wEditing = false;
+function areaHTML(page, list, cls = 'widget-area') {
+  const ctx = widgetCtx();
+  return `<div class="${cls} ${wEditing ? 'editing' : ''}" data-area="${page}" style="--cols:${areaCols(list)}">${list.map(([id, it], i) => widgetHTML(it, ctx, { id, i, editing: wEditing })).join('')}${wEditing ? `<button class="w-add" data-wadd="${page}">${svg('plus')}<span>Adicionar widget</span></button>` : ''}</div>`;
+}
+const renderWidgets = () => renderApps(); // os widgets moram nas páginas da tela inicial
+// Atualiza só o miolo de cada widget, e só quando o HTML muda (aba escondida: nada)
+function paintWidgets(root = document) {
+  if (document.hidden) return;
+  const wraps = $$('.widget-wrap[data-wid]', root);
+  if (!wraps.length) return;
+  const ctx = widgetCtx();
+  for (const wrap of wraps) {
+    const it = widgetById(wrap.dataset.wid); if (!it) continue;
+    const box = wrap.firstElementChild, h = innerHTML(it, ctx);
+    if (box._h !== h) { box.innerHTML = h; box._h = h; }
+  }
+}
+// widgets com métricas de internet: o servidor mede a cada minuto; aqui só busca o resultado
+const usesInternet = () => Object.values(W2().items).some((it) => (it.slots || []).some((s) => s.metric?.startsWith('brunos.net_')));
+async function refreshInternet(force = false) {
+  if (!force && !usesInternet()) return;
+  if (force && S.internet) return;
   try { S.internet = await api.internet(); } catch { return; }
-  paintInternet(document, S.internet);
+  paintWidgets(); emit('widgets:data');
+}
+function openWindow(t) {
+  if (t === 'live') liveUsageDialog();
+  else if (t === 'battery') openBattery();
+  else if (t === 'internet') internetDialog();
+  else if (t === 'power') openPower();
+  else if (t === 'files') openSheet('files', $('[data-sys="files"]'));
+  else if (t === 'settings') openSheet('settings', $('[data-sys="settings"]'));
+  else if (t === 'widgets') openWidgets();
+}
+function widgetClick(id) {
+  const it = widgetById(id); if (!it) return;
+  const c = !it.click?.kind || it.click.kind === 'auto' ? autoClick(it) : it.click;
+  if (c.kind === 'window') openWindow(c.target);
+  else if (c.kind === 'app') { const ig = (S.integrations || []).find((x) => x.id === c.target); if (ig) openUrl(ig.url); }
+  else if (c.kind === 'url' && c.target) openUrl(normalizeUrl(c.target));
+}
+function widgetMenu(id, x, y) {
+  const it = widgetById(id); if (!it) return;
+  contextMenu(x, y, [
+    { icon: 'edit', label: 'Editar…', run: () => openWidgets({ edit: id }) },
+    '-',
+    ...Object.entries(SIZES).map(([k, s]) => ({ icon: it.size === k ? 'check' : 'grid', label: `Tamanho: ${s.label}`, run: () => { W2().items[id].size = k; save(); renderApps(); } })),
+    '-',
+    { icon: 'layers', label: 'Mover para outra página…', run: () => moveWidgetDialog(id) },
+    { icon: 'sort', label: 'Organizar widgets', run: () => setWidgetEditing(true) },
+    { icon: 'copy', label: 'Duplicar', run: () => { const n = newId(); putWidget(n, structuredClone(W2().items[id]), pageOfWidget(id)); save(); renderApps(); } },
+    { icon: 'trash', label: 'Remover', danger: true, run: () => deleteWidget(id) },
+  ]);
+}
+function moveWidgetDialog(id) {
+  const total = Math.max($$('#app-grid .app-page').length, ...widgetPages().map((p) => p + 1), 1);
+  const cur = pageOfWidget(id);
+  const d = openDialog(`<h2>${svg('layers')}Mover para a página</h2><div class="w-pages">${Array.from({ length: total }, (_, i) => `<button class="pill-btn ${i === cur ? 'primary' : ''}" data-pg="${i}">Página ${i + 1}</button>`).join('')}<button class="pill-btn" data-pg="${total}">${svg('plus')}Nova página</button></div>`, { width: 420 });
+  d.el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pg]'); if (!b) return;
+    putWidget(id, W2().items[id], +b.dataset.pg); save(); d.close(); renderApps(); goPage(+b.dataset.pg);
+  });
+}
+function setWidgetEditing(on) {
+  wEditing = on;
+  document.body.classList.toggle('w-editing', on);
+  $('#w-done')?.remove();
+  if (on) {
+    const b = html(`<button id="w-done" class="pill-btn primary w-done">${svg('check')}Concluir</button>`);
+    b.onclick = () => setWidgetEditing(false);
+    document.body.append(b);
+  }
+  renderApps();
+}
+function openWidgets(opts = {}) {
+  if (currentSheet === 'widgets') { import('./widgetsapp.js').then((m) => m.focusWidgets?.(opts)); return; }
+  openSheet('widgets', $('[data-sys="widgets"]'), opts);
+}
+// O que a janela Widgets precisa do resto da interface
+const widgetsCtx = {
+  get w2() { return W2(); },
+  get integrations() { return S.integrations || []; },
+  set integrations(v) { S.integrations = v; resetDefs(); },
+  get kinds() { return S.kinds || []; },
+  get metrics() { return S.metrics; },
+  defs: () => metricDefs(),
+  ctx: () => widgetCtx(),
+  pages: () => Math.max($$('#app-grid .app-page').length, ...widgetPages().map((p) => p + 1), 1),
+  currentPage: () => page,
+  save: () => { save(); renderApps(); },
+  saveNow: () => saveNow(),
+  put: putWidget,
+  remove: (id) => deleteWidget(id),
+  newId,
+  refreshInternet,
+  reloadIntegrations: () => loadIntegrations(),
+  organize: () => { closeSheet(); setTimeout(() => setWidgetEditing(true), 250); },
+};
+async function loadIntegrations() {
+  try {
+    const [kinds, list] = await Promise.all([api.integrations.kinds(), api.integrations.list()]);
+    S.kinds = kinds; S.integrations = list.integrations || [];
+    for (const v of list.views || []) S.metrics[v.id] = v;
+    resetDefs(); paintWidgets();
+  } catch { /* sem integrações: só os widgets do BrunOS */ }
 }
 
 /* Valores ao vivo: qualquer elemento com data-bind / data-bind-w é atualizado a cada amostra */
@@ -305,23 +477,44 @@ function renderApps() {
   document.documentElement.style.setProperty('--app-icon', Math.min(set().iconSize, Math.round(appW * 0.68)) + 'px');
   const items = homeItems();
   grid.classList.remove('paged');
-  if (!items.length) {
-    grid.innerHTML = `<div class="grid-empty">${S.tipi.found === false ? 'Não encontrei a pasta do Runtipi. Confira a montagem <code>/runtipi</code> no docker-compose.' : 'Nenhum app ainda.'}<br><button class="pill-btn" data-action="add-link">${svg('plus')}Adicionar atalho</button></div>`;
+  // Área de widgets fora das páginas (uma página só ou páginas desligadas): todos os widgets no topo
+  const showRow = (list) => {
+    $('#widgets').outerHTML = list.length || wEditing ? areaHTML(0, list, 'widget-row').replace('class="widget-row', 'id="widgets" class="widget-row') : '<div id="widgets" class="widget-row" style="display:none"></div>';
+  };
+  const allWidgets = () => widgetPages().flatMap((p) => widgetsOn(p));
+  if (!items.length || !set().appPages) {
+    showRow(allWidgets());
+    grid.innerHTML = items.length ? items.map(itemHTML).join('') : `<div class="grid-empty">${S.tipi.found === false ? 'Não encontrei a pasta do Runtipi. Confira a montagem <code>/runtipi</code> no docker-compose.' : 'Nenhum app ainda.'}<br><button class="pill-btn" data-action="add-link">${svg('plus')}Adicionar atalho</button></div>`;
+    paintWidgets();
     return;
   }
-  // Páginas: quantos ícones cabem na tela (colunas × linhas abaixo dos widgets)
-  const per = perPage(grid, appW);
-  if (!set().appPages || items.length <= per) {
+  // Páginas: quantos ícones cabem na tela (colunas × linhas abaixo da área de widgets de cada página)
+  const wPages = widgetPages(), lastArea = wPages.length ? wPages[wPages.length - 1] : -1;
+  showRow(widgetsOn(0));
+  if (lastArea <= 0 && items.length <= perPage(grid, appW)) {
     grid.innerHTML = items.map(itemHTML).join('');
+    paintWidgets();
     return;
   }
-  const pages = [];
-  for (let i = 0; i < items.length; i += per) pages.push(items.slice(i, i + per));
-  page = clamp(page, 0, pages.length - 1);
+  $('#widgets').outerHTML = '<div id="widgets" class="widget-row" style="display:none"></div>';
   grid.classList.add('paged');
-  grid.innerHTML = `<div class="pages-track">${pages.map((p, pi) => `<div class="app-page" role="list" aria-label="Página ${pi + 1} de ${pages.length}">${p.map((it, i) => itemHTML(it, pi * per + i)).join('')}</div>`).join('')}</div>
-    <div class="page-dots">${pages.map((_, i) => `<button class="${i === page ? 'on' : ''}" data-page="${i}" aria-label="Página ${i + 1}"></button>`).join('')}</div>`;
+  grid.innerHTML = '<div class="pages-track"></div><div class="page-dots"></div>';
   const track = $('.pages-track', grid);
+  let k = 0, p = 0;
+  while ((k < items.length || p <= lastArea || (wEditing && p === 0)) && p < 60) {
+    const list = widgetsOn(p);
+    const pg = html(`<div class="app-page" aria-label="Página ${p + 1}">${list.length || wEditing ? areaHTML(p, list) : ''}<div class="page-apps" role="list"></div></div>`);
+    track.append(pg);
+    const per = pagePer(pg, appW, !!list.length);
+    const slice = items.slice(k, k + per);
+    $('.page-apps', pg).innerHTML = slice.map((it, i) => itemHTML(it, k + i)).join('');
+    k += slice.length; p++;
+  }
+  const total = $$('.app-page', track).length;
+  $$('.app-page', track).forEach((el, i) => el.setAttribute('aria-label', `Página ${i + 1} de ${total}`));
+  page = clamp(page, 0, total - 1);
+  $('.page-dots', grid).innerHTML = Array.from({ length: total }, (_, i) => `<button class="${i === page ? 'on' : ''}" data-page="${i}" aria-label="Página ${i + 1}"></button>`).join('');
+  paintWidgets();
   track.scrollLeft = page * track.clientWidth;
   track.addEventListener('scroll', debounce(() => {
     page = Math.round(track.scrollLeft / track.clientWidth);
@@ -369,8 +562,18 @@ function perPage(grid, appW) {
   const rowH = icon + 60; // ícone + nome + espaçamentos
   const desk = $('#desktop');
   const top = grid.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
-  const rows = Math.max(2, Math.floor((innerHeight - top - 150 - 26) / rowH)); // 150 = dock e pesquisa; 26 = pontinhos
+  // com widgets em cima, aceita uma fileira só (o resto vai para a próxima página)
+  const rows = Math.max(widgetsOn(0).length ? 1 : 2, Math.floor((innerHeight - top - 150 - 26) / rowH)); // 150 = dock e pesquisa; 26 = pontinhos
   return cols * rows;
+}
+// Quantos ícones cabem numa página que já tem a sua área de widgets desenhada
+function pagePer(pg, appW, hasArea) {
+  const cols = Math.max(1, Math.floor(Math.min(innerWidth - 32, appW * 8) / appW));
+  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
+  const desk = $('#desktop'), apps = $('.page-apps', pg);
+  const top = apps.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
+  const rows = Math.floor((innerHeight - top - 150 - 26) / (icon + 60));
+  return cols * Math.max(hasArea ? 0 : 2, rows);
 }
 function goPage(n) {
   const track = $('#app-grid .pages-track'); if (!track) return false;
@@ -590,6 +793,7 @@ const SYS = {
   runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => openUrl(runtipiBase()) },
   store: { label: 'Loja de apps', glyph: 'bag', tile: 'linear-gradient(160deg,#5fd0ff 0%,#3a7bff 48%,#5b3df0 100%)', run: () => openUrl(`${runtipiBase()}/app-store`) },
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
+  widgets: { label: 'Widgets', glyph: 'grid', tile: 'linear-gradient(160deg,#ffd36e 0%,#ff9f43 50%,#f0643c 100%)', run: (el) => openSheet('widgets', el) },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
 };
 const DOCK = { base: 50, zoom: 80, range: 150 };
@@ -664,11 +868,15 @@ const markDockOpen = () => $$('.dock-item').forEach((el) => el.classList.toggle(
 let currentSheet = null, sheetCleanup = null;
 export function openSheet(kind, originEl, opts = {}) {
   const host = $('#sheet-host');
-  if (currentSheet === kind) { if (kind === 'files' && opts.root) import('./files.js').then((m) => m.navigate(opts)); return; }
+  if (currentSheet === kind) {
+    if (kind === 'files' && opts.root) import('./files.js').then((m) => m.navigate(opts));
+    if (kind === 'widgets') import('./widgetsapp.js').then((m) => m.focusWidgets(opts));
+    return;
+  }
   sheetCleanup?.(); sheetCleanup = null;
   host.innerHTML = '';
   const backdrop = html('<div class="sheet-backdrop"></div>');
-  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${kind === 'files' ? 'Arquivos' : 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
+  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${{ files: 'Arquivos', widgets: 'Widgets' }[kind] || 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
   if (originEl) {
     const r = originEl.getBoundingClientRect(), w = Math.min(1100, innerWidth - 32), left = (innerWidth - w) / 2;
     sheet.style.setProperty('--origin', `${r.left + r.width / 2 - left}px ${innerHeight - 20}px`);
@@ -683,6 +891,10 @@ export function openSheet(kind, originEl, opts = {}) {
   if (kind === 'files') {
     body.innerHTML = '<div class="sheet-loading"></div>';
     import('./files.js').then((m) => { if (currentSheet === 'files') sheetCleanup = m.mountFiles(body, { ...opts, ctx: filesCtx }); });
+  } else if (kind === 'widgets') {
+    body.innerHTML = '<div class="sheet-loading"></div>';
+    import('./widgetsapp.js').then((m) => { if (currentSheet === 'widgets') sheetCleanup = m.mountWidgets(body, { ...opts, ctx: widgetsCtx }); })
+      .catch((e) => toastError(e, 'Não deu para abrir os widgets'));
   } else renderSettings(body);
 }
 export function closeSheet() {
@@ -760,7 +972,7 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip" title="Cor atual"><i></i></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'Ícones da tela inicial', ctrl: range('iconSize', 48, 88, 'px') },
-    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: `Escolha e ordene clicando (até ${MAX_WIDGETS})`, ctrl: `<div class="chips">${Object.entries(WIDGETS).map(([k, w]) => `<button class="chip ${st.widgets.includes(k) ? 'on' : ''}" data-widget="${k}" title="${w.title}">${st.widgets.includes(k) ? `<b class="chip-n">${st.widgets.indexOf(k) + 1}</b>` : ''}${w.label}</button>`).join('')}</div>` },
+    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets e as integrações com os apps na janela Widgets', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
     { group: 'Aparência', cat: 'look', icon: 'sparkles', title: 'Reduzir animações', desc: 'Desliga a ampliação do dock e as transições', ctrl: sw('reduceMotion') },
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelos ícones Runtipi e Loja de apps do dock. Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
@@ -859,17 +1071,13 @@ function wireSettings(body) {
     else if ((el = q('[data-accent]'))) { st.accentMode = el.dataset.accent; save(); applyBrand(); redraw(); }
     else if ((el = q('[data-hue]'))) { st.manualHue = +el.dataset.hue; save(); applyBrand(); redraw(); }
     else if ((el = q('[data-toggle]'))) { const k = el.dataset.toggle; st[k] = !st[k]; save(); applyPrefs(); redraw(); }
-    else if ((el = q('[data-widget]'))) {
-      const k = el.dataset.widget;
-      st.widgets = st.widgets.includes(k) ? st.widgets.filter((w) => w !== k) : [...st.widgets, k].slice(-MAX_WIDGETS);
-      save(); renderWidgets(); redraw();
-    }
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
     else if ((el = q('[data-act]'))) {
       const a = el.dataset.act;
       if (a === 'live') liveUsageDialog();
+      else if (a === 'widgets') openWidgets();
       else if (a === 'logout') logout();
       else if (a === 'device') deviceDialog();
       else if (a === 'power') openPower();
@@ -1155,6 +1363,9 @@ function commandPalette() {
   const actions = [
     { icon: 'folder', label: 'Abrir Arquivos', run: () => openSheet('files', $('[data-sys="files"]')) },
     { icon: 'sliders', label: 'Abrir Configurações', run: () => openSheet('settings', $('[data-sys="settings"]')) },
+    { icon: 'grid', label: 'Abrir Widgets (criar e editar)', run: () => openWidgets() },
+    { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },
+    { icon: 'sort', label: 'Organizar widgets', run: () => setWidgetEditing(true) },
     { icon: 'activity', label: 'Uso ao vivo', run: () => liveUsageDialog() },
     { icon: 'info', label: 'Informações do dispositivo', run: () => deviceDialog() },
     { icon: 'bell', label: 'Notificações', run: () => toggleNotifications() },
@@ -1275,6 +1486,7 @@ async function logout() {
 function lock() {
   dialogs.slice().forEach((c) => c());
   closeSheet(); closeMenu(); closePanel(); paintBanner(null);
+  if (wEditing) { wEditing = false; document.body.classList.remove('w-editing'); $('#w-done')?.remove(); }
   S.stopStream?.(); S.stopStream = null;
   document.body.classList.add('is-locked');
   renderLogin('login');
@@ -1295,16 +1507,25 @@ async function enterDesktop(animate) {
   S.me = me; S.system = system; S.roots = roots; S.wallpapers = wallpapers;
   S.settings = { ...structuredClone(DEFAULTS), ...settings };
   if (system) { S.tipi = system.runtipi || {}; S.docker = system.docker; S.dockerActions = system.dockerActions; S.terminal = system.terminal !== false; }
+  W2(); // converte os widgets da 0.8.x, se for a primeira vez
+  await loadIntegrations();
   applyPrefs();
   setWallpaper(set().wallpaper, { instant: !animate });
   renderDock();
   await loadApps();
+  refreshInternet();
   S.stopStream?.();
   S.stopStream = api.streamStats(
     // init chega ao conectar e a cada reconexão: relê avisos e a contagem para não perder nada
-    (d) => { S.snapshot = d.snapshot; S.history = d.history || []; bindStats(); emit('stats'); refreshNotifications(); refreshPowerBanner(); },
-    (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); emit('stats'); },
+    (d) => {
+      S.snapshot = d.snapshot; S.history = d.history || [];
+      for (const v of d.metrics || []) S.metrics[v.id] = v;
+      bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner();
+    },
+    (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); paintWidgets(); emit('stats'); },
     (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
+    // valores novos de uma integração (o servidor só manda quando busca)
+    (m) => { if (m.removed) delete S.metrics[m.id]; else S.metrics[m.id] = m; paintWidgets(); emit('metrics'); },
   );
   // estado dos apps (bolinhas) atualizado a cada minuto, junto com o monitor do servidor
   clearInterval(S.appsTimer);
@@ -1339,23 +1560,76 @@ document.addEventListener('keydown', (e) => {
     else if (notificationsOpen()) closePanel();
     else if (dialogs.length) dialogs[dialogs.length - 1]();
     else if (currentSheet) closeSheet();
+    else if (wEditing) setWidgetEditing(false);
   }
 });
 $('#search-pill').addEventListener('click', commandPalette);
 $('#desktop').addEventListener('click', (e) => {
-  if (e.target.closest('[data-action="live"]')) liveUsageDialog();
-  if (e.target.closest('[data-action="battery"]')) openBattery();
-  if (e.target.closest('[data-action="internet"]')) internetDialog();
+  const rm = e.target.closest('[data-wremove]'); if (rm) { deleteWidget(rm.dataset.wremove); return; }
+  const add = e.target.closest('[data-wadd]'); if (add) { openWidgets({ add: +add.dataset.wadd }); return; }
   const fav = e.target.closest('[data-fav-root]');
-  if (fav) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath });
+  if (fav) { if (!wEditing) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath }); return; }
+  const w = e.target.closest('.widget-wrap[data-wid] > .widget');
+  if (w) { if (wEditing) openWidgets({ edit: w.parentElement.dataset.wid }); else widgetClick(w.parentElement.dataset.wid); }
 });
+// segurar o dedo num widget (celular) abre o mesmo menu do botão direito
+(() => {
+  let timer = 0;
+  $('#desktop').addEventListener('touchstart', (e) => {
+    const w = e.target.closest('.widget-wrap[data-wid]'); if (!w || wEditing) return;
+    const t = e.touches[0];
+    timer = setTimeout(() => { timer = 0; widgetMenu(w.dataset.wid, t.clientX, t.clientY); }, 550);
+  }, { passive: true });
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  $('#desktop').addEventListener('touchend', cancel);
+  $('#desktop').addEventListener('touchmove', cancel, { passive: true });
+})();
+// Modo "Organizar widgets": arrastar muda a ordem (e a página, soltando na área de outra página)
+(() => {
+  const desk = $('#desktop');
+  let dragId = null, edgeTimer = 0;
+  const clear = () => $$('.w-drop-before,.w-drop-area', desk).forEach((x) => x.classList.remove('w-drop-before', 'w-drop-area'));
+  desk.addEventListener('dragstart', (e) => {
+    const w = e.target.closest?.('.widget-wrap[data-wid]'); if (!w || !wEditing) return;
+    dragId = w.dataset.wid; w.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/x-brunos-widget', dragId);
+  });
+  desk.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    clear();
+    const w = e.target.closest('.widget-wrap[data-wid]'), area = e.target.closest('[data-area]');
+    if (w && w.dataset.wid !== dragId) w.classList.add('w-drop-before');
+    else if (area) area.classList.add('w-drop-area');
+    const grid = $('#app-grid');
+    if (grid.classList.contains('paged')) {
+      const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0;
+      if (edge && !edgeTimer) edgeTimer = setTimeout(() => { edgeTimer = 0; goPage(page + edge); }, 650);
+      if (!edge) { clearTimeout(edgeTimer); edgeTimer = 0; }
+    }
+  });
+  desk.addEventListener('drop', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const id = dragId, w = e.target.closest('.widget-wrap[data-wid]'), area = e.target.closest('[data-area]');
+    dragId = null; clear();
+    if (!area) { renderApps(); return; }
+    putWidget(id, W2().items[id], +area.dataset.area, w && w.dataset.wid !== id ? w.dataset.wid : null);
+    save(); renderApps();
+  });
+  desk.addEventListener('dragend', () => { dragId = null; clearTimeout(edgeTimer); edgeTimer = 0; clear(); $$('.widget-wrap.dragging', desk).forEach((x) => x.classList.remove('dragging')); });
+})();
 $('#desktop').addEventListener('contextmenu', (e) => {
+  const w = e.target.closest('.widget-wrap[data-wid]');
+  if (w) { e.preventDefault(); widgetMenu(w.dataset.wid, e.clientX, e.clientY); return; }
   if (e.target.closest('.app, input, a')) return;
   e.preventDefault();
   contextMenu(e.clientX, e.clientY, [
     { icon: 'image', label: 'Trocar papel de parede…', run: () => { settingsTab = 'look'; openSheet('settings', $('[data-sys="settings"]')); } },
     { icon: 'upload', label: 'Enviar papel de parede…', run: () => $('#wp-file').click() },
-    { icon: 'grid', label: 'Escolher widgets…', run: () => { settingsTab = 'look'; settingsQuery = 'widgets'; openSheet('settings', $('[data-sys="settings"]')); setTimeout(() => { settingsQuery = ''; }, 0); } },
+    { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },
+    { icon: 'sort', label: wEditing ? 'Concluir organização dos widgets' : 'Organizar widgets', run: () => setWidgetEditing(!wEditing) },
     { icon: 'link', label: 'Novo atalho…', run: () => linkDialog() },
     { icon: 'refresh', label: 'Atualizar apps', run: () => loadApps() },
     '-',
