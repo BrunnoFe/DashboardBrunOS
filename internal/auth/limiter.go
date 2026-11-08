@@ -41,7 +41,8 @@ func (l *limiter) blocked(ip string) time.Duration {
 	return 0
 }
 
-func (l *limiter) fail(ip string) {
+// fail conta uma senha errada. Devolve o tempo de bloqueio se este erro bloqueou o IP (senão 0).
+func (l *limiter) fail(ip string) (lock time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
@@ -53,7 +54,7 @@ func (l *limiter) fail(ip string) {
 	a.fails++
 	a.last = now
 	if a.fails >= maxFails {
-		lock := baseLock << a.strikes
+		lock = baseLock << a.strikes
 		if lock > maxLock || lock <= 0 {
 			lock = maxLock
 		}
@@ -68,6 +69,7 @@ func (l *limiter) fail(ip string) {
 			}
 		}
 	}
+	return lock
 }
 
 func (l *limiter) success(ip string) {

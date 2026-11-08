@@ -32,7 +32,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| C1 | Central de notificações (sino) | M | feito (0.4.0): energia e discos; os outros eventos entram nas etapas deles | Eventos: app caiu, disco > 90%, disco desmontado, energia caiu/voltou, temperatura alta, atualização disponível, login novo. `/data/events.json` com rotação; marcar como lido. |
+| C1 | Central de notificações (sino) | M | feito (0.4.0): energia e discos; 0.5.0: login novo, disco quente, disco cheio; os outros eventos entram nas etapas deles | Eventos: app caiu, disco > 90%, disco desmontado, energia caiu/voltou, temperatura alta, atualização disponível, login novo. `/data/events.json` com rotação; marcar como lido. |
 | C2 | Avisos no celular (ntfy, Telegram, push do PWA) | M | adiado (celular) | ntfy tem app no Runtipi; Telegram via bot token; Web Push exige VAPID (implementar com stdlib: ECDSA P-256 + JWT, viável). Regras de quais eventos vão para onde. |
 
 ## D. Discos
@@ -40,9 +40,9 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
 | D1 | Alerta de disco mapeado que se desmontou | B | feito (0.4.0) | Disco mapeado com `isMountPoint == false` → evento crítico (risco de o mergerfs/apps gravarem no SSD do sistema). |
-| D2 | Temperatura dos HDs | B | a fazer | hwmon `drivetemp` (módulo do kernel: `sudo modprobe drivetemp` + `/etc/modules-load.d`). Associar hwmon ao `/dev/sdX`. |
+| D2 | Temperatura dos HDs | B | feito (0.5.0) | hwmon `drivetemp` (módulo do kernel: `sudo modprobe drivetemp` + `/etc/modules-load.d`; a interface ensina) e `nvme`. HD só é lido de novo quando teve atividade (não acorda disco parado). Aviso na central: HD ≥ 55 °C, SSD ≥ 70 °C. |
 | D3 | Saúde SMART | M | a fazer | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
-| D4 | Previsão de disco cheio | B | a fazer | Guardar uso diário por disco (`/data/disk-history.json`), regressão linear simples. |
+| D4 | Previsão de disco cheio | B | feito (0.5.0), **opcional e desligada por padrão** (pedido do Bruno: Configurações → Sistema → Previsão de disco cheio, preferência `diskForecast`) | Uso diário (gravado sempre) por disco em `/data/disk-history.json` (180 dias), regressão linear sobre 30 dias. Avisos: "vai encher em ≤ 30 dias" e "≥ 90% ocupado" (este é o "disco > 90%" do C1). |
 | D5 | Mapa do espaço (treemap) no gerenciador | M | a fazer | Varredura limitada (tempo/entradas) em segundo plano, cache por pasta; desenho em canvas/SVG. |
 
 ## E. Apps
@@ -80,7 +80,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 |---|---|---|---|---|
 | H1 | Verificação em dois passos (TOTP) | M | a fazer | RFC 6238 com stdlib (HMAC-SHA1); QR code (gerar em JS ou Go sem dependência); códigos de recuperação. |
 | H2 | Sessões ativas com "encerrar" | B | a fazer | `sessions.json` já guarda ip/userAgent/criação; listar e revogar. |
-| H3 | Aviso de login novo | B | a fazer | Evento na central (C1) quando IP/navegador novo entra. |
+| H3 | Aviso de login novo | B | feito (0.5.0) | `internal/logins`: navegador + sistema + rede (rede local conta como um lugar só; internet por faixa /24 ou /48), `/data/logins.json`. Também avisa quando um endereço é bloqueado por errar a senha (no máximo 1 aviso a cada 6 h por endereço). |
 | H4 | Contas de convidado (família) | A | a fazer | Papéis (admin/convidado), permissões por recurso (arquivos, terminal, configurações, apps visíveis). Muda auth e todas as rotas. |
 
 ## I. Rede da casa
@@ -117,7 +117,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | Etapa | Versão | Itens |
 |---|---|---|
 | 1 | 0.4.0 | Fundações (`internal/events`, `internal/hostcmd`) · C1 · B1 · B2 · D1 — **feito, aguardando teste no servidor** |
-| 2 | 0.5.0 | H3 · D2 · D4 |
+| 2 | 0.5.0 | H3 · D2 · D4 — **feito, aguardando teste no servidor** |
 | 3 | 0.6.0 | H1 · H2 |
 | 4 | 0.7.0 | F1 → F2 → F4 → F5 → D5 → F3 |
 | 5 | 0.8.0 | E1 · E2 · E3 · E4 · E5 · A4 |
@@ -155,3 +155,17 @@ permissões; A1 como saber a versão instalada sem tocar no Postgres.
 - **Testes**: unitários de events/power (relógio falso)/hostcmd (SSH em processo); apitest;
   smoke com usuário `brunos-power` no OpenSSH de teste apontando para um script que só registra.
   No servidor real: Testar → simulação tirando da tomada → só depois desligar a simulação.
+
+### Etapa 2 (0.5.0) em detalhe
+
+- **H3 (`internal/logins`)**: no login com sucesso, `Seen(ip, userAgent)`; aparelho novo → aviso
+  (`info` se veio da rede local, `aviso` se veio da internet). Ao atualizar para a 0.5.0, as sessões
+  já abertas são aprendidas sem avisar. `auth.Manager.OnBlock` avisa quando um IP é bloqueado.
+- **D2 (`internal/sysinfo/drivetemp.go`)**: liga o hwmon `drivetemp` ao `sdX` (`hwmonN/device/block/*`)
+  e o hwmon `nvme` ao controlador. `readHwmon` (a cada 2 s) **ignora** o `drivetemp`. HD só é lido de
+  novo após 1 min **e** se `/sys/block/sdX/stat` mudou; parado, mostra a última medida com o horário.
+  `Disk.temp`/`tempAt` no snapshot.
+- **D4 (`internal/diskhist`)**: `Record` a cada hora (substitui o ponto do dia), `Forecasts()` com
+  regressão sobre 30 dias (mínimo 5 pontos em 6 dias). Rota `GET /api/disks/forecast`.
+- **Frontend**: `js/disks.js` (temperatura com cores, "+X/dia · cheio em ~N dias", dica "Como ativar"
+  o drivetemp quando um HD não tem temperatura). No celular a barra de uso desce para a linha de baixo.

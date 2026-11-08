@@ -103,6 +103,18 @@ body.has-sheet.has-dialog .sheet { filter: brightness(.7); transition: filter .2
 .disk-row .track { width: 130px; flex: none; }
 .disk-val { width: 120px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; flex: none; }
 .disk-val small { opacity: .45; font-weight: 500; }
+/* temperatura e previsão de disco cheio */
+.disk-name b { display: flex; align-items: center; gap: 7px; }
+.disk-temp { flex: none; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,.09); font-variant-numeric: tabular-nums; cursor: default; }
+.disk-temp.old { opacity: .55; }
+.disk-temp.warm { background: rgba(250,204,21,.18); color: #fde68a; }
+.disk-temp.hot { background: rgba(248,113,113,.22); color: #fecaca; }
+.disk-name small.disk-fc { opacity: .55; }
+.disk-name small.disk-fc.soon { opacity: 1; color: #fde68a; }
+.disk-hint { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 9px 10px 9px 12px; border-radius: 12px; font-size: 12px; background: rgba(255,255,255,.04); }
+.disk-hint > svg { width: 16px; height: 16px; flex: none; opacity: .6; }
+.disk-hint span { flex: 1; opacity: .7; }
+.dlg-text + .pw-cmds, .pw-cmds + .dlg-text { margin-top: 12px; }
 .track > i.warn { background: linear-gradient(90deg, #f5b942, #ff6b6b); }
 
 /* ── Arquivos ──────────────────────────────────────────────────── */
@@ -210,7 +222,10 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
 }
 @media (max-width: 640px) {
   .f-table th:nth-child(2), .f-table td:nth-child(2) { display: none; }
-  .disk-val { width: 90px; }
+  .disk-val { width: auto; }
+  /* celular: a barra de uso desce para a linha de baixo e o nome ganha espaço */
+  .disk-row { flex-wrap: wrap; row-gap: 6px; }
+  .disk-row .track { order: 5; flex: 1 1 100%; width: auto; margin-left: 42px; }
   .proc .mem { display: none; }
 }
 

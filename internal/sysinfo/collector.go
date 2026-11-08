@@ -74,11 +74,12 @@ type Collector struct {
 	prevAt  time.Time
 	disks   []Disk
 	disksAt time.Time
+	temps   map[string]*diskTemp // temperatura por disco (sda, nvme0n1)
 	wake    chan struct{}
 }
 
 func NewCollector(cfg Config) *Collector {
-	c := &Collector{cfg: cfg, subs: map[chan []byte]struct{}{}, wake: make(chan struct{}, 1)}
+	c := &Collector{cfg: cfg, subs: map[chan []byte]struct{}{}, wake: make(chan struct{}, 1), temps: map[string]*diskTemp{}}
 	c.info = readInfo(cfg)
 	// rede do host: /host/proc/1/net/dev mostra as interfaces do namespace do host
 	c.netPath = filepath.Join(cfg.Proc, "net/dev")
@@ -196,6 +197,7 @@ func (c *Collector) sample() {
 
 	if now.Sub(c.disksAt) > diskInterval || c.disks == nil {
 		c.disks = readDisks(c.cfg.Proc, c.cfg.Sys)
+		c.fillTemps(c.disks, now) // slice nova: ainda não foi entregue a ninguém
 		c.disksAt = now
 	}
 	s.Disks = c.disks

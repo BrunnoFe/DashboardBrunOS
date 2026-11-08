@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.4.0 em 07/11/2026)
+- Versão atual: veja `VERSION` (0.5.0 em 08/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -66,7 +66,9 @@ internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e 
 internal/events/            central de notificações (sino), /data/events.json
 internal/hostcmd/           chave SSH própria + comando forçado no servidor (desligamento)
 internal/power/             quedas de energia e desligamento seguro (máquina de estados)
-watch.go                    leitura da bateria para o power + vigia de discos desmontados
+internal/diskhist/          uso diário dos discos e previsão de disco cheio
+internal/logins/            aparelhos conhecidos (aviso de login novo)
+watch.go                    bateria para o power; vigia de discos (desmontado, quente, cheio); avisos de login
 web/web.go                  serve web/static com gzip + ETag
 web/static/index.html       casca da página
 web/static/js/app.js        interface principal (login, área de trabalho, dock, widgets, configurações, paleta)
@@ -77,6 +79,7 @@ web/static/js/battery.js    widget e janela da bateria
 web/static/js/terminal.js   janela Terminal (xterm.js)
 web/static/js/notifications.js  sino e painel de avisos
 web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
+web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)
 web/static/css/app.css      base visual (adaptada do umbrelOS)
 web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)
 runtipi-app/brunos/         app para a loja do Runtipi (config.json, docker-compose.json, metadata/)

@@ -62,6 +62,9 @@ const real = {
     read: (ids = []) => call('POST', '/api/events/read', { ids }),
     clear: () => call('POST', '/api/events/clear', {}),
   },
+  disks: {
+    forecast: () => call('GET', '/api/disks/forecast'),
+  },
   power: {
     get: () => call('GET', '/api/power'),
     save: (cfg) => call('PUT', '/api/power/config', cfg),
@@ -138,12 +141,20 @@ function makeDemo() {
   let settings = load();
   let logged = false;
   const GB = 1e9;
+  const nowS = Math.floor(Date.now() / 1000);
   const disks = [
-    { name: 'Sistema', device: '/dev/sdc2', total: 312 * GB, used: 33 * GB, system: true, rotational: false, model: 'SSD' },
-    { name: '1TB_HDD', device: '/dev/sdd', total: 984 * GB, used: 463 * GB, rotational: true, model: 'HDD' },
-    { name: '1TB_HDD2', device: '/dev/sda', total: 984 * GB, used: 246 * GB, rotational: true, model: 'HDD' },
-    { name: '1TB_HDD3', device: '/dev/sdb', total: 984 * GB, used: 462 * GB, rotational: true, model: 'HDD' },
+    { name: 'Sistema', device: '/dev/sdc2', total: 312 * GB, used: 33 * GB, system: true, rotational: false, model: 'SSD', temp: 34, tempAt: nowS },
+    { name: '1TB_HDD', device: '/dev/sdd', total: 984 * GB, used: 463 * GB, rotational: true, model: 'HDD', temp: 41, tempAt: nowS },
+    { name: '1TB_HDD2', device: '/dev/sda', total: 984 * GB, used: 246 * GB, rotational: true, model: 'HDD', temp: 37, tempAt: nowS - 3 * 3600 }, // parado há 3 h
+    { name: '1TB_HDD3', device: '/dev/sdb', total: 984 * GB, used: 462 * GB, rotational: true, model: 'HDD', temp: 52, tempAt: nowS },
   ].map((d) => ({ ...d, free: d.total - d.used }));
+  // previsão de disco cheio: 30 dias de histórico simulado (GB por dia de cada disco)
+  const growth = { Sistema: 0.15, '1TB_HDD': 3.6, '1TB_HDD2': 0, '1TB_HDD3': 12.4 };
+  const forecast = disks.map((d) => {
+    const g = growth[d.name] * GB;
+    const points = Array.from({ length: 30 }, (_, i) => ({ d: new Date((nowS - (29 - i) * 86400) * 1000).toISOString().slice(0, 10), u: d.used - (29 - i) * g, f: d.free + (29 - i) * g }));
+    return { name: d.name, perDay: g, enough: true, points, ...(g > 0 && d.free / g < 3650 ? { daysLeft: Math.floor(d.free / g) } : {}) };
+  });
   const s = { cpu: 12, mem: 2.6 * GB, temp: 51, rx: 40e3, tx: 300e3 };
   const walk = (v, step, lo, hi) => Math.min(hi, Math.max(lo, v + (Math.random() - 0.5) * step));
   const history = [];
@@ -201,6 +212,7 @@ function makeDemo() {
   let evId = 0;
   const E = (ago, kind, level, title, body, read = true) => ({ id: `d${++evId}`, time: now - ago, kind, level, title, body, read });
   let demoEvents = [
+    E(60 * 8, 'login-new', 'aviso', 'Novo acesso: Safari no iPhone', 'Alguém entrou no BrunOS com Safari no iPhone pela internet (177.32.10.4). Se foi você, pode ignorar. Se não foi, troque a senha em Configurações → Trocar senha.', false),
     E(60 * 40, 'power-restored', 'info', 'A energia voltou', 'Ficou 12 min na bateria e gastou 9% da carga.', false),
     E(60 * 52, 'power-outage', 'aviso', 'A energia caiu', 'O servidor está funcionando na bateria (97%). Autonomia estimada: 2 h 10 min.', false),
     E(86400 * 2, 'disk-mounted', 'info', 'O disco 1TB_HDD3 voltou', 'O disco está montado de novo.'),
@@ -247,6 +259,9 @@ function makeDemo() {
       list: () => wait({ events: demoEvents, unread: demoEvents.filter((e) => !e.read).length }),
       read: (ids = []) => { demoEvents.forEach((e) => { if (!ids.length || ids.includes(e.id)) e.read = true; }); return wait({ unread: demoEvents.filter((e) => !e.read).length }); },
       clear: () => { demoEvents = []; return wait({ unread: 0 }); },
+    },
+    disks: {
+      forecast: () => wait({ disks: forecast }),
     },
     power: {
       get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50' }),

@@ -5,11 +5,12 @@ B=os.environ.get('BASE','http://127.0.0.1:8099')
 FIX=os.environ.get('FIX','/tmp/bt')
 cj=http.cookiejar.CookieJar(); op=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 ok=0; bad=0
-def req(method, path, body=None, raw=None, hdr=True, ctype='application/json'):
+def req(method, path, body=None, raw=None, hdr=True, ctype='application/json', ua=None):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     r=urllib.request.Request(B+path, data=data, method=method)
     if data is not None: r.add_header('Content-Type', ctype)
     if hdr: r.add_header('X-BrunOS','1')
+    if ua: r.add_header('User-Agent', ua)
     try:
         resp=op.open(r); return resp.status, resp.read(), resp.headers
     except urllib.error.HTTPError as e:
@@ -75,6 +76,9 @@ s,b,_=req('GET','/api/events'); ev=json.loads(b); check('eventos: lista e contad
 s,b,_=req('POST','/api/events/read',{'ids':[]},hdr=False); check('eventos: marcar lido sem X-BrunOS → 403', s==403)
 s,b,_=req('POST','/api/events/read',{'ids':[]}); check('eventos: marcar tudo como lido', s==200 and json.loads(b)['unread']==0, b)
 s,b,_=req('POST','/api/events/read',{'ids':'x'}); check('eventos: corpo inválido → 400', s==400, b)
+# discos: previsão de disco cheio e acessos conhecidos
+s,b,_=req('GET','/api/disks/forecast'); check('discos: previsão responde com lista', s==200 and isinstance(json.loads(b)['disks'],list), b)
+check('logins.json (acessos conhecidos) só para o dono', oct(os.stat(FIX+'/data/logins.json').st_mode & 0o777)=='0o600' and len(json.load(open(FIX+'/data/logins.json'))['devices'])==1)
 # energia e desligamento seguro
 s,b,_=req('GET','/api/power'); pw=json.loads(b); check('energia: padrão desativado e em simulação', s==200 and pw['config']['enabled'] is False and pw['config']['simulate'] is True and pw['config']['threshold']==20 and pw['keyReady'] is False, b)
 s,b,_=req('PUT','/api/power/config',{'threshold':2,'graceSec':120}); check('energia: limite fora da faixa → 400', s==400, b)
@@ -97,6 +101,10 @@ s,b,_=req('PUT','/api/wallpapers', raw=b'<html>nope</html>', ctype='application/
 s,b,_=req('GET','/api/wallpapers/'+wpn); check('servir papel de parede', s==200 and b[:2]==b'\xff\xd8')
 s,b,_=req('POST','/api/auth/password',{'current':'errada','next':'nova-senha-123'}); check('troca de senha com senha atual errada → 403', s==403)
 s,b,_=req('POST','/api/auth/password',{'current':'senha-forte-1','next':'nova-senha-123'}); check('troca de senha', s==200, b)
+FF='Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0'
+s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},ua=FF); check('login com outro navegador', s==200, b)
+s,b,_=req('GET','/api/events'); ev=[e for e in json.loads(b)['events'] if e['kind']=='login-new']; check('aviso de acesso novo (Firefox no Linux) na central', len(ev)==1 and ev[0]['title']=='Novo acesso: Firefox no Linux', b)
+s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},ua=FF); s,b,_=req('GET','/api/events'); check('o mesmo navegador não avisa de novo', len([e for e in json.loads(b)['events'] if e['kind']=='login-new'])==1, b)
 s,b,_=req('POST','/api/auth/logout',{}); check('logout', s==200)
 s,b,_=req('GET','/api/files/roots'); check('depois do logout → 401', s==401)
 for i in range(5): req('POST','/api/auth/login',{'username':'bruno','password':'errada'})

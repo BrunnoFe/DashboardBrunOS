@@ -62,5 +62,22 @@ Pedidos (com prints):
 - Problema no caminho: `bytes.Buffer` compartilhado entre stdout e stderr da sessão SSH perdia a saída
   (as duas cópias rodam ao mesmo tempo) → buffers separados.
 
+## 0.5.0 (08/11/2026): login novo, temperatura dos HDs e previsão de disco cheio (etapa 2)
+- **Aviso de login novo** (`internal/logins`, `/data/logins.json`): navegador + sistema + rede; rede
+  local conta como um lugar só, internet por faixa (/24, /48). Rede local = aviso informativo; internet
+  = aviso. Também avisa quando um endereço é bloqueado por errar a senha (máx. 1 aviso a cada 6 h por
+  endereço). As sessões já abertas antes da atualização são aprendidas sem avisar.
+- **Temperatura dos discos**: hwmon `drivetemp` (HD/SSD SATA, precisa de `modprobe drivetemp`; a
+  interface mostra os comandos) e `nvme`. Para não acordar HD parado, só mede de novo quando o disco
+  teve atividade; a leitura de sensores a cada 2 s passou a ignorar o `drivetemp`. Aviso de disco
+  quente (HD ≥ 55 °C, SSD ≥ 70 °C) e de volta ao normal.
+- **Previsão de disco cheio** (`internal/diskhist`, `/data/disk-history.json`): um ponto por dia por
+  disco, regressão sobre 30 dias, `GET /api/disks/forecast`. Avisos "deve encher em ~N dias" (≤ 30) e
+  "quase cheio" (≥ 90%). Na janela Uso ao vivo: temperatura colorida e "+X/dia · cheio em ~N".
+  A pedido do Bruno, a previsão é **opcional e vem desligada** (Configurações → Sistema → Previsão de
+  disco cheio): desligada, não aparece nem avisa "vai encher"; o histórico continua sendo gravado e o
+  aviso de "quase cheio" vale sempre.
+- No celular, a lista de discos põe a barra de uso na linha de baixo (o nome cortava).
+
 ## Próximas
 Veja `roadmap.md`.

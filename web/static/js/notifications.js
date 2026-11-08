@@ -8,7 +8,7 @@ const S = { events: [], unread: 0 };
 let panel = null;
 
 const LEVEL = { info: 'Informação', aviso: 'Aviso', critico: 'Importante' };
-const ICON = (e) => e.kind.startsWith('power') ? 'bolt' : e.kind.startsWith('disk') ? 'disks' : 'bell';
+const ICON = (e) => e.kind.startsWith('power') ? 'bolt' : e.kind.startsWith('disk') ? 'disks' : e.kind.startsWith('login') ? 'lock' : 'bell';
 
 $('#bell').addEventListener('click', (e) => { e.stopPropagation(); if (panel) closePanel(); else openPanel(); });
 export const toggleNotifications = () => (panel ? closePanel() : openPanel());
@@ -80,6 +80,6 @@ function drawPanel() {
   list.innerHTML = S.events.length ? S.events.map((e) => `<div class="np-item lv-${esc(e.level)} ${e.read ? '' : 'unread'}">
       <span class="np-ico" title="${esc(LEVEL[e.level] || '')}">${svg(ICON(e))}</span>
       <span class="np-text"><b>${esc(e.title)}</b>${e.body ? `<small>${esc(e.body)}</small>` : ''}<time datetime="${new Date(e.time * 1000).toISOString()}" title="${esc(new Date(e.time * 1000).toLocaleString('pt-BR'))}">${esc(timeAgo(e.time))}</time></span>
-    </div>`).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, discos desmontados e o desligamento seguro aparecem aqui.</small></span></div>`;
+    </div>`).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, problemas nos discos e acessos novos ao BrunOS aparecem aqui.</small></span></div>`;
 }
 const $$np = (p) => [...p.querySelectorAll('[data-np]')];

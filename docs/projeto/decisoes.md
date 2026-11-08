@@ -48,3 +48,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
 18. **Desligamento seguro começa em modo simulação** (0.4.0) e só sai dele depois de um teste de
     conexão que passou para o mesmo host/porta/usuário. `shutdown -h +1` deixa 1 minuto para cancelar
     no servidor (`sudo shutdown -c`).
+19. **Temperatura de HD sem acordar o disco** (0.5.0). O `drivetemp` manda um comando ao disco a cada
+    leitura e, em alguns modelos, isso acorda um HD parado (spin down). Por isso o `readHwmon` (a cada
+    2 s) ignora o `drivetemp`, e o HD só é medido de novo quando o contador de E/S
+    (`/sys/block/sdX/stat`) mudou; parado, mostra a última medida com o horário. Carregar o módulo
+    exige root: a interface só mostra os comandos (`modprobe` + `/etc/modules-load.d`), em vez de usar
+    o SSH restrito.
+20. **"Lugar" do login novo = rede, não IP exato** (0.5.0). Qualquer IP local/Tailscale conta como
+    "rede local" (o DHCP troca IPs); na internet, a faixa /24 (IPv4) ou /48 (IPv6), para não avisar a
+    cada troca de IP do provedor. Celular no 4G pode mudar de faixa e gerar avisos; se incomodar,
+    afrouxar para /16.

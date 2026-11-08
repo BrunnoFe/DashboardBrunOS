@@ -34,16 +34,18 @@ type Info struct {
 }
 
 type Disk struct {
-	Name       string `json:"name"`
-	Path       string `json:"path"` // caminho dentro do container
-	Device     string `json:"device"`
-	Model      string `json:"model,omitempty"`
-	FSType     string `json:"fsType"`
-	Rotational bool   `json:"rotational"`
-	System     bool   `json:"system"`
-	Total      uint64 `json:"total"`
-	Used       uint64 `json:"used"`
-	Free       uint64 `json:"free"`
+	Name       string   `json:"name"`
+	Path       string   `json:"path"` // caminho dentro do container
+	Device     string   `json:"device"`
+	Model      string   `json:"model,omitempty"`
+	FSType     string   `json:"fsType"`
+	Rotational bool     `json:"rotational"`
+	System     bool     `json:"system"`
+	Total      uint64   `json:"total"`
+	Used       uint64   `json:"used"`
+	Free       uint64   `json:"free"`
+	Temp       *float64 `json:"temp,omitempty"`   // °C (HD com drivetemp ou NVMe)
+	TempAt     int64    `json:"tempAt,omitempty"` // quando a temperatura foi medida (Unix)
 }
 
 type Sensor struct {
@@ -197,6 +199,11 @@ func readHwmon(sys string) (sensors []Sensor, cpu *float64, fan *int) {
 	sort.Strings(dirs)
 	for _, d := range dirs {
 		chip := readFile(filepath.Join(d, "name"))
+		if chip == "drivetemp" {
+			// HDs: ler a temperatura pode acordar um disco parado. Fica com drivetemp.go,
+			// que só lê quando o disco teve atividade (aqui seria a cada 2 s).
+			continue
+		}
 		inputs, _ := filepath.Glob(filepath.Join(d, "temp*_input"))
 		sort.Strings(inputs)
 		for _, in := range inputs {

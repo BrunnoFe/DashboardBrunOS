@@ -17,6 +17,8 @@ internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas
 internal/files           gerenciador de arquivos (os.Root, lixeira, upload, zip, busca)
 internal/events          central de notificações (o sino da tela inicial)
 internal/power           quedas de energia e desligamento seguro pela bateria
+internal/diskhist        uso diário dos discos e previsão de disco cheio
+internal/logins          aparelhos que já entraram (aviso de acesso novo)
 internal/hostcmd         comandos no servidor por SSH (usado pelo desligamento seguro)
 internal/terminal        terminal SSH embutido
 web/static               interface (HTML/CSS/JS puros, sem build), embutida no binário
@@ -79,7 +81,7 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## API (resumo)
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup`
+`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast`
 
 ## Créditos e licenças de terceiros
 
@@ -98,6 +100,8 @@ O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `gola
 
 ## Energia e notificações
 
-O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, disco mapeado que se desmontou e o desligamento seguro.
+O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.
+
+A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche. Para a temperatura dos HDs, o módulo `drivetemp` do Linux precisa estar carregado; a própria janela mostra os comandos.
 
 Em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.

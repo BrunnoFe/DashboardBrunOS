@@ -82,8 +82,23 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   100 quedas); configuração em `/data/power.json` (`enabled, threshold, graceSec, simulate, host, port,
   user, testedAt`). Fases: off → armed → countdown → running → done/cancelled/failed; a energia voltando
   rearma. Sair da simulação exige `testedAt` (zera se host/porta/usuário mudarem). 3 tentativas, 1 min.
+- **`internal/sysinfo/drivetemp.go`** (0.5.0): temperatura por disco (`Disk.temp`, `tempAt`). Liga o
+  hwmon `drivetemp` ao `sdX` (`hwmonN/device/block/*`) e o hwmon `nvme` ao controlador (`nvme0`). Mede
+  junto com os discos (a cada 20 s), mas no máximo 1 vez por minuto, e um HD só de novo se
+  `/sys/block/sdX/stat` mudou (ler pode acordar disco parado). `readHwmon` ignora o `drivetemp`.
+- **`internal/diskhist`** (0.5.0): `/data/disk-history.json` (`{"version":1,"disks":{"nome":[{d,u,f}]}}`,
+  180 dias, um ponto por dia). `Forecasts()`: regressão linear dos últimos 30 dias (mín. 5 pontos em
+  6 dias) → `perDay`, `daysLeft` (espaço livre ÷ ritmo; nil se não cresce). `Check` emite
+  `disk-full:<nome>` (≥ 90%, fecha < 85%) e, só se a preferência `diskForecast` estiver ligada
+  (padrão: desligada; o `watch.go` lê o `settings.json`), `disk-full-soon:<nome>` (≤ 30 dias, fecha > 45).
+- **`internal/logins`** (0.5.0): `/data/logins.json` (`{"version":1,"devices":[{key,browser,os,local,ip,first,last,count}]}`,
+  100 aparelhos). Chave = navegador|sistema|lugar (lugar = "local" para IPs privados/Tailscale, ou a
+  faixa /24 ou /48). `ParseUA` simples. `BlockAlertDue` limita o aviso de bloqueio (6 h por IP, em memória).
+  `auth.Manager.OnBlock` é chamado quando o limitador bloqueia um IP; `auth.Manager.Sessions()` lista as sessões.
 - **`watch.go`** (pacote main): `batteryReading` e `watchDisks` (a cada 1 min: disco mapeado e não
-  montado → evento crítico `disk-unmounted:<nome>`).
+  montado → evento crítico `disk-unmounted:<nome>`; disco quente `disk-hot:<nome>` (HD ≥ 55 °C, fecha
+  ≤ 50; SSD ≥ 70, fecha ≤ 65); a cada hora grava o uso no `diskhist` e confere a previsão).
+  `loginSeen`/`loginBlocked` emitem `login-new` e `login-blocked`.
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 
 ### API
@@ -106,6 +121,7 @@ POST /api/terminal/open · input · resize · close · forget
 GET  /api/events                      POST /api/events/read {ids:[]} (vazio = todos) · /api/events/clear
 GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
 PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}
+GET  /api/disks/forecast              ({disks:[{name,perDay,daysLeft?,enough,points:[{d,u,f}]}]})
 ```
 
 O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central.
@@ -117,7 +133,8 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 ### Dados em `/data` (todos 0600)
 
 `auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
-`events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento).
+`events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento),
+`logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos).
 
 ## Frontend (`web/static`)
 
@@ -143,6 +160,8 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
   `paintBanner(status)`/`refreshPowerBanner()` (faixa da contagem; usa `status.remaining` do servidor),
   `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço
   mostra a faixa de contagem.
+- `js/disks.js` (0.5.0): `diskRowsHTML(disks, forecast)` (lista de discos do Uso ao vivo, com
+  temperatura e previsão), `forecastText(f)`, `driveTempHelp()` (comandos do drivetemp).
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
@@ -151,7 +170,7 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 `showStatus`, `reduceMotion`, `openIn` (`tab`|`same`), `urlMode` (`auto`|`domain`|`port`), `serverHost`,
 `runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
 (atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
-`sshPort`, `sshUser`, `sshMethod`, `termFontSize`. **Nunca** guardar senhas aqui.
+`sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio). **Nunca** guardar senhas aqui.
 
 ## Testes
 

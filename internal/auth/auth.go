@@ -74,6 +74,9 @@ type Manager struct {
 	sessions     map[string]*Session // chave: sha256(token) em hex
 	limiter      *limiter
 	dummy        User // gasta o mesmo tempo quando o usuário não existe
+
+	// OnBlock é chamado quando um IP erra a senha tantas vezes que fica bloqueado.
+	OnBlock func(ip string, lock time.Duration)
 }
 
 func New(dataDir string) (*Manager, error) {
@@ -216,7 +219,9 @@ func (m *Manager) Login(username, password, ip, ua string) (string, error) {
 		m.dummy.check(password) // mesmo custo de tempo: não revela se o usuário existe
 	}
 	if !ok {
-		m.limiter.fail(ip)
+		if lock := m.limiter.fail(ip); lock > 0 && m.OnBlock != nil {
+			m.OnBlock(ip, lock)
+		}
 		return "", ErrInvalidCredentials
 	}
 	m.limiter.success(ip)
@@ -337,6 +342,17 @@ func (m *Manager) User(username string) (User, bool) {
 		}
 	}
 	return User{}, false
+}
+
+// Sessions devolve uma cópia das sessões abertas (sem os tokens).
+func (m *Manager) Sessions() []Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		out = append(out, *s)
+	}
+	return out
 }
 
 func (m *Manager) pruneLocked() {

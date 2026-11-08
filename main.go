@@ -26,10 +26,12 @@ import (
 	"time"
 
 	"brunos/internal/auth"
+	"brunos/internal/diskhist"
 	"brunos/internal/dockerc"
 	"brunos/internal/events"
 	"brunos/internal/files"
 	"brunos/internal/hostcmd"
+	"brunos/internal/logins"
 	"brunos/internal/power"
 	"brunos/internal/runtipi"
 	"brunos/internal/sshknown"
@@ -97,6 +99,8 @@ type server struct {
 	term      *terminal.Manager
 	events    *events.Store
 	power     *power.Monitor
+	logins    *logins.Store
+	diskHist  *diskhist.Store
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -158,6 +162,15 @@ func main() {
 		s.term = terminal.NewManagerWith(known)
 	}
 	s.events = events.New(filepath.Join(cfg.DataDir, "events.json"))
+	s.logins = logins.New(filepath.Join(cfg.DataDir, "logins.json"))
+	s.logins.IsLocal = isPrivate
+	if s.logins.Fresh() { // primeira vez com esta versão: quem já está logado não é "novo"
+		for _, ss := range am.Sessions() {
+			s.logins.Learn(ss.IP, ss.UserAgent, ss.CreatedAt)
+		}
+	}
+	am.OnBlock = s.loginBlocked
+	s.diskHist = diskhist.New(filepath.Join(cfg.DataDir, "disk-history.json"))
 	power.HostOK = terminal.HostRe.MatchString
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
 		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key"), known))
@@ -250,6 +263,7 @@ func (s *server) routes() http.Handler {
 	s.files.Register(mux, a)
 	s.events.Register(mux, a)
 	s.power.Register(mux, a)
+	s.diskHist.Register(mux, a)
 	if s.term != nil {
 		s.term.Register(mux, a)
 	}
@@ -451,6 +465,7 @@ func (s *server) hSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("usuário criado na primeira execução", "usuario", req.Username, "ip", ip)
+	s.logins.Learn(ip, r.UserAgent(), time.Now())
 	setSessionCookie(w, r, token)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -472,6 +487,7 @@ func (s *server) hLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
+	s.loginSeen(ip, r.UserAgent())
 	setSessionCookie(w, r, token)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

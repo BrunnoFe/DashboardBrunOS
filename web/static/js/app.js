@@ -3,6 +3,7 @@ import { batteryWidgetHTML, paintBattery, batteryDialog } from './battery.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
+import { diskRowsHTML, driveTempHelp } from './disks.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog,
@@ -13,7 +14,7 @@ const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
   wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
-  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, openIn: 'tab',
+  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
@@ -563,6 +564,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
     { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Abre um terminal no servidor por SSH, com o seu usuário e senha (nada fica guardado)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
     { group: 'Sistema', cat: 'system', icon: 'copy', title: 'Exportar preferências', desc: 'Copia o JSON com apps, dock e aparência', ctrl: `<button class="pill-btn" data-act="copy-config">Copiar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
   ];
@@ -841,14 +843,12 @@ function liveUsageDialog() {
     $('[data-spark-title]', d.el).textContent = `${titles[metric]} · últimos ${mins || 1} min`;
     $('[data-spark-extra]', d.el).textContent = metric === 'cpu' ? `carga ${statValues().vals.load}` : metric === 'net' ? 'linha tracejada: upload' : metric === 'temp' ? (S.snapshot?.battery ? `bateria ${statValues().vals.battery}` : '') : '';
   };
+  let forecast = [], lastDisks = '';
   const drawDisks = () => {
-    const disks = S.snapshot?.disks || [];
-    $('.disk-list', d.el).innerHTML = disks.length ? disks.map((k) => `<div class="disk-row">
-      <span class="disk-ico">${svg(k.system ? 'cpu' : 'disk')}</span>
-      <span class="disk-name"><b>${esc(k.name)}</b><small>${esc(k.device.replace('/dev/', ''))}${k.model ? ' · ' + esc(k.model) : ''} · ${k.rotational ? 'HD' : 'SSD'}</small></span>
-      <span class="track"><i style="width:${(k.used / k.total) * 100}%" class="${k.used / k.total > 0.9 ? 'warn' : ''}"></i></span>
-      <span class="disk-val">${fmtBytes(k.used)} <small>/ ${fmtBytes(k.total)}</small></span></div>`).join('') : '<div class="empty-note">Nenhum disco encontrado</div>';
+    const rows = diskRowsHTML(S.snapshot?.disks || [], forecast);
+    if (rows !== lastDisks) { $('.disk-list', d.el).innerHTML = rows; lastDisks = rows; } // não refaz à toa (o botão perderia o clique)
   };
+  if (set().diskForecast) api.disks.forecast().then((r) => { forecast = r.disks || []; if (liveOpen) drawDisks(); }).catch(() => { /* sem previsão: só não mostra */ });
   const drawUsage = async () => {
     try {
       const list = await api.usage();
@@ -869,6 +869,7 @@ function liveUsageDialog() {
     drawChart(); drawDisks();
   };
   d.el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-disk="temp-help"]')) { driveTempHelp(); return; }
     const c = e.target.closest('[data-m]'); if (!c) return;
     metric = c.dataset.m; $$('[data-m]', d.el).forEach((x) => x.classList.toggle('on', x === c)); drawChart();
   });
