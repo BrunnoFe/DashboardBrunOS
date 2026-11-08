@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -415,9 +416,13 @@ func TestChargeApplyAndReapply(t *testing.T) {
 	m.SysDir = sys
 	m.DetectCharge()
 	end := filepath.Join(sys, "class/power_supply/BAT0/charge_control_end_threshold")
-	var sent []string
+	var smu sync.Mutex
+	var sentList []string // a reaplicação roda em outra goroutine: sempre pelo mutex
+	sent := func() []string { smu.Lock(); defer smu.Unlock(); return append([]string(nil), sentList...) }
 	m.HostRun = func(_ context.Context, _ Config, cmd string) (string, error) {
-		sent = append(sent, cmd)
+		smu.Lock()
+		sentList = append(sentList, cmd)
+		smu.Unlock()
 		var n int
 		fmt.Sscanf(cmd, "limite %d", &n)
 		os.WriteFile(end, []byte(fmt.Sprintf("%d\n", n)), 0o644) // o "servidor" aplica
@@ -434,18 +439,30 @@ func TestChargeApplyAndReapply(t *testing.T) {
 		}
 	}
 	info, err := m.SetCharge(ctx, 80, "")
-	if err != nil || info.Current != 80 || info.Want != 80 || sent[len(sent)-1] != "limite 80" {
-		t.Fatalf("aplicar 80%%: %+v %v %v", info, err, sent)
+	if s := sent(); err != nil || info.Current != 80 || info.Want != 80 || s[len(s)-1] != "limite 80" {
+		t.Fatalf("aplicar 80%%: %+v %v %v", info, err, s)
 	}
 	// o notebook esqueceu (reiniciou): a conferência reaplica
 	os.WriteFile(end, []byte("100\n"), 0o644)
 	m.checkCharge()
-	for i := 0; i < 100 && len(sent) < 2; i++ {
+	for i := 0; i < 200 && len(sent()) < 2; i++ {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(sent) != 2 || sent[1] != "limite 80" {
-		t.Fatalf("deveria reaplicar o limite esquecido: %v", sent)
+	if s := sent(); len(s) != 2 || s[1] != "limite 80" {
+		t.Fatalf("deveria reaplicar o limite esquecido: %v", s)
 	}
+	waitIdle := func() { // espera a goroutine da reaplicação terminar
+		for i := 0; i < 200; i++ {
+			m.mu.Lock()
+			busy := m.chargeBusy
+			m.mu.Unlock()
+			if !busy {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitIdle()
 	// 100% = sem limite: o BrunOS para de mexer
 	if info, _ := m.SetCharge(ctx, 100, ""); info.Want != 0 {
 		t.Fatalf("100%% deveria parar de gerenciar: %+v", info)
@@ -456,8 +473,9 @@ func TestChargeApplyAndReapply(t *testing.T) {
 	m.mu.Unlock()
 	m.checkCharge()
 	time.Sleep(50 * time.Millisecond)
-	if len(sent) != 3 {
-		t.Fatalf("sem pedido não deveria reaplicar nada: %v", sent)
+	waitIdle()
+	if s := sent(); len(s) != 3 {
+		t.Fatalf("sem pedido não deveria reaplicar nada: %v", s)
 	}
 }
 
