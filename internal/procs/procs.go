@@ -51,6 +51,9 @@ type sample struct {
 type Reader struct {
 	Proc   string // /host/proc
 	Passwd string // /host/passwd (opcional: nomes dos usuários)
+	// Self é o id do container do próprio BrunOS. Com o cgroup isolado (padrão do Docker), os processos
+	// do mesmo container aparecem como "0::/" no cgroup, sem id: esses ganham este.
+	Self string
 
 	mu      sync.Mutex
 	prev    *sample
@@ -59,6 +62,17 @@ type Reader struct {
 }
 
 func New(proc, passwd string) *Reader { return &Reader{Proc: proc, Passwd: passwd} }
+
+var selfMount = regexp.MustCompile(`/containers/([0-9a-f]{64})/`)
+
+// SelfID descobre o id do próprio container: o Docker monta /etc/hostname, /etc/hosts etc. a partir de
+// /var/lib/docker/containers/<id>/, e isso aparece no mountinfo.
+func SelfID(mountinfo string) string {
+	if m := selfMount.FindSubmatch(readFile(mountinfo)); m != nil {
+		return string(m[1])
+	}
+	return ""
+}
 
 var containerID = regexp.MustCompile(`[0-9a-f]{64}`)
 
@@ -165,8 +179,11 @@ func (r *Reader) scan() (map[int]raw, uint64, int) {
 		if len(p.Cmd) > 400 {
 			p.Cmd = p.Cmd[:400] + "…"
 		}
-		if m := containerID.Find(readFile(filepath.Join(dir, "cgroup"))); m != nil {
+		cg := readFile(filepath.Join(dir, "cgroup"))
+		if m := containerID.Find(cg); m != nil {
 			p.Container = string(m)
+		} else if r.Self != "" && string(bytes.TrimSpace(cg)) == "0::/" {
+			p.Container = r.Self
 		}
 		out[pid] = p
 	}

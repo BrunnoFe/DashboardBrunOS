@@ -65,4 +65,14 @@ func TestList(t *testing.T) {
 	if all, _ := r.List(true); len(all) != 3 {
 		t.Fatalf("com threads do kernel: %d", len(all))
 	}
+	// processo do próprio container do BrunOS: cgroup "0::/" ganha o id descoberto no mountinfo
+	self := fmt.Sprintf("%064x", 9)
+	put(t, filepath.Join(dir, "mountinfo"), "1 2 0:1 /var/lib/docker/containers/"+self+"/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n")
+	r.Self = SelfID(filepath.Join(dir, "mountinfo"))
+	put(t, filepath.Join(dir, "100/cgroup"), "0::/\n")
+	for _, p := range func() []Proc { l, _ := r.List(false); return l }() {
+		if p.PID == 100 && p.Container != self {
+			t.Fatalf("processo do próprio container sem id: %+v", p)
+		}
+	}
 }

@@ -186,6 +186,7 @@ func main() {
 		procDir = "/proc" // sem o /proc do host: só os processos do próprio container
 	}
 	s.procs = procs.New(procDir, env("HOST_PASSWD", "/host/passwd"))
+	s.procs.Self = procs.SelfID("/proc/self/mountinfo")
 	s.netmon = netmon.New(filepath.Join(cfg.DataDir, "internet.json"), s.events)
 	s.netmon.Enabled = func() bool { v, ok := s.readSettings()["netMonitor"].(bool); return !ok || v }
 	power.HostOK = terminal.HostRe.MatchString
