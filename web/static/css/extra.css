@@ -415,6 +415,21 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
 .s-ctrl { margin-left: auto; max-width: 100%; }
 .s-ctrl .swatches { flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 @media (max-width: 900px) { .sheet-files .sheet-close { top: 24px; } }
+/* celular: interruptores, botões e setas ficam à direita do texto, como no computador.
+   Só os controles largos (escolhas, campos, cores, controle deslizante) descem, alinhados ao texto. */
+@media (max-width: 640px) {
+  .s-row { flex-wrap: nowrap; gap: 12px; padding: 12px 14px; }
+  .s-text { flex: 1 1 0; min-width: 0; }
+  .s-ctrl { flex: none; margin-left: 0; }
+  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, input[type=range])) { flex-wrap: wrap; }
+  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, input[type=range])) > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
+  .s-ctrl :is(.swatches, .wp-thumbs, .chips) { justify-content: flex-start; flex-wrap: wrap; }
+  .s-row.pw-unsupported { flex-wrap: wrap; }
+  .s-row.pw-unsupported > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
+}
+/* botão ☰ do Arquivos: só aparece quando a barra lateral vira gaveta */
+.f-menu-btn { display: none; }
+@media (max-width: 900px) { .f-menu-btn { display: grid; } }
 
 /* ── Discos na barra lateral ───────────────────────────────────── */
 .f-disks-head { display: flex; align-items: center; margin-top: 2px; }
@@ -567,7 +582,14 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
   .term-grid .fld-user { grid-column: 1 / -1; }
   .term-fps { grid-template-columns: 1fr; }
   .term-title small { display: none; }
-  .term-screen { height: 60dvh; }
+  /* celular: a janela ocupa quase a tela toda e a área do terminal usa todo o espaço */
+  .dlg-wrap:has(.term-dlg) { padding: 8px; }
+  .term-dlg { width: 100% !important; border-radius: 20px; }
+  .term-head { padding: 10px 10px 8px 14px; gap: 6px; }
+  .term-disc-txt { display: none; }
+  .term-tools .pill-btn { width: 36px; padding: 0; justify-content: center; }
+  .term-body { padding: 8px; }
+  .term-screen { height: calc(100dvh - 190px); border-radius: 12px; padding: 6px 2px 4px 6px; }
 }
 
 /* ── Central de notificações (sino) ──────────────────────────── */
@@ -651,11 +673,19 @@ body.reduce-motion .pb-ico, body.reduce-motion .bell-btn.ring .svg { animation: 
 .pw-dot.crit { background: #ff5a5a; box-shadow: 0 0 0 3px rgba(255,90,90,.2); }
 .pw-group .s-row { min-height: 56px; padding: 11px 14px; }
 .s-row.dim { opacity: .45; }
+/* limite de carga: notebook sem suporte (esmaecido, mas o "Verificar de novo" continua legível) */
+.pw-unsupported .s-ico, .pw-unsupported .s-text { opacity: .5; }
+.pw-charge-note { display: block; margin-top: 4px; font-size: 11.5px; color: #ffd27a; opacity: .9 !important; }
+.pw-group .s-ctrl .pill-btn.primary { margin-left: 4px; }
 .switch[disabled] { opacity: .45; cursor: not-allowed; }
 .pw-step { display: flex; gap: 12px; padding: 14px; }
 .pw-step + .pw-step { border-top: 1px solid rgba(255,255,255,.05); }
 .pw-n { width: 24px; height: 24px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--brand); box-shadow: var(--shadow-btn-hl); }
 .pw-step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+/* aviso: servidor configurado com o comando antigo de desligar */
+.pw-update { background: rgba(255,190,70,.08); box-shadow: inset 0 0 0 1px rgba(255,190,70,.22); border-radius: 14px; }
+.pw-update .pw-n { background: rgba(255,190,70,.9); color: #2a1d00; font-size: 14px; box-shadow: none; }
+.pw-update .pw-row { flex-wrap: wrap; }
 .pw-step-body > b { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
 .pw-step-body > small { font-size: 12px; opacity: .55; line-height: 1.45; }
 .pw-step-body code, .bat-note code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,.08); }

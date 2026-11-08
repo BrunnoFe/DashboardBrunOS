@@ -47,7 +47,8 @@ export function outagesHTML(list, max = 8) {
   return `<div class="outage-list">${list.slice(0, max).map((o) => {
     const d = new Date(o.start * 1000);
     const when = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) + ' · ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const dur = o.end ? fmtMinutes((o.end - o.start) / 60) || 'menos de 1 min' : 'agora, na bateria';
+    let dur = o.end ? fmtMinutes((o.end - o.start) / 60) || 'menos de 1 min' : 'agora, na bateria';
+    if (o.off) dur += ' · apagou';
     return `<div class="outage ${o.end ? '' : 'live'}"><span class="o-ico">${svg(o.end ? 'plug' : 'plugOff')}</span>
       <span class="o-main"><b>${esc(when)}</b><small>${esc(dur)}</small></span>
       ${o.shutdown ? `<span class="o-tag ${esc(o.shutdown)}">${esc(SHUT[o.shutdown] || o.shutdown)}</span>` : ''}
@@ -62,11 +63,16 @@ export async function powerDialog({ openTerminal } = {}) {
   let data;
   try { data = await api.power.get(); } catch (e) { toastError(e, 'Não deu para abrir a energia'); return; }
   open = true;
-  let cfg = { ...data.config }, setup = null, dirty = false;
+  let cfg = { ...data.config }, setup = null, dirty = false, needsUpdate = !!data.needsUpdate, showUpdate = false;
+  let charge = data.charge || { kind: 'none' };
+  let chargeLimit = charge.want || (charge.current && charge.current < 100 ? charge.current : 80);
+  let chargeOn = !!charge.want;
   const d = openDialog(`<h2>${svg('bolt')}Energia</h2>
     <p class="pw-intro">O notebook é o servidor e a bateria é o nobreak. Se a energia cair e a bateria chegar ao limite, o BrunOS avisa, espera um pouco (dá para cancelar) e desliga o servidor com segurança, antes de a bateria acabar.</p>
     <div class="pw-state" data-state></div>
     <div class="s-group pw-group" data-cfg></div>
+    <div class="s-group-title">Saúde da bateria</div>
+    <div class="s-group pw-group" data-charge></div>
     <div class="s-group-title">Conexão com o servidor</div>
     <div class="s-group pw-group" data-conn></div>
     <div class="s-group-title">Quedas de energia</div>
@@ -92,9 +98,17 @@ export async function powerDialog({ openTerminal } = {}) {
   };
   const drawConn = () => {
     const host = cfg.host || data.suggestedHost || '';
-    $('[data-conn]', d.el).innerHTML = `
+    // servidor configurado com o comando antigo (shutdown -h +1, recusado pelo Ubuntu 26.04)
+    const update = needsUpdate ? `<div class="pw-step pw-update"><span class="pw-n">${svg('alert')}</span><div class="pw-step-body"><b>Atualize a configuração do servidor</b>
+        <small>O Ubuntu passou a recusar o comando de desligar que o BrunOS usava, porque as atualizações automáticas seguram o desligamento. Os comandos novos instalam um script pequeno (<code>/usr/local/sbin/brunos-host</code>) que só aceita desligar e ajustar o limite de carga, e trocam a chave do usuário <code>${esc(cfg.user)}</code>. Depois de colar, clique em <b>Testar</b> no passo 2: o teste confirma a atualização.</small>
+        ${showUpdate && setup ? `<pre class="pw-cmds" tabindex="0">${esc(setup.updateCommands)}</pre>
+          <div class="pw-row"><button class="pill-btn" data-c="copy-update">${svg('copy')}Copiar comandos</button>${openTerminal ? `<button class="pill-btn" data-c="term">${svg('terminal')}Abrir terminal</button>` : ''}</div>
+          <small class="hint">O último comando (<code>visudo -c</code>) deve responder “parsed OK”. Enquanto você não atualizar, o desligamento continua usando a chave antiga.</small>`
+        : `<div class="pw-row"><button class="pill-btn primary" data-c="show-update">${svg('key')}Mostrar comandos novos</button></div>`}
+      </div></div>` : '';
+    $('[data-conn]', d.el).innerHTML = `${update}
       <div class="pw-step"><span class="pw-n">1</span><div class="pw-step-body"><b>Crie no servidor o usuário que só consegue desligar</b>
-        <small>O BrunOS tem uma chave própria. Os comandos criam o usuário <code>${esc(cfg.user)}</code>, sem senha, que só aceita essa chave e só pode rodar <code>shutdown</code>. O container continua sem nenhum privilégio.</small>
+        <small>O BrunOS tem uma chave própria. Os comandos criam o usuário <code>${esc(cfg.user)}</code>, sem senha, que só aceita essa chave e só pode desligar o servidor. O container continua sem nenhum privilégio.</small>
         ${setup ? `<pre class="pw-cmds" tabindex="0">${esc(setup.commands)}</pre>
           <div class="pw-row"><button class="pill-btn" data-c="copy">${svg('copy')}Copiar comandos</button>${openTerminal ? `<button class="pill-btn" data-c="term">${svg('terminal')}Abrir terminal</button>` : ''}</div>
           <small class="hint">O último comando (<code>visudo -c</code>) confere se está tudo certo: deve responder “parsed OK”.</small>`
@@ -111,8 +125,38 @@ export async function powerDialog({ openTerminal } = {}) {
         <div class="pw-test ${tested() ? 'ok' : ''}" data-test>${tested() ? `${svg('check')} Conexão testada em ${esc(new Date(cfg.testedAt * 1000).toLocaleString('pt-BR'))}` : ''}</div>
       </div></div>`;
   };
+  // Limite de carga: o servidor detecta o que o notebook oferece (contínuo, liga/desliga ou nada)
+  const drawCharge = () => {
+    const box = $('[data-charge]', d.el);
+    const model = charge.model ? ` (${esc(charge.model)})` : '';
+    const notReady = charge.ready ? '' : '<small class="pw-charge-note">Para ajustar, configure a conexão com o servidor abaixo e clique em Testar.</small>';
+    if (charge.kind === 'range') {
+      const p = ((chargeLimit - 50) / 45) * 100;
+      const now = charge.current && charge.current < 100 ? `Agora o notebook para de carregar em ${charge.current}%.` : 'Agora carrega até 100%.';
+      box.innerHTML = `
+        <div class="s-row"><span class="s-ico">${svg('battery')}</span><span class="s-text"><b>Limitar a carga</b><small>Parar de carregar antes de 100% faz a bateria durar mais anos. ${now}</small>${notReady}</span><span class="s-ctrl"><button class="switch ${chargeOn ? 'on' : ''}" data-csw="range" role="switch" aria-checked="${chargeOn}" ${charge.ready ? '' : 'disabled'}></button></span></div>
+        <div class="s-row ${chargeOn ? '' : 'dim'}"><span class="s-ico">${svg('plug')}</span><span class="s-text"><b>Parar de carregar em</b><small>80% é um bom equilíbrio. Volta a carregar 5 pontos abaixo.</small></span><span class="s-ctrl"><input type="range" min="50" max="95" step="5" value="${chargeLimit}" data-climit style="--p:${p}%" aria-label="Limite de carga" ${chargeOn && charge.ready ? '' : 'disabled'}><span class="range-val">${chargeLimit}%</span><button class="pill-btn primary" data-c="charge-apply" ${chargeOn && charge.ready && chargeLimit !== charge.want ? '' : 'disabled'}>Aplicar</button></span></div>`;
+    } else if (charge.kind === 'toggle') {
+      box.innerHTML = `<div class="s-row"><span class="s-ico">${svg('battery')}</span><span class="s-text"><b>Proteção de carga</b><small>O notebook para de carregar num limite definido pelo fabricante (em geral entre 60% e 80%). Agora: ${charge.on ? 'ligada' : 'desligada'}.</small>${notReady}</span><span class="s-ctrl"><button class="switch ${charge.on ? 'on' : ''}" data-csw="toggle" role="switch" aria-checked="${!!charge.on}" ${charge.ready ? '' : 'disabled'}></button></span></div>`;
+    } else {
+      box.innerHTML = `<div class="s-row pw-unsupported"><span class="s-ico">${svg('battery')}</span><span class="s-text"><b>Limite de carga</b><small>Este notebook${model} não permite limitar a carga pelo Linux (em alguns modelos, só pela BIOS). O BrunOS confere isso uma vez, quando liga.</small></span><span class="s-ctrl"><button class="pill-btn" data-c="charge-detect">Verificar de novo</button></span></div>`;
+    }
+  };
+  const applyCharge = async (body, btn) => {
+    if (btn) btn.disabled = true;
+    try {
+      const r = await api.power.charge(body);
+      charge = r.charge; chargeOn = !!charge.want;
+      toast('Limite de carga aplicado', charge.kind === 'toggle' ? `Proteção ${charge.on ? 'ligada' : 'desligada'}.` : charge.want ? `O notebook para de carregar em ${charge.current}%.` : 'O notebook volta a carregar até 100%.');
+    } catch (err) {
+      if (err.data?.charge) charge = err.data.charge;
+      chargeOn = !!charge.want;
+      toastError(err, 'Não deu para aplicar');
+    }
+    drawCharge();
+  };
   const markDirty = () => { dirty = true; $('[data-c="save"]', d.el).disabled = false; };
-  drawState(data.status); drawCfg(); drawConn();
+  drawState(data.status); drawCfg(); drawCharge(); drawConn();
 
   const runTest = async (trust = '') => {
     const val = (k) => $(`[data-in="${k}"]`, d.el).value.trim();
@@ -121,8 +165,9 @@ export async function powerDialog({ openTerminal } = {}) {
     box.className = 'pw-test'; box.textContent = 'Testando…'; btn.disabled = true;
     try {
       const r = await api.power.test(body);
-      cfg = { ...cfg, host: r.config.host, port: r.config.port, user: r.config.user, testedAt: r.config.testedAt };
-      drawConn(); drawCfg();
+      cfg = { ...cfg, host: r.config.host, port: r.config.port, user: r.config.user, testedAt: r.config.testedAt, hostSetup: r.config.hostSetup };
+      needsUpdate = false; charge = { ...charge, ready: true };
+      drawConn(); drawCfg(); drawCharge();
       toast('Conexão funcionando', 'A chave do BrunOS foi aceita pelo servidor.');
     } catch (e) {
       btn.disabled = false;
@@ -138,8 +183,13 @@ export async function powerDialog({ openTerminal } = {}) {
   };
 
   d.el.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-sw],[data-grace],[data-c]'); if (!t || t.disabled) return;
+    const t = e.target.closest('[data-sw],[data-csw],[data-grace],[data-c]'); if (!t || t.disabled) return;
     if (t.dataset.sw) { cfg[t.dataset.sw] = !cfg[t.dataset.sw]; drawCfg(); markDirty(); return; }
+    if (t.dataset.csw === 'toggle') { await applyCharge({ protect: charge.on ? 'off' : 'on' }, t); return; }
+    if (t.dataset.csw === 'range') {
+      if (chargeOn && charge.want) { await applyCharge({ limit: 100 }, t); return; } // desligar = carregar até 100%
+      chargeOn = !chargeOn; drawCharge(); return; // ligar: escolhe o valor e clica em Aplicar
+    }
     if (t.dataset.grace) { cfg.graceSec = +t.dataset.grace; drawCfg(); markDirty(); return; }
     const c = t.dataset.c;
     if (c === 'close') {
@@ -147,9 +197,17 @@ export async function powerDialog({ openTerminal } = {}) {
       d.close();
     } else if (c === 'setup') {
       try { setup = await api.power.setup(); cfg.user = setup.user || cfg.user; drawConn(); } catch (err) { toastError(err, 'Não deu para criar a chave'); }
-    } else if (c === 'copy') {
-      try { await navigator.clipboard.writeText(setup.commands); toast('Comandos copiados', 'Cole no terminal do servidor.'); }
-      catch { const pre = $('.pw-cmds', d.el); const r = document.createRange(); r.selectNodeContents(pre); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Selecionei os comandos', 'Copie com Ctrl+C.'); }
+    } else if (c === 'show-update') {
+      try { setup = setup || await api.power.setup(); showUpdate = true; drawConn(); } catch (err) { toastError(err, 'Não deu para montar os comandos'); }
+    } else if (c === 'copy' || c === 'copy-update') {
+      const text = c === 'copy' ? setup.commands : setup.updateCommands;
+      try { await navigator.clipboard.writeText(text); toast('Comandos copiados', 'Cole no terminal do servidor.'); }
+      catch { const pre = t.closest('.pw-step-body').querySelector('.pw-cmds'); const r = document.createRange(); r.selectNodeContents(pre); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Selecionei os comandos', 'Copie com Ctrl+C.'); }
+    } else if (c === 'charge-detect') {
+      try { const r = await api.power.charge({ detect: true }); charge = r.charge; drawCharge(); toast('Verificado', charge.kind === 'none' ? 'Este notebook continua sem limite de carga.' : 'Limite de carga disponível.'); }
+      catch (err) { toastError(err, 'Não deu para verificar'); }
+    } else if (c === 'charge-apply') {
+      await applyCharge({ limit: chargeLimit }, t);
     } else if (c === 'term') openTerminal?.();
     else if (c === 'test') runTest();
     else if (c === 'save') {
@@ -170,6 +228,11 @@ export async function powerDialog({ openTerminal } = {}) {
       e.target.style.setProperty('--p', ((cfg.threshold - 5) / 45) * 100 + '%');
       e.target.nextElementSibling.textContent = cfg.threshold + '%';
       markDirty();
+    } else if (e.target.matches('[data-climit]')) {
+      chargeLimit = +e.target.value;
+      e.target.style.setProperty('--p', ((chargeLimit - 50) / 45) * 100 + '%');
+      e.target.nextElementSibling.textContent = chargeLimit + '%';
+      const b = $('[data-c="charge-apply"]', d.el); if (b) b.disabled = chargeLimit === charge.want;
     } else if (e.target.matches('[data-in]')) markDirty();
   });
   // mantém o estado atualizado enquanto a janela está aberta

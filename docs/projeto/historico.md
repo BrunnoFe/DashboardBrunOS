@@ -123,5 +123,28 @@ Pedidos (com prints):
 - Speedtest Tracker ficou para a 0.9.0: a API dele exige token, e o Bruno preferiu decidir como guardar
   tokens junto com as outras integrações.
 
+## 0.8.1 (08/11/2026): correções depois do primeiro apagão de verdade
+- **O desligamento seguro nunca funcionou no Ubuntu 26.04.** Na queda de 07/11 o `sudo shutdown -h +1`
+  foi recusado ("Operation denied due to active block inhibitor"): no systemd 259 a trava vale até
+  para o root, e o unattended-upgrades segura uma de `shutdown` o tempo todo. O BrunOS desistiu depois
+  de 3 tentativas e a bateria acabou. Correções: script `brunos-host` no servidor (comando forçado da
+  chave nova) que desliga com `systemctl poweroff --check-inhibitors=no --when=+1min` (testado no
+  servidor do Bruno); tentativas sem limite enquanto estiver na bateria; erro em português; se a
+  bateria despencar (≤ metade do limite ou ≤ 5%), desliga sem esperar a contagem.
+- **Bateria que pula**: o histórico do UPower mostrou 31% → 6% em 5 minutos (bateria paralela de 9
+  meses, mal calibrada). Daí o atalho acima.
+- **Duração das quedas**: na bateria grava a cada minuto (`seen`); se o servidor apagar, a queda fecha
+  nesse horário e aparece "apagou". Antes contava o tempo desligado (o "10 h 03" era ~5 h 40).
+- **Limite de carga agnóstico** (`internal/power/charge.go`): detecta uma vez ao ligar se o notebook
+  tem limite contínuo (`charge_control_end_threshold`), só liga/desliga (`charge_types` Long_Life ou
+  `conservation_mode` do IdeaPad) ou nada (esmaecido com o modelo; caso do Inspiron 3542). Aplica pelo
+  script; reconfere um arquivo a cada 10 min e reaplica se o notebook esquecer. Sem suporte, não faz nada.
+- **Duas chaves SSH**: a configuração nova usa `/data/hostcmd_key_v2`; servidor não atualizado recusa a
+  chave nova já na autenticação (nunca roda o comando antigo por engano), e o teste de conexão prova a
+  atualização. A chave antiga (`hostcmd_key`) só desliga, até o Bruno colar os comandos novos.
+- **Celular**: gaveta ☰ no Arquivos; nas configurações, interruptores/botões/setas à direita e só os
+  controles largos embaixo; terminal em tela cheia com letra 11 e "Desconectar" só com ícone; porta do
+  terminal vazia (usa 22); sem o texto `hsl(...)` na cor de destaque.
+
 ## Próximas
 Veja `roadmap.md`.

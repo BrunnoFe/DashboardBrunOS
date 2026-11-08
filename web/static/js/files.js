@@ -24,6 +24,7 @@ export function mountFiles(body, opts = {}) {
     <aside class="f-side"><h2 class="sheet-title">Arquivos</h2><div class="f-side-list"></div></aside>
     <div class="f-main">
       <div class="f-toolbar">
+        <button class="icon-btn f-menu-btn" data-f="side" aria-label="Locais" title="Locais">${svg('menu')}</button>
         <button class="icon-btn" data-f="back" aria-label="Voltar" title="Voltar (Alt+←)">${svg('chevL')}</button>
         <button class="icon-btn" data-f="fwd" aria-label="Avançar" title="Avançar (Alt+→)">${svg('chevR')}</button>
         <div class="crumbs"></div>
@@ -34,6 +35,7 @@ export function mountFiles(body, opts = {}) {
       <div class="f-scroll" tabindex="-1"><div class="f-content"></div></div>
       <div class="f-status"></div>
     </div>
+    <div class="f-side-shade" data-f="side-close"></div>
     <div class="f-drop">${svg('upload')}<span>Solte para enviar para esta pasta</span></div>
   </div>`;
   wire();
@@ -598,6 +600,10 @@ function wire() {
   body.addEventListener('click', async (e) => {
     const t = e.target;
     let el;
+    // celular: a barra lateral vira uma gaveta; fecha ao escolher um local ou tocar fora
+    const files = $('.files', body);
+    if (t.closest('.f-side [data-root], .f-side [data-fav], .f-side [data-f="trash"], [data-f="side-close"]')) files.classList.remove('side-open');
+    if (t.closest('[data-f="side"]')) { files.classList.toggle('side-open'); return; }
     if ((el = t.closest('[data-f="disks-toggle"]'))) {
       const open = !(F.ctx.settings?.filesDisksOpen !== false);
       F.ctx.saveSetting?.('filesDisksOpen', open); drawSide();

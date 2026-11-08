@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,23 +23,29 @@ import (
 	"brunos/internal/sshknown"
 )
 
-// servidor SSH de teste: aceita só a chave autorizada e conta as sessões abertas.
-// Cada sessão "executa" o comando forçado (como o OpenSSH faz com command=).
+// servidor SSH de teste: aceita só as chaves autorizadas, conta as sessões abertas e guarda
+// o último pedido (o que o OpenSSH entregaria ao programa forçado em SSH_ORIGINAL_COMMAND).
 type fakeServer struct {
 	host     string
 	port     int
 	hostKey  ssh.Signer
 	sessions atomic.Int32
+	mu       sync.Mutex
+	last     string
 }
 
-func startServer(t *testing.T, authorized func() ssh.PublicKey) *fakeServer {
+func (f *fakeServer) lastCmd() string { f.mu.Lock(); defer f.mu.Unlock(); return f.last }
+
+func startServer(t *testing.T, authorized func() []ssh.PublicKey) *fakeServer {
 	t.Helper()
 	_, pk, _ := ed25519.GenerateKey(rand.Reader)
 	hk, _ := ssh.NewSignerFromKey(pk)
 	fs := &fakeServer{hostKey: hk}
 	cfg := &ssh.ServerConfig{PublicKeyCallback: func(c ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
-		if a := authorized(); a != nil && c.User() == DefaultUser && bytes.Equal(a.Marshal(), k.Marshal()) {
-			return nil, nil
+		for _, a := range authorized() {
+			if c.User() == DefaultUser && bytes.Equal(a.Marshal(), k.Marshal()) {
+				return nil, nil
+			}
 		}
 		return nil, errors.New("negado")
 	}}
@@ -64,8 +73,13 @@ func startServer(t *testing.T, authorized func() ssh.PublicKey) *fakeServer {
 					go func() {
 						for r := range creqs {
 							if r.Type == "exec" {
+								var p struct{ Cmd string }
+								ssh.Unmarshal(r.Payload, &p)
+								fs.mu.Lock()
+								fs.last = p.Cmd
+								fs.mu.Unlock()
 								r.Reply(true, nil)
-								ch.Write([]byte("Shutdown scheduled\n"))
+								ch.Write([]byte("ok " + p.Cmd + "\n"))
 								ch.CloseWrite()
 								ch.SendRequest("exit-status", false, ssh.Marshal(struct{ C uint32 }{0}))
 								ch.Close()
@@ -85,7 +99,7 @@ func startServer(t *testing.T, authorized func() ssh.PublicKey) *fakeServer {
 
 func TestKeyCreatedOnce(t *testing.T) {
 	dir := t.TempDir()
-	r := New(filepath.Join(dir, "hostcmd_key"), sshknown.New(""))
+	r := New(filepath.Join(dir, "hostcmd_key_v2"), "", sshknown.New(""))
 	if r.HasKey() {
 		t.Fatal("não deveria existir chave antes de pedir")
 	}
@@ -103,25 +117,25 @@ func TestKeyCreatedOnce(t *testing.T) {
 		}
 	}
 	// outra instância lê a mesma chave do disco
-	r2 := New(r.KeyFile, sshknown.New(""))
+	r2 := New(r.KeyFile, "", sshknown.New(""))
 	_, fp2, _ := r2.PublicKey()
 	if fp1 != fp2 {
 		t.Fatal("a chave deveria ser reaproveitada, não recriada")
 	}
 	al, _ := r.AuthorizedLine()
-	if !strings.HasPrefix(al, `restrict,command="sudo -n /usr/sbin/shutdown -h +1" ssh-ed25519 `) {
+	if !strings.HasPrefix(al, `restrict,command="/usr/local/sbin/brunos-host" ssh-ed25519 `) {
 		t.Fatalf("linha do authorized_keys inesperada: %q", al)
 	}
 }
 
 func TestTestNeverOpensSession(t *testing.T) {
 	dir := t.TempDir()
-	r := New(filepath.Join(dir, "hostcmd_key"), sshknown.New(filepath.Join(dir, "known_hosts.json")))
+	r := New(filepath.Join(dir, "hostcmd_key_v2"), "", sshknown.New(filepath.Join(dir, "known_hosts.json")))
 	signer, err := r.key()
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := startServer(t, func() ssh.PublicKey { return signer.PublicKey() })
+	srv := startServer(t, func() []ssh.PublicKey { return []ssh.PublicKey{signer.PublicKey()} })
 	tg := Target{Host: srv.host, Port: srv.port}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -133,7 +147,7 @@ func TestTestNeverOpensSession(t *testing.T) {
 		t.Fatalf("esperava UnknownHostError, veio %v", err)
 	}
 	// 2. Run também recusa servidor não confirmado (nunca confia sozinho)
-	if _, err := r.Run(ctx, tg); !errors.As(err, &unk) {
+	if _, err := r.Run(ctx, tg, CmdShutdown, false); !errors.As(err, &unk) {
 		t.Fatalf("Run com servidor desconhecido deveria recusar, veio %v", err)
 	}
 	// 3. confirmado: autentica e NÃO abre sessão
@@ -147,29 +161,91 @@ func TestTestNeverOpensSession(t *testing.T) {
 	if n := srv.sessions.Load(); n != 0 {
 		t.Fatalf("o teste abriu %d sessão(ões): isso desligaria o servidor de verdade", n)
 	}
-	// 4. Run abre exatamente uma sessão e devolve a saída
-	out, err := r.Run(ctx, tg)
-	if err != nil || !strings.Contains(out, "Shutdown scheduled") {
-		t.Fatalf("Run: %q %v", out, err)
+	// 4. Run abre exatamente uma sessão e entrega o pedido ao programa forçado
+	out, err := r.Run(ctx, tg, CmdLimit(80), false)
+	if err != nil || !strings.Contains(out, "ok limite 80") || srv.lastCmd() != "limite 80" {
+		t.Fatalf("Run: %q %v (pedido %q)", out, err, srv.lastCmd())
 	}
 	if n := srv.sessions.Load(); n != 1 {
 		t.Fatalf("Run deveria abrir 1 sessão, abriu %d", n)
 	}
 }
 
+// Servidor ainda com a configuração antiga: a chave nova é recusada na autenticação (sem
+// executar nada) e a antiga só pode ser usada para desligar.
+func TestLegacyServer(t *testing.T) {
+	dir := t.TempDir()
+	_, old, _ := ed25519.GenerateKey(rand.Reader)
+	oldSigner, _ := ssh.NewSignerFromKey(old)
+	block, _ := ssh.MarshalPrivateKey(old, "brunos-power")
+	os.WriteFile(filepath.Join(dir, "hostcmd_key"), pem.EncodeToMemory(block), 0o600)
+	r := New(filepath.Join(dir, "hostcmd_key_v2"), filepath.Join(dir, "hostcmd_key"), sshknown.New(filepath.Join(dir, "known_hosts.json")))
+	srv := startServer(t, func() []ssh.PublicKey { return []ssh.PublicKey{oldSigner.PublicKey()} })
+	tg := Target{Host: srv.host, Port: srv.port}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := r.Test(ctx, tg, ssh.FingerprintSHA256(srv.hostKey.PublicKey()))
+	if err == nil || !strings.Contains(err.Error(), "Energia") {
+		t.Fatalf("a chave nova deveria ser recusada num servidor não atualizado, veio %v", err)
+	}
+	if _, err := r.Run(ctx, tg, CmdLimit(80), true); err == nil {
+		t.Fatal("com a chave antiga, só desligar é permitido (qualquer sessão desliga)")
+	}
+	if _, err := r.Run(ctx, tg, CmdLimit(80), false); err == nil {
+		t.Fatal("a chave nova não deveria entrar no servidor antigo")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := srv.sessions.Load(); n != 0 {
+		t.Fatalf("nenhuma sessão deveria ter sido aberta, abriu %d (o servidor antigo desligaria)", n)
+	}
+	if _, err := r.Run(ctx, tg, CmdShutdown, true); err != nil || srv.sessions.Load() != 1 {
+		t.Fatalf("desligar com a chave antiga deveria funcionar: %v", err)
+	}
+	r2 := New(filepath.Join(dir, "x_v2"), filepath.Join(dir, "nao-existe"), sshknown.New(""))
+	if _, err := r2.Run(ctx, tg, CmdShutdown, true); !errors.Is(err, ErrNoLegacyKey) {
+		t.Fatalf("sem a chave antiga deveria avisar, veio %v", err)
+	}
+}
+
 func TestWrongKeyRefused(t *testing.T) {
 	dir := t.TempDir()
-	r := New(filepath.Join(dir, "hostcmd_key"), sshknown.New(""))
+	r := New(filepath.Join(dir, "hostcmd_key_v2"), "", sshknown.New(""))
 	_, other, _ := ed25519.GenerateKey(rand.Reader)
 	otherSigner, _ := ssh.NewSignerFromKey(other)
-	srv := startServer(t, func() ssh.PublicKey { return otherSigner.PublicKey() })
+	srv := startServer(t, func() []ssh.PublicKey { return []ssh.PublicKey{otherSigner.PublicKey()} })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	err := r.Test(ctx, Target{Host: srv.host, Port: srv.port}, ssh.FingerprintSHA256(srv.hostKey.PublicKey()))
-	if err == nil || !strings.Contains(err.Error(), "authorized_keys") {
-		t.Fatalf("chave não autorizada deveria dar erro explicando o authorized_keys, veio %v", err)
+	if err == nil || !strings.Contains(err.Error(), "Energia") {
+		t.Fatalf("chave não autorizada deveria dar erro explicando o que fazer, veio %v", err)
 	}
-	if _, err := r.Run(ctx, Target{}); !errors.Is(err, ErrNotConfigured) {
+	if _, err := r.Run(ctx, Target{}, CmdShutdown, false); !errors.Is(err, ErrNotConfigured) {
 		t.Fatalf("sem host deveria dar ErrNotConfigured, veio %v", err)
+	}
+}
+
+// O script do servidor recusa qualquer pedido fora da lista antes de chegar ao sudo.
+// Roda o script de verdade com o sh (só onde existe sh; no CI, Linux).
+func TestHostScriptRefuses(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil || runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("precisa de sh e de um usuário comum")
+	}
+	script := filepath.Join(t.TempDir(), "brunos-host")
+	os.WriteFile(script, []byte(HostScript), 0o755)
+	run := func(req string) (string, int) {
+		c := exec.Command(sh, script)
+		c.Env = []string{"SSH_ORIGINAL_COMMAND=" + req}
+		out, _ := c.CombinedOutput()
+		return string(out), c.ProcessState.ExitCode()
+	}
+	for _, bad := range []string{"", "rm -rf /", "limite", "limite 49", "limite 101", "limite 8O", "limite 80 90",
+		"limite 80; reboot", "limite $(id)", "limite *", "protecao talvez", "desligar agora", "versao x", "sh", "limite -1"} {
+		if out, code := run(bad); code != 2 {
+			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
+		}
+	}
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 2") {
+		t.Fatalf("versao: %d %q", code, out)
 	}
 }

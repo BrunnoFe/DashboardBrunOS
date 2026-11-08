@@ -48,6 +48,16 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
 18. **Desligamento seguro começa em modo simulação** (0.4.0) e só sai dele depois de um teste de
     conexão que passou para o mesmo host/porta/usuário. `shutdown -h +1` deixa 1 minuto para cancelar
     no servidor (`sudo shutdown -c`).
+    **Revisto na 0.8.1:** no Ubuntu 26.04 (systemd 259) uma trava "block" vale até para o root, e o
+    unattended-upgrades segura uma de `shutdown` o tempo todo; o `shutdown -h +1` era recusado e a
+    bateria acabou em 07/11/2026. Agora o comando forçado é `systemctl poweroff --check-inhibitors=no
+    --when=+1min` (testado no servidor do Bruno; `sudo shutdown -c` continua cancelando). Numa queda de
+    energia, passar por cima da trava é mais seguro que deixar a bateria acabar. O BrunOS também não
+    desiste mais depois de 3 tentativas: tenta a cada minuto enquanto estiver na bateria.
+    O comando forçado virou o script `brunos-host` (desligar + limite de carga), com **chave nova**:
+    com `command=` forçado, qualquer sessão roda o comando, então mandar "limite 80" a um servidor ainda
+    com a configuração antiga o desligaria. A chave nova é recusada por servidor não atualizado já na
+    autenticação, e o teste de conexão (que só autentica) prova a atualização.
 19. **Temperatura de HD sem acordar o disco** (0.5.0). O `drivetemp` manda um comando ao disco a cada
     leitura e, em alguns modelos, isso acorda um HD parado (spin down). Por isso o `readHwmon` (a cada
     2 s) ignora o `drivetemp`, e o HD só é medido de novo quando o contador de E/S
@@ -87,3 +97,8 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     arquivo só tem nomes de usuário (as senhas ficam no `/etc/shadow`, que continua fora).
 29. **Speedtest Tracker adiado para a 0.9.0** (escolha do Bruno). A API atual exige um token; a forma de
     guardar tokens de apps será decidida uma vez só, junto com Immich/AdGuard/Plex/Tailscale.
+30. **Limite de carga detectado uma vez por início** (0.8.1, pedido do Bruno: "não tem pra que sempre
+    verificar [...] em um notebook que não permite"). Detectar custa ler poucos arquivos; fazer isso a
+    cada início (e não gravar "sem suporte" para sempre) é o que permite trocar de notebook sem mexer em
+    nada. Sem suporte, o vigia não faz mais nada até reiniciar. Com suporte e um limite pedido, relê um
+    arquivo a cada 10 min (alguns notebooks esquecem o limite ao reiniciar).

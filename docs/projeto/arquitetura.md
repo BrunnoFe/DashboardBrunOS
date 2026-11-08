@@ -105,12 +105,27 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   registra a volta ao normal. `Subscribe` alimenta o SSE das estatísticas (`event: notify`).
 - **`internal/hostcmd`** (0.4.0): chave ED25519 própria em `/data/hostcmd_key` (0600). `Test` conecta e
   autentica **sem abrir sessão** (o `command=` forçado executaria); `Run` abre a sessão e roda o comando
-  forçado (`sudo -n /usr/sbin/shutdown -h +1`). Só aceita servidor já confirmado no `known_hosts.json`.
+  forçado. Desde a 0.8.1 o comando forçado é o script `/usr/local/sbin/brunos-host` (`HostScript`, instalado
+  pelos comandos colados), que só aceita `desligar` (`systemctl poweroff --check-inhibitors=no --when=+1min`),
+  `limite 50..100`, `protecao on|off` e `versao`, e chama a si mesmo pelo sudo (sudoers libera só ele),
+  conferindo de novo como root. Duas chaves: `/data/hostcmd_key_v2` (atual) e `/data/hostcmd_key` (da
+  0.8.0, que forçava `shutdown -h +1`; usada só para desligar até o servidor ser atualizado). Servidor não
+  atualizado recusa a chave nova na autenticação, então nunca roda o comando antigo por engano.
+  `SetupVersion` (hoje 2) sobe quando o que se cola no servidor muda. Só aceita servidor já confirmado.
 - **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
-  Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown}]}`,
-  100 quedas); configuração em `/data/power.json` (`enabled, threshold, graceSec, simulate, host, port,
-  user, testedAt`). Fases: off → armed → countdown → running → done/cancelled/failed; a energia voltando
-  rearma. Sair da simulação exige `testedAt` (zera se host/porta/usuário mudarem). 3 tentativas, 1 min.
+  Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown,seen,off}]}`,
+  100 quedas); na bateria grava a cada minuto (`seen`), e se o servidor apagar a queda fecha em `seen`
+  com `off: true`. Configuração em `/data/power.json` (`enabled, threshold, graceSec, simulate, host, port,
+  user, testedAt, hostSetup`). Fases: off → armed → countdown → running → done/cancelled/failed; a energia
+  voltando rearma. Sair da simulação exige `testedAt` (zera se host/porta/usuário mudarem). Tenta desligar
+  a cada 1 min enquanto estiver na bateria, sem limite (avisa na 1ª falha e a cada 10); bateria ≤ metade
+  do limite (ou ≤ 5%) desliga sem esperar a contagem. `hostSetup` < `SetupVersion` com `testedAt` =
+  servidor com configuração antiga: a janela Energia mostra os comandos de atualização (`updateCommands`
+  em `GET /api/power/setup`); o teste de conexão (chave nova) passando grava `hostSetup` atual.
+  **Limite de carga** (`charge.go`): `detectCharge` lê o `/sys` uma vez ao ligar (e em
+  `POST /api/power/charge {detect}`): `range`, `toggle` ou `none`. `POST /api/power/charge {limit}` ou
+  `{protect}` aplica pelo script e grava `chargeLimit`/`chargeProtect` em `power.json`; a cada 10 min,
+  só se houver suporte e pedido, relê um arquivo e reaplica (no máximo a cada 30 min).
 - **`internal/sysinfo/drivetemp.go`** (0.5.0): temperatura por disco (`Disk.temp`, `tempAt`). Liga o
   hwmon `drivetemp` ao `sdX` (`hwmonN/device/block/*`) e o hwmon `nvme` ao controlador (`nvme0`). Mede
   junto com os discos (a cada 20 s), mas no máximo 1 vez por minuto, e um HD só de novo se

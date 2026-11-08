@@ -191,7 +191,8 @@ func main() {
 	s.netmon.Enabled = func() bool { v, ok := s.readSettings()["netMonitor"].(bool); return !ok || v }
 	power.HostOK = terminal.HostRe.MatchString
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
-		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key"), known))
+		// chave nova (script brunos-host) e a da configuração antiga, só para desligar até atualizar
+		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key_v2"), filepath.Join(cfg.DataDir, "hostcmd_key"), known))
 	s.power.SuggestHost = func() string { _, info := s.tipi.Apps(); return info.InternalIP }
 	s.stats.SetDrain(s.power.DrainW())
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")

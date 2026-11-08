@@ -136,6 +136,7 @@ const real = {
     cancel: () => call('POST', '/api/power/cancel', {}),
     setup: () => call('GET', '/api/power/setup'),
     test: (b) => call('POST', '/api/power/test', b),
+    charge: (b) => call('POST', '/api/power/charge', b),
   },
   term: {
     open: (b) => call('POST', '/api/terminal/open', b),
@@ -317,15 +318,30 @@ function makeDemo() {
     E(86400 * 2 + 600, 'disk-unmounted', 'critico', 'O disco 1TB_HDD3 se desmontou', 'A pasta continua mapeada, mas não tem disco montado nela. O que for gravado ali vai para o disco do sistema. Confira o cabo e a montagem (sudo mount -a).'),
   ];
   const countdown = location.hash === '#contagem';
-  let powerCfg = { enabled: countdown, threshold: 20, graceSec: 120, simulate: true, host: '', port: 22, user: 'brunos-power', testedAt: 0 };
+  // #atualizar simula um servidor configurado na 0.8.0 (comando antigo de desligar)
+  const oldSetup = location.hash === '#atualizar';
+  let powerCfg = oldSetup
+    ? { enabled: true, threshold: 20, graceSec: 120, simulate: false, host: '192.168.1.50', port: 22, user: 'brunos-power', testedAt: now - 86400, hostSetup: 0 }
+    : { enabled: countdown, threshold: 20, graceSec: 120, simulate: true, host: '', port: 22, user: 'brunos-power', testedAt: 0, hostSetup: 0 };
+  // limite de carga: #semlimite (Inspiron 3542), #protecao (liga/desliga) ou contínuo (padrão)
+  const chargeState = location.hash === '#semlimite' || oldSetup ? { kind: 'none', model: 'Dell Inspiron 3542' }
+    : location.hash === '#protecao' ? { kind: 'toggle', model: 'Lenovo IdeaPad 3', on: false, protect: '' }
+    : { kind: 'range', model: 'Lenovo ThinkPad T480', current: 100, want: 0 };
+  const demoCharge = () => ({ ...chargeState, ready: !!powerCfg.testedAt && powerCfg.hostSetup >= 2, checkedAt: now });
+  const demoKeyConst = () => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstracaoChaveFalsaDoBrunOSqueNaoServe brunos-power';
+  const shutCmd = 'sudo -n /usr/bin/systemctl poweroff --check-inhibitors=no --when=+1min';
+  const keyCmds = [`echo 'restrict,command="${shutCmd}" ${demoKeyConst()}' | sudo tee /home/brunos-power/.ssh/authorized_keys >/dev/null`,
+    'sudo chown brunos-power:brunos-power /home/brunos-power/.ssh/authorized_keys', 'sudo chmod 600 /home/brunos-power/.ssh/authorized_keys',
+    `echo 'brunos-power ALL=(root) NOPASSWD: ${shutCmd.slice(8)}' | sudo tee /etc/sudoers.d/brunos-power >/dev/null`, 'sudo chmod 440 /etc/sudoers.d/brunos-power', 'sudo visudo -c'];
   const powerStatus = () => countdown
     ? { phase: 'countdown', deadline: now + 95, remaining: Math.max(0, now + 95 - Math.floor(Date.now() / 1000)), hasBattery: true, onBattery: true, percent: 19, simulate: true }
     : { phase: powerCfg.enabled ? 'armed' : 'off', hasBattery: true, onBattery: false, percent: 86, simulate: powerCfg.simulate };
   const outages = [
     { start: now - 60 * 52, end: now - 60 * 40, startPct: 97, endPct: 88, minPct: 88 },
+    { start: now - 86400 * 2, end: now - 86400 * 2 + 3600 * 5.7, startPct: 100, endPct: 3, minPct: 3, shutdown: 'falhou', off: true },
     { start: now - 86400 * 6, end: now - 86400 * 6 + 3600 * 1.5, startPct: 100, endPct: 41, minPct: 41, shutdown: 'simulado' },
   ];
-  const demoKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstracaoChaveFalsaDoBrunOSqueNaoServe brunos-power';
+  const demoKey = demoKeyConst();
   const nodeAt = (root, path) => {
     let n = tree[root];
     for (const p of (path || '').split('/').filter(Boolean)) { n = n?.children?.find((c) => c.name === p); }
@@ -362,21 +378,26 @@ function makeDemo() {
       forecast: () => wait({ disks: forecast }),
     },
     power: {
-      get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50' }),
+      get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50', needsUpdate: !!powerCfg.testedAt && powerCfg.hostSetup < 2, charge: demoCharge() }),
+      charge: (b) => {
+        if (b.detect) return wait({ charge: demoCharge() }, 300);
+        if (!demoCharge().ready) return Promise.reject(Object.assign(new Error('configure (ou atualize) a conexão com o servidor nesta janela e clique em Testar'), { status: 400, data: { charge: demoCharge() } }));
+        if (chargeState.kind === 'range') { chargeState.current = b.limit; chargeState.want = b.limit >= 100 ? 0 : b.limit; }
+        else if (chargeState.kind === 'toggle') { chargeState.on = b.protect === 'on'; chargeState.protect = b.protect; }
+        return wait({ charge: demoCharge() }, 700);
+      },
       save: (c) => {
         if (c.enabled && !c.simulate && !powerCfg.testedAt) return Promise.reject(new Error('teste a conexão com o servidor antes de desligar o modo simulação'));
         powerCfg = { ...powerCfg, ...c, testedAt: powerCfg.testedAt };
         return wait({ config: powerCfg, status: powerStatus() });
       },
       cancel: () => wait({ status: { ...powerStatus(), phase: 'cancelled' } }),
-      setup: () => wait({ publicKey: demoKey, fingerprint: 'SHA256:demo', user: 'brunos-power', command: 'sudo -n /usr/sbin/shutdown -h +1', suggestedHost: '192.168.1.50',
-        authorizedLine: `restrict,command="sudo -n /usr/sbin/shutdown -h +1" ${demoKey}`,
-        commands: ['sudo useradd --system --create-home --shell /bin/sh brunos-power', "sudo usermod -p '*' brunos-power", 'sudo install -d -m 700 -o brunos-power -g brunos-power /home/brunos-power/.ssh',
-          `echo 'restrict,command="sudo -n /usr/sbin/shutdown -h +1" ${demoKey}' | sudo tee /home/brunos-power/.ssh/authorized_keys >/dev/null`,
-          'sudo chown brunos-power:brunos-power /home/brunos-power/.ssh/authorized_keys', 'sudo chmod 600 /home/brunos-power/.ssh/authorized_keys',
-          "echo 'brunos-power ALL=(root) NOPASSWD: /usr/sbin/shutdown -h +1' | sudo tee /etc/sudoers.d/brunos-power >/dev/null", 'sudo chmod 440 /etc/sudoers.d/brunos-power', 'sudo visudo -c'].join('\n') }, 200),
+      setup: () => wait({ publicKey: demoKey, fingerprint: 'SHA256:demo', user: 'brunos-power', command: shutCmd, suggestedHost: '192.168.1.50',
+        authorizedLine: `restrict,command="${shutCmd}" ${demoKey}`,
+        commands: ['sudo useradd --system --create-home --shell /bin/sh brunos-power', "sudo usermod -p '*' brunos-power", 'sudo install -d -m 700 -o brunos-power -g brunos-power /home/brunos-power/.ssh', ...keyCmds].join('\n'),
+        updateCommands: keyCmds.join('\n') }, 200),
       test: (b) => b.trust
-        ? (() => { powerCfg = { ...powerCfg, host: b.host, port: b.port, user: b.user, testedAt: now }; return wait({ ok: true, config: powerCfg }, 600); })()
+        ? (() => { powerCfg = { ...powerCfg, host: b.host, port: b.port, user: b.user, testedAt: now, hostSetup: powerCfg.testedAt ? powerCfg.hostSetup : 2 }; return wait({ ok: true, config: powerCfg }, 600); })()
         : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
     },
     streamStats(onInit, onPoint) {

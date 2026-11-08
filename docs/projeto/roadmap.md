@@ -26,7 +26,9 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | B1 | **Desligamento seguro** quando a bateria cai abaixo de X% fora da tomada | M | feito (0.4.0) | Prioridade 1. Config: limite %, tempo de espera, aviso antes. Execução via SSH com chave restrita a `sudo /sbin/shutdown -h +1` (ou `systemctl poweroff`). Precisa de assistente de configuração (gera a chave, mostra a linha do `authorized_keys` e do sudoers). Testar sem desligar de verdade (modo simulação). |
 | B2 | Registro de quedas de energia | B | feito (0.4.0) | Detectar transições AC→bateria→AC; gravar em `/data/power-events.json` (início, fim, % gasto). Persistir também o último consumo medido (hoje `estimate` some ao reiniciar). |
 | B3 | Consumo do servidor (W) e custo (R$/mês) | B–M | a fazer | Intel RAPL (`/sys/class/powercap/intel-rapl:0/energy_uj`, pode exigir permissão de leitura) + consumo da bateria quando descarregando; tarifa em R$/kWh configurável. |
-| B4 | Limite de carga em 80% | M | a fazer | Depende do driver (`charge_control_end_threshold` na Dell via `dell_laptop`/`dell-smbios`?). Mostrar estado; aplicar via SSH restrito ou ensinar o comando/udev rule. |
+| B4 | Limite de carga (agnóstico ao notebook) | M | feito (0.8.1) | Detecta uma vez ao ligar (contínuo, liga/desliga ou nada); aplica pelo script `brunos-host`; reconfere a cada 10 min só se houver suporte e pedido. O Inspiron 3542 do Bruno não tem: aparece esmaecido com o modelo. |
+| B5 | Correções do desligamento seguro | B | feito (0.8.1) | Comando novo que passa pela trava do unattended-upgrades; tenta sem limite enquanto estiver na bateria; erro em pt-BR; queda fecha no último minuto ligado quando o servidor apaga; aviso para atualizar servidores configurados antes. |
+| B6 | Ajustes visuais no celular | B | feito (0.8.1) | Gaveta ☰ no Arquivos; controles à direita nas configurações; terminal em tela cheia com letra 11; porta vazia (22); sem o texto HSL na cor de destaque. |
 
 ## C. Notificações
 

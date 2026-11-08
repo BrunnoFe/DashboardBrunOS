@@ -27,17 +27,22 @@ let openWin = null;
 /**
  * ctx: { settings, saveSetting(k, v), defaultHost }
  */
+// Porta no formulário: vazio quando é a padrão (22); o SSH usa a 22 se o campo ficar vazio.
+const portValue = (p) => (p && +p !== 22 ? String(p) : '');
+// Celular: letra menor por padrão para caber mais colunas (os botões − e + continuam ajustando).
+const isPhone = () => matchMedia('(max-width: 640px)').matches;
+
 export function terminalWindow(ctx) {
   if (openWin) { openWin.focus(); return; }
   const st = ctx.settings;
-  let lastReq = null, session = null, term = null, fit = null, stopStream = null, ro = null, sendTimer = 0, pending = '', fontSize = st.termFontSize || 13;
+  let lastReq = null, session = null, term = null, fit = null, stopStream = null, ro = null, sendTimer = 0, pending = '', fontSize = st.termFontSize || (isPhone() ? 11 : 13);
   const d = openDialog(`<div class="term-win">
       <div class="term-head">
         <span class="term-title">${svg('terminal')}<b data-t="title">Terminal</b><small data-t="sub">SSH até o servidor</small></span>
         <span class="term-tools" hidden>
           <button class="icon-btn" data-t="smaller" title="Diminuir fonte" aria-label="Diminuir fonte">${svg('minus')}</button>
           <button class="icon-btn" data-t="bigger" title="Aumentar fonte" aria-label="Aumentar fonte">${svg('plus')}</button>
-          <button class="pill-btn" data-t="disconnect">${svg('logout')}Desconectar</button>
+          <button class="pill-btn" data-t="disconnect" aria-label="Desconectar">${svg('logout')}<span class="term-disc-txt">Desconectar</span></button>
         </span>
       </div>
       <div class="term-body"></div>
@@ -64,7 +69,7 @@ export function terminalWindow(ctx) {
       ${msg ? `<div class="term-msg">${svg('alert')}<span>${esc(msg)}</span></div>` : ''}
       <div class="term-grid">
         <label class="fld fld-host"><span>Servidor</span><input class="text-input" name="host" required value="${esc(prev?.host || st.sshHost || ctx.defaultHost || '')}" placeholder="192.168.1.50"></label>
-        <label class="fld fld-port"><span>Porta</span><input class="text-input" name="port" type="number" min="1" max="65535" value="${esc(String(prev?.port || st.sshPort || 22))}"></label>
+        <label class="fld fld-port"><span>Porta</span><input class="text-input" name="port" type="number" min="1" max="65535" value="${esc(portValue(prev?.port || st.sshPort))}" placeholder="22"></label>
         <label class="fld fld-user"><span>Usuário</span><input class="text-input" name="user" required value="${esc(prev?.user || st.sshUser || '')}" placeholder="ptbruno" autocapitalize="off" spellcheck="false"></label>
       </div>
       <div class="seg term-method"><button type="button" data-m="password" class="${method === 'password' ? 'on' : ''}">Senha</button><button type="button" data-m="key" class="${method === 'key' ? 'on' : ''}">Chave privada</button></div>

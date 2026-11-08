@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,14 +24,15 @@ import (
 )
 
 const (
-	maxOutages     = 100
-	drainSaveEvery = 5 * time.Minute
-	maxAttempts    = 3
-	retryAfter     = time.Minute
-	runTimeout     = 30 * time.Second
+	maxOutages    = 100
+	seenSaveEvery = time.Minute // na bateria: grava "ainda ligado" (e o consumo) a cada minuto
+	retryAfter    = time.Minute
+	notifyEvery   = 10 // depois da 1ª falha, avisa de novo a cada 10 tentativas
+	runTimeout    = 30 * time.Second
 
 	keyOutage   = "power-outage"
 	keyShutdown = "power-shutdown"
+	keySetupOld = "power-setup-old"
 )
 
 // Fases do desligamento seguro.
@@ -41,7 +43,7 @@ const (
 	PhaseRunning   = "running"   // mandando desligar agora
 	PhaseDone      = "done"      // já desligou (ou simulou) nesta queda
 	PhaseCancelled = "cancelled" // cancelado nesta queda; volta a vigiar quando a energia voltar
-	PhaseFailed    = "failed"    // não conseguiu desligar depois de várias tentativas
+	PhaseFailed    = "failed"    // sem como desligar (nenhum executor configurado)
 )
 
 type Config struct {
@@ -53,7 +55,17 @@ type Config struct {
 	Port      int    `json:"port"`
 	User      string `json:"user"`
 	TestedAt  int64  `json:"testedAt"` // último teste de conexão que passou (definido pelo servidor)
+	// HostSetup é a versão dos comandos colados no servidor (hostcmd.SetupVersion). Definido
+	// pelo servidor: no primeiro teste de conexão ou quando o usuário confirma que atualizou.
+	HostSetup int `json:"hostSetup"`
+	// Limite de carga desejado (definido pelo servidor em /api/power/charge): o BrunOS confere
+	// e reaplica se o notebook esquecer (alguns zeram ao reiniciar). 0 / "" = não mexe.
+	ChargeLimit   int    `json:"chargeLimit"`   // 50..95 (limite contínuo)
+	ChargeProtect string `json:"chargeProtect"` // "on" | "off" (proteção liga/desliga)
 }
+
+// NeedsUpdate diz se o servidor foi configurado com um comando antigo que precisa ser trocado.
+func (c Config) NeedsUpdate() bool { return c.TestedAt > 0 && c.HostSetup < hostcmd.SetupVersion }
 
 func DefaultConfig() Config {
 	return Config{Threshold: 20, GraceSec: 120, Simulate: true, Port: 22, User: hostcmd.DefaultUser}
@@ -70,6 +82,10 @@ type Outage struct {
 	EndPct   int    `json:"endPct"`
 	MinPct   int    `json:"minPct"`
 	Shutdown string `json:"shutdown,omitempty"` // simulado | executado | cancelado | falhou
+	// Seen é a última vez que o BrunOS estava ligado durante a queda (gravado a cada minuto).
+	// Se o servidor apagar, a queda fecha nesse horário, e não quando ele ligar de novo.
+	Seen int64 `json:"seen,omitempty"`
+	Off  bool  `json:"off,omitempty"` // o servidor apagou durante a queda (a bateria acabou)
 }
 
 type stateFile struct {
@@ -99,11 +115,20 @@ type Monitor struct {
 	// SuggestHost sugere o endereço do servidor (IP do Runtipi) quando ainda não há um.
 	SuggestHost func() string
 
-	runner   *hostcmd.Runner
-	mu       sync.Mutex
+	// HostRun faz um pedido ao script do servidor (limite de carga). Padrão: hostcmd.Runner.Run.
+	HostRun func(ctx context.Context, cfg Config, cmd string) (string, error)
+	// SysDir é onde ler o /sys (testes usam uma pasta falsa).
+	SysDir string
+
+	runner     *hostcmd.Runner
+	charge     chargeCap
+	chargeBusy bool
+	chargeTry  time.Time
+	mu         sync.Mutex
 	cfg      Config
 	st       stateFile
 	onBat    bool
+	resumed  bool // abriu com uma queda em aberto no arquivo
 	seen     bool
 	percent  int
 	phase    string
@@ -116,9 +141,15 @@ type Monitor struct {
 
 // New lê a configuração e o histórico. Arquivos vazios = só em memória (testes).
 func New(configFile, stateFile string, ev *events.Store, runner *hostcmd.Runner) *Monitor {
-	m := &Monitor{ConfigFile: configFile, StateFile: stateFile, Events: ev, Now: time.Now, cfg: DefaultConfig(), runner: runner}
+	m := &Monitor{ConfigFile: configFile, StateFile: stateFile, Events: ev, Now: time.Now, cfg: DefaultConfig(), runner: runner, SysDir: "/sys"}
 	if runner != nil {
-		m.Shutdown = func(ctx context.Context, c Config) (string, error) { return runner.Run(ctx, c.Target()) }
+		m.HostRun = func(ctx context.Context, c Config, cmd string) (string, error) {
+			return runner.Run(ctx, c.Target(), cmd, false)
+		}
+		// servidor ainda não atualizado: usa a chave antiga (lá, qualquer sessão desliga)
+		m.Shutdown = func(ctx context.Context, c Config) (string, error) {
+			return runner.Run(ctx, c.Target(), hostcmd.CmdShutdown, c.HostSetup < hostcmd.SetupVersion)
+		}
 	}
 	if configFile != "" {
 		if _, err := store.ReadJSON(configFile, &m.cfg); err != nil {
@@ -132,11 +163,17 @@ func New(configFile, stateFile string, ev *events.Store, runner *hostcmd.Runner)
 		}
 	}
 	if n := len(m.st.Outages); n > 0 && m.st.Outages[n-1].End == 0 {
-		m.onBat = true // o BrunOS reiniciou no meio de uma queda
+		m.onBat = true   // o BrunOS reiniciou no meio de uma queda
+		m.resumed = true // ...ou o servidor apagou e ligou de novo (decide na 1ª leitura)
 	}
 	m.phase = PhaseOff
 	if m.cfg.Enabled {
 		m.phase = PhaseArmed
+	}
+	if m.cfg.Enabled && !m.cfg.Simulate && m.cfg.NeedsUpdate() {
+		m.emitLocked(events.Event{Kind: "power-setup-old", Level: events.Aviso, Key: keySetupOld,
+			Title: "Atualize a configuração do desligamento",
+			Body:  "O Ubuntu passou a recusar o comando de desligar que o BrunOS usava. Abra Configurações → Energia, cole os comandos novos no servidor e clique em Testar."})
 	}
 	return m
 }
@@ -169,15 +206,21 @@ func fmtMin(d time.Duration) string {
 }
 
 // Run vigia a bateria a cada 5 s até ctx acabar. latest devolve a leitura mais recente.
+// Detecta o limite de carga uma vez e confere a cada 10 minutos (nada, se não houver).
 func (m *Monitor) Run(ctx context.Context, latest func() *Reading) {
+	m.DetectCharge()
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
-	for {
+	every := int(chargeCheckEvery / (5 * time.Second))
+	for i := 1; ; i++ {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			m.Step(latest())
+			if i%every == 0 {
+				m.checkCharge()
+			}
 		}
 	}
 }
@@ -210,34 +253,45 @@ func (m *Monitor) Step(b *Reading) {
 	if on {
 		if n := len(m.st.Outages); n > 0 {
 			o := &m.st.Outages[n-1]
-			o.EndPct = pct
+			o.EndPct, o.Seen = pct, now.Unix()
 			if pct < o.MinPct {
 				o.MinPct = pct
 			}
 		}
 		if b.PowerW > 0.3 {
 			m.st.DrainW = b.PowerW
-			if now.Sub(m.lastSave) >= drainSaveEvery {
-				m.saveStateLocked()
-			}
+		}
+		// grava a cada minuto: se a bateria acabar, a queda fecha no último minuto ligado
+		if now.Sub(m.lastSave) >= seenSaveEvery {
+			m.saveStateLocked()
 		}
 	}
 	if !on && m.onBat {
 		var start Outage
+		off := false
 		if n := len(m.st.Outages); n > 0 {
 			o := &m.st.Outages[n-1]
-			o.End, o.EndPct = now.Unix(), pct
+			// abriu com a queda em aberto e já está na tomada: o servidor apagou no meio dela
+			if m.resumed && o.Seen > 0 && now.Unix()-o.Seen > 3*60 {
+				o.End, o.Off, off = o.Seen, true, true
+			} else {
+				o.End, o.EndPct = now.Unix(), pct
+			}
 			start = *o
 		}
 		m.saveStateLocked()
 		body := "O servidor voltou para a tomada."
-		if start.Start > 0 {
+		switch {
+		case off:
+			body = fmt.Sprintf("O servidor apagou com a bateria em %d%%, depois de %s na bateria, e ligou de novo quando a energia voltou.",
+				start.EndPct, fmtMin(time.Unix(start.End, 0).Sub(time.Unix(start.Start, 0))))
+		case start.Start > 0:
 			used := start.StartPct - start.MinPct
 			body = fmt.Sprintf("Ficou %s na bateria e gastou %d%% da carga.", fmtMin(now.Sub(time.Unix(start.Start, 0))), max(used, 0))
 		}
 		m.resolveLocked(keyOutage, &events.Event{Kind: "power-restored", Level: events.Info, Title: "A energia voltou", Body: body})
 	}
-	m.onBat = on
+	m.onBat, m.resumed = on, false
 
 	// ── desligamento seguro ──
 	if !m.cfg.Enabled {
@@ -266,17 +320,29 @@ func (m *Monitor) Step(b *Reading) {
 	if m.phase == PhaseOff {
 		m.phase = PhaseArmed
 	}
+	// Bateria velha ou mal calibrada pode pular de 31% para 6% de uma vez (aconteceu em
+	// 07/11/2026). Abaixo da metade do limite (ou de 5%) não dá tempo de esperar: desliga já.
+	critical := pct <= m.cfg.Threshold/2 || pct <= 5
 	if m.phase == PhaseArmed && pct <= m.cfg.Threshold {
 		grace := time.Duration(m.cfg.GraceSec) * time.Second
+		if critical {
+			grace = 0
+		}
 		m.phase, m.deadline, m.attempts = PhaseCountdown, now.Add(grace), 0
 		title := fmt.Sprintf("O servidor vai desligar em %s", fmtMin(grace))
 		body := fmt.Sprintf("A bateria chegou a %d%% sem energia da tomada. Para cancelar: Configurações → Energia.", pct)
+		if critical {
+			title = "O servidor vai desligar agora"
+			body = fmt.Sprintf("A bateria caiu de repente para %d%% sem energia da tomada: não dá tempo de esperar.", pct)
+		}
 		if m.cfg.Simulate {
 			title = fmt.Sprintf("Simulação: o servidor desligaria em %s", fmtMin(grace))
 			body = fmt.Sprintf("A bateria chegou a %d%% sem energia da tomada. No modo simulação nada é desligado de verdade.", pct)
 		}
 		m.emitLocked(events.Event{Kind: "power-shutdown", Level: events.Critico, Title: title, Body: body, Key: keyShutdown,
 			Meta: map[string]any{"deadline": m.deadline.Unix(), "simulate": m.cfg.Simulate}})
+	} else if m.phase == PhaseCountdown && critical && m.attempts == 0 && now.Before(m.deadline) {
+		m.deadline = now // durante a contagem a bateria despencou: não espera o resto
 	}
 	if m.phase == PhaseCountdown && !now.Before(m.deadline) {
 		m.executeLocked(now)
@@ -324,17 +390,33 @@ func (m *Monitor) executeLocked(now time.Time) {
 		return
 	}
 	slog.Error("energia: não consegui desligar o servidor", "tentativa", attempt, "erro", err)
-	m.lastText = err.Error()
-	if attempt < maxAttempts {
-		m.phase, m.deadline = PhaseCountdown, now.Add(retryAfter)
-		m.emitLocked(events.Event{Kind: "power-shutdown-failed", Level: events.Critico, Title: "Não consegui desligar o servidor",
-			Body: fmt.Sprintf("%s. Tento de novo em 1 minuto (tentativa %d de %d).", err.Error(), attempt, maxAttempts)})
-		return
+	msg := friendlyError(err)
+	m.lastText = msg
+	if attempt == 1 {
+		m.markOutageLocked("falhou")
 	}
-	m.phase = PhaseFailed
-	m.markOutageLocked("falhou")
-	m.resolveLocked(keyShutdown, &events.Event{Kind: "power-shutdown-failed", Level: events.Critico, Title: "Não consegui desligar o servidor",
-		Body: fmt.Sprintf("%s. Desisti depois de %d tentativas: desligue o servidor manualmente.", err.Error(), maxAttempts)})
+	// Nunca desiste enquanto estiver na bateria: tenta de novo a cada minuto. Avisa na 1ª falha
+	// e depois a cada 10 tentativas, para não encher o sino.
+	m.phase, m.deadline = PhaseCountdown, now.Add(retryAfter)
+	if attempt == 1 || attempt%notifyEvery == 0 {
+		m.emitLocked(events.Event{Kind: "power-shutdown-failed", Level: events.Critico, Title: "Não consegui desligar o servidor",
+			Body: fmt.Sprintf("%s Continuo tentando a cada minuto enquanto estiver na bateria (tentativa %d).", msg, attempt)})
+	}
+}
+
+// friendlyError traduz as falhas mais comuns do desligamento para o português.
+func friendlyError(err error) string {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "inhibitor"):
+		return "O Ubuntu recusou desligar porque um programa (as atualizações automáticas, por exemplo) está segurando o desligamento. Atualize a configuração do servidor em Configurações → Energia."
+	case strings.Contains(s, "a password is required") || strings.Contains(s, "sudo:"):
+		return "O sudo do servidor não liberou o comando de desligar. Cole de novo os comandos de Configurações → Energia."
+	}
+	if !strings.HasSuffix(s, ".") {
+		s += "."
+	}
+	return s
 }
 
 func (m *Monitor) markOutageLocked(result string) {
@@ -438,6 +520,7 @@ func (m *Monitor) SetConfig(c Config) error {
 	} else {
 		c.TestedAt = m.cfg.TestedAt
 	}
+	c.HostSetup, c.ChargeLimit, c.ChargeProtect = m.cfg.HostSetup, m.cfg.ChargeLimit, m.cfg.ChargeProtect
 	if c.Enabled && !c.Simulate && c.TestedAt == 0 {
 		return errors.New("teste a conexão com o servidor antes de desligar o modo simulação")
 	}
@@ -456,13 +539,18 @@ func (m *Monitor) SetConfig(c Config) error {
 	return nil
 }
 
-// MarkTested grava o destino que acabou de passar no teste de conexão.
+// MarkTested grava o destino que acabou de passar no teste de conexão. O teste usa a chave
+// atual, que só entra num servidor com a configuração atual: passar prova que está atualizado.
 func (m *Monitor) MarkTested(t hostcmd.Target) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c := m.cfg
-	c.Host, c.Port, c.User, c.TestedAt = t.Host, t.Port, t.User, m.Now().Unix()
-	return m.writeConfigLocked(c)
+	c.Host, c.Port, c.User, c.TestedAt, c.HostSetup = t.Host, t.Port, t.User, m.Now().Unix(), hostcmd.SetupVersion
+	if err := m.writeConfigLocked(c); err != nil {
+		return err
+	}
+	m.resolveLocked(keySetupOld, nil)
+	return nil
 }
 
 func (m *Monitor) writeConfigLocked(c Config) error {

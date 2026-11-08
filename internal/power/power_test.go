@@ -3,7 +3,10 @@ package power
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +211,270 @@ func TestRealShutdownRetries(t *testing.T) {
 	m.SetConfig(cfg)
 	if m.Config().TestedAt != 0 {
 		t.Fatal("mudar o servidor deveria exigir novo teste")
+	}
+}
+
+// A trava do Ubuntu (inhibitor) fez a 0.8.0 desistir depois de 3 tentativas. Agora o
+// BrunOS tenta a cada minuto enquanto estiver na bateria, sem encher o sino.
+func TestShutdownNeverGivesUp(t *testing.T) {
+	m, ev, c, _ := setup(t)
+	cfg := DefaultConfig()
+	cfg.Enabled, cfg.Simulate, cfg.Host = true, false, "192.168.1.50"
+	m.MarkTested(cfg.Target())
+	if err := m.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	m.Shutdown = func(context.Context, Config) (string, error) {
+		calls++
+		if calls <= 25 {
+			return "", errors.New("o comando saiu com código 1: Failed to schedule shutdown: Operation denied due to active block inhibitor")
+		}
+		return "Shutdown scheduled", nil
+	}
+	m.Step(bat(20, true))
+	c.add(2 * time.Minute)
+	for i := 0; i < 25; i++ {
+		m.Step(bat(19-i/3, true))
+		if m.Status().Phase != PhaseCountdown {
+			t.Fatalf("tentativa %d: deveria continuar tentando, fase %s", calls, m.Status().Phase)
+		}
+		c.add(time.Minute)
+	}
+	if calls != 25 {
+		t.Fatalf("deveria ter tentado 25 vezes, tentou %d", calls)
+	}
+	fails := 0
+	for _, s := range titles(ev) {
+		if s == "Não consegui desligar o servidor" {
+			fails++
+		}
+	}
+	if fails != 3 { // tentativas 1, 10 e 20
+		t.Fatalf("deveria avisar 3 vezes (1ª, 10ª e 20ª), avisou %d", fails)
+	}
+	list, _ := ev.List()
+	if !strings.Contains(list[0].Body, "atualizações automáticas") {
+		t.Fatalf("erro da trava deveria vir explicado em português: %q", list[0].Body)
+	}
+	m.Step(bat(10, true))
+	if calls != 26 || m.Status().Phase != PhaseDone {
+		t.Fatalf("a 26ª tentativa deveria desligar (chamadas %d, fase %s)", calls, m.Status().Phase)
+	}
+	if o := m.Outages(); o[0].Shutdown != "executado" {
+		t.Fatalf("a queda deveria terminar como executado: %+v", o[0])
+	}
+}
+
+// O servidor apagou no meio da queda (bateria acabou) e só ligou quando a energia voltou:
+// a queda fecha no último minuto em que estava ligado, não na hora em que ligou de novo.
+func TestServerDiedDuringOutage(t *testing.T) {
+	m, _, c, dir := setup(t)
+	m.Step(bat(100, false))
+	m.Step(bat(100, true))
+	for i := 0; i < 30; i++ {
+		c.add(time.Minute)
+		m.Step(bat(99-3*i, true))
+	}
+	lastSeen := c.t.Unix()
+	c.add(4 * time.Hour) // desligado
+	ev2 := events.New("")
+	ev2.Now = c.now
+	m2 := New(filepath.Join(dir, "power.json"), filepath.Join(dir, "power-events.json"), ev2, nil)
+	m2.Now = c.now
+	ev2.Emit(events.Event{Key: keyOutage, Title: "A energia caiu"}) // o sino guarda o aviso aberto em disco
+	m2.Step(bat(5, false))                                          // ligou na tomada
+	o := m2.Outages()[0]
+	if !o.Off || o.End != lastSeen || o.End-o.Start != 1800 {
+		t.Fatalf("a queda deveria fechar no último minuto ligado (30 min) e marcar que apagou: %+v", o)
+	}
+	list, _ := ev2.List()
+	if !strings.Contains(list[0].Body, "apagou") || !strings.Contains(list[0].Body, "30 min") {
+		t.Fatalf("aviso deveria dizer que o servidor apagou depois de 30 min: %q", list[0].Body)
+	}
+}
+
+func TestSetupVersion(t *testing.T) {
+	m, _, _, _ := setup(t)
+	m.MarkTested(Config{Host: "a", Port: 22, User: "brunos-power"}.Target())
+	if m.Config().NeedsUpdate() {
+		t.Fatal("configuração nova já usa os comandos atuais")
+	}
+	// servidor configurado na 0.8.0 (sem hostSetup)
+	c := m.Config()
+	c.HostSetup = 0
+	m.mu.Lock()
+	m.writeConfigLocked(c)
+	m.mu.Unlock()
+	if !m.Config().NeedsUpdate() {
+		t.Fatal("servidor configurado com o comando antigo deveria pedir atualização")
+	}
+	cfg := m.Config()
+	cfg.HostSetup = 99 // o navegador não decide isso
+	m.SetConfig(cfg)
+	if !m.Config().NeedsUpdate() {
+		t.Fatal("hostSetup vindo do navegador deveria ser ignorado")
+	}
+	// o teste de conexão usa a chave nova: passar prova que o servidor foi atualizado
+	m.MarkTested(c.Target())
+	if m.Config().NeedsUpdate() {
+		t.Fatal("depois de um teste que passou, não deveria pedir atualização")
+	}
+	up := UpdateCommands("brunos-power", "x")
+	if !strings.Contains(up, "--check-inhibitors=no") || !strings.Contains(up, "<<'EOF'") || strings.Contains(up, "useradd") ||
+		!strings.Contains(up, "NOPASSWD: /usr/local/sbin/brunos-host'") || strings.Contains(up, "\t") {
+		t.Fatalf("comandos de atualização errados:\n%s", up)
+	}
+}
+
+// Pulo da bateria (31% → 6%, como em 07/11/2026): abaixo da metade do limite não espera a contagem.
+func TestCriticalDropShutsDownNow(t *testing.T) {
+	m, ev, c, _ := setup(t)
+	cfg := DefaultConfig()
+	cfg.Enabled, cfg.Simulate, cfg.Host = true, false, "192.168.1.50"
+	m.MarkTested(cfg.Target())
+	m.SetConfig(cfg)
+	calls := 0
+	m.Shutdown = func(context.Context, Config) (string, error) { calls++; return "ok", nil }
+	m.Step(bat(31, true))
+	c.add(5 * time.Minute)
+	m.Step(bat(6, true))
+	if calls != 1 || m.Status().Phase != PhaseDone {
+		t.Fatalf("deveria desligar na hora (chamadas %d, fase %s)", calls, m.Status().Phase)
+	}
+	if got := titles(ev); !contains(got, "O servidor vai desligar agora") {
+		t.Fatalf("aviso deveria dizer que desliga agora: %v", got)
+	}
+	// durante a contagem normal, se despencar, também não espera o resto
+	m2, _, c2, _ := setup(t)
+	m2.MarkTested(cfg.Target())
+	m2.SetConfig(cfg)
+	n2 := 0
+	m2.Shutdown = func(context.Context, Config) (string, error) { n2++; return "ok", nil }
+	m2.Step(bat(19, true))
+	c2.add(10 * time.Second)
+	m2.Step(bat(9, true)) // aplica o atalho
+	m2.Step(bat(9, true)) // executa
+	if n2 != 1 {
+		t.Fatalf("contagem deveria ser encurtada quando a bateria despenca, chamadas %d", n2)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// fakeSys monta um /sys de mentira com uma bateria e os arquivos pedidos.
+func fakeSys(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	all := map[string]string{"class/power_supply/BAT0/type": "Battery\n", "class/power_supply/AC/type": "Mains\n",
+		"class/dmi/id/sys_vendor": "Dell Inc.\n", "class/dmi/id/product_name": "Inspiron 3542\n"}
+	for k, v := range files {
+		all[k] = v
+	}
+	for k, v := range all {
+		p := filepath.Join(dir, k)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(v), 0o644)
+	}
+	return dir
+}
+
+func TestChargeDetect(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		kind  string
+	}{
+		{"Inspiron 3542 (nada)", nil, ChargeNone},
+		{"ThinkPad (contínuo)", map[string]string{"class/power_supply/BAT0/charge_control_end_threshold": "80\n"}, ChargeRange},
+		{"Samsung (liga/desliga)", map[string]string{"class/power_supply/BAT0/charge_types": "[Standard] Long_Life\n"}, ChargeToggle},
+		{"IdeaPad antigo (conservação)", map[string]string{"bus/platform/drivers/ideapad_acpi/VPC2004_00/conservation_mode": "0\n"}, ChargeToggle},
+		{"só Standard/Fast (não serve)", map[string]string{"class/power_supply/BAT0/charge_types": "[Standard] Fast\n"}, ChargeNone},
+	}
+	for _, tc := range cases {
+		c := detectCharge(fakeSys(t, tc.files))
+		if c.kind != tc.kind {
+			t.Errorf("%s: esperava %s, veio %s", tc.name, tc.kind, c.kind)
+		}
+		if c.model != "Dell Inspiron 3542" {
+			t.Errorf("modelo errado: %q", c.model)
+		}
+	}
+}
+
+func TestChargeApplyAndReapply(t *testing.T) {
+	m, _, _, _ := setup(t)
+	sys := fakeSys(t, map[string]string{"class/power_supply/BAT0/charge_control_end_threshold": "100\n"})
+	m.SysDir = sys
+	m.DetectCharge()
+	end := filepath.Join(sys, "class/power_supply/BAT0/charge_control_end_threshold")
+	var sent []string
+	m.HostRun = func(_ context.Context, _ Config, cmd string) (string, error) {
+		sent = append(sent, cmd)
+		var n int
+		fmt.Sscanf(cmd, "limite %d", &n)
+		os.WriteFile(end, []byte(fmt.Sprintf("%d\n", n)), 0o644) // o "servidor" aplica
+		return "limite " + strconv.Itoa(n), nil
+	}
+	ctx := context.Background()
+	if _, err := m.SetCharge(ctx, 80, ""); err == nil {
+		t.Fatal("sem servidor configurado e testado não deveria aplicar")
+	}
+	m.MarkTested(Config{Host: "a", Port: 22, User: "brunos-power"}.Target())
+	for _, bad := range []int{0, 49, 101} {
+		if _, err := m.SetCharge(ctx, bad, ""); err == nil {
+			t.Errorf("limite %d deveria ser recusado", bad)
+		}
+	}
+	info, err := m.SetCharge(ctx, 80, "")
+	if err != nil || info.Current != 80 || info.Want != 80 || sent[len(sent)-1] != "limite 80" {
+		t.Fatalf("aplicar 80%%: %+v %v %v", info, err, sent)
+	}
+	// o notebook esqueceu (reiniciou): a conferência reaplica
+	os.WriteFile(end, []byte("100\n"), 0o644)
+	m.checkCharge()
+	for i := 0; i < 100 && len(sent) < 2; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(sent) != 2 || sent[1] != "limite 80" {
+		t.Fatalf("deveria reaplicar o limite esquecido: %v", sent)
+	}
+	// 100% = sem limite: o BrunOS para de mexer
+	if info, _ := m.SetCharge(ctx, 100, ""); info.Want != 0 {
+		t.Fatalf("100%% deveria parar de gerenciar: %+v", info)
+	}
+	os.WriteFile(end, []byte("60\n"), 0o644)
+	m.mu.Lock()
+	m.chargeTry = time.Time{}
+	m.mu.Unlock()
+	m.checkCharge()
+	time.Sleep(50 * time.Millisecond)
+	if len(sent) != 3 {
+		t.Fatalf("sem pedido não deveria reaplicar nada: %v", sent)
+	}
+}
+
+func TestChargeNoneDoesNothing(t *testing.T) {
+	m, _, _, _ := setup(t)
+	m.SysDir = fakeSys(t, nil)
+	m.DetectCharge()
+	m.MarkTested(Config{Host: "a", Port: 22, User: "brunos-power"}.Target())
+	called := false
+	m.HostRun = func(context.Context, Config, string) (string, error) { called = true; return "", nil }
+	info, err := m.SetCharge(context.Background(), 80, "")
+	if err == nil || info.Kind != ChargeNone || info.Model != "Dell Inspiron 3542" {
+		t.Fatalf("notebook sem limite deveria recusar e dizer o modelo: %+v %v", info, err)
+	}
+	m.checkCharge()
+	if called {
+		t.Fatal("notebook sem limite não deveria chamar o servidor")
 	}
 }
 
