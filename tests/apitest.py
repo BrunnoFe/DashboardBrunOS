@@ -71,6 +71,10 @@ d=json.loads(b); check('porta e loja', any(a['urn']=='syncthing:migrated' and a[
 s,b,h=req('GET','/api/apps/logo?urn=syncthing:migrated'); check('logo', s==200 and b[:2]==b'\xff\xd8')
 s,b,_=req('GET','/api/apps/logo?urn=../../etc'); check('logo de urn inválida → 404', s==404)
 s,b,_=req('GET','/api/stats'); st=json.loads(b); check('stats', st['snapshot']['mem']['total']>0, b[:200])
+s,b,_=req('GET','/api/apps/history?urn=syncthing:migrated'); h=json.loads(b); check('apps: histórico de 24 h', s==200 and h['step']==60 and isinstance(h['points'],list) and h['health'] in ('up','down','unknown'), b)
+s,b,_=req('GET','/api/apps/history?urn=nao:existe'); check('apps: histórico de app desconhecido → 404', s==404)
+s,b,_=req('GET','/api/apps/logs?urn=nao:existe'); check('apps: logs de app desconhecido → 404', s==404)
+s,b,_=req('POST','/api/apps/stop',{'urn':'syncthing:migrated'},hdr=False); check('apps: parar sem X-BrunOS → 403', s==403)
 # 0.6.0: vídeo com Range, editor, envio em pedaços, extrair, duplicados, mapa do espaço
 s,b,_=req('PUT','/api/files/upload?root=home&path=ptbruno&name=clip.mp4', raw=b'\x00\x00\x00\x18ftypmp42'+b'x'*100, ctype='application/octet-stream')
 r=urllib.request.Request(B+'/api/files/raw?root=home&path=ptbruno/clip.mp4'); r.add_header('Range','bytes=0-3')

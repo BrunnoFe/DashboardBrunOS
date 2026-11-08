@@ -6,7 +6,7 @@ import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './pow
 import { diskRowsHTML, driveTempHelp } from './disks.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
-  toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog,
+  toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
 } from './ui.js';
 
 /* ── Estado ────────────────────────────────────────────────────── */
@@ -14,7 +14,7 @@ const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
   wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
-  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, openIn: 'tab',
+  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, appPages: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
@@ -293,55 +293,243 @@ function renderApps() {
   const appW = Math.min(Math.round(set().iconSize * 1.8), Math.floor((innerWidth - 40) / 4));
   document.documentElement.style.setProperty('--app-w', appW + 'px');
   document.documentElement.style.setProperty('--app-icon', Math.min(set().iconSize, Math.round(appW * 0.68)) + 'px');
-  const apps = allApps().filter((a) => !a.o.hidden);
-  if (!apps.length) {
+  const items = homeItems();
+  grid.classList.remove('paged');
+  if (!items.length) {
     grid.innerHTML = `<div class="grid-empty">${S.tipi.found === false ? 'Não encontrei a pasta do Runtipi. Confira a montagem <code>/runtipi</code> no docker-compose.' : 'Nenhum app ainda.'}<br><button class="pill-btn" data-action="add-link">${svg('plus')}Adicionar atalho</button></div>`;
     return;
   }
-  grid.innerHTML = apps.map((a, i) => {
-    const url = appUrl(a);
-    const dot = set().showStatus && a.state !== 'unknown' ? `<i class="status-dot ${a.state}" title="${{ running: 'Rodando', stopped: 'Parado', partial: 'Parcialmente rodando' }[a.state] || ''}"></i>` : '';
-    return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn === 'tab' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" draggable="true" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}">
-      ${appIconHTML(a, 'app-icon', dot)}<span class="app-name">${esc(a.name)}</span></a>`;
-  }).join('');
+  // Páginas: quantos ícones cabem na tela (colunas × linhas abaixo dos widgets)
+  const per = perPage(grid, appW);
+  if (!set().appPages || items.length <= per) {
+    grid.innerHTML = items.map(itemHTML).join('');
+    return;
+  }
+  const pages = [];
+  for (let i = 0; i < items.length; i += per) pages.push(items.slice(i, i + per));
+  page = clamp(page, 0, pages.length - 1);
+  grid.classList.add('paged');
+  grid.innerHTML = `<div class="pages-track">${pages.map((p, pi) => `<div class="app-page" role="list" aria-label="Página ${pi + 1} de ${pages.length}">${p.map((it, i) => itemHTML(it, pi * per + i)).join('')}</div>`).join('')}</div>
+    <div class="page-dots">${pages.map((_, i) => `<button class="${i === page ? 'on' : ''}" data-page="${i}" aria-label="Página ${i + 1}"></button>`).join('')}</div>`;
+  const track = $('.pages-track', grid);
+  track.scrollLeft = page * track.clientWidth;
+  track.addEventListener('scroll', debounce(() => {
+    page = Math.round(track.scrollLeft / track.clientWidth);
+    $$('.page-dots button', grid).forEach((b, i) => b.classList.toggle('on', i === page));
+  }, 60), { passive: true });
+}
+
+/* Pastas (E3) e páginas (E4) */
+let page = 0;
+const folders = () => set().folders || [];
+const folderById = (id) => folders().find((f) => f.id === id);
+// Itens da tela inicial: apps que não estão em pastas + pastas (com pelo menos um app visível), na ordem salva.
+function homeItems() {
+  const apps = allApps().filter((a) => !a.o.hidden);
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  const inFolder = new Set(folders().flatMap((f) => f.apps));
+  const items = [
+    ...apps.filter((a) => !inFolder.has(a.id)).map((a) => ({ key: a.id, name: a.name, app: a })),
+    ...folders().map((f) => ({ key: `folder:${f.id}`, name: f.name, folder: f, apps: f.apps.map((id) => byId.get(id)).filter(Boolean) })).filter((f) => f.apps.length),
+  ];
+  const idx = new Map(set().order.map((id, i) => [id, i]));
+  const at = (it) => (idx.has(it.key) ? idx.get(it.key) : 1e6);
+  return items.sort((a, b) => at(a) - at(b) || a.name.localeCompare(b.name, 'pt-BR'));
+}
+function statusDot(a) {
+  if (!set().showStatus || a.state === 'unknown' || a.kind !== 'runtipi') return '';
+  const down = a.health === 'down' && a.state !== 'stopped';
+  const label = down ? 'Fora do ar' : { running: 'Rodando', stopped: 'Parado', partial: 'Parcialmente rodando' }[a.state] || '';
+  return `<i class="status-dot ${a.state} ${down ? 'down' : ''}" title="${label}"></i>`;
+}
+function appTileHTML(a, i, extra = '') {
+  const url = appUrl(a);
+  return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn === 'tab' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="true" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
+    ${appIconHTML(a, 'app-icon', statusDot(a))}<span class="app-name">${esc(a.name)}</span></a>`;
+}
+function itemHTML(it, i) {
+  if (it.app) return appTileHTML(it.app, i);
+  const down = it.apps.some((a) => a.health === 'down' && a.state !== 'stopped');
+  return `<button class="app folder" role="listitem" data-folder="${esc(it.folder.id)}" data-key="${esc(it.key)}" draggable="true" style="--i:${i}" title="${esc(it.name)} (${it.apps.length} apps)">
+    <span class="app-icon folder-icon">${it.apps.slice(0, 9).map((a) => appIconHTML(a, 'fi-mini')).join('')}${down && set().showStatus ? '<i class="status-dot down" title="Algum app fora do ar"></i>' : ''}</span><span class="app-name">${esc(it.name)}</span></button>`;
+}
+function perPage(grid, appW) {
+  const cols = Math.max(1, Math.floor(Math.min(innerWidth - 32, appW * 8) / appW));
+  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
+  const rowH = icon + 60; // ícone + nome + espaçamentos
+  const desk = $('#desktop');
+  const top = grid.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
+  const rows = Math.max(2, Math.floor((innerHeight - top - 150 - 26) / rowH)); // 150 = dock e pesquisa; 26 = pontinhos
+  return cols * rows;
+}
+function goPage(n) {
+  const track = $('#app-grid .pages-track'); if (!track) return false;
+  const max = $$('.app-page', track).length - 1;
+  const to = clamp(n, 0, max);
+  if (to === page && Math.abs(track.scrollLeft - to * track.clientWidth) < 4) return false;
+  page = to;
+  track.scrollTo({ left: to * track.clientWidth, behavior: set().reduceMotion ? 'auto' : 'smooth' });
+  return true;
+}
+// guarda a ordem atual da tela inicial, com `key` movido para a posição de `beforeKey` (ou o fim)
+function reorder(key, beforeKey) {
+  const keys = homeItems().map((it) => it.key).filter((k) => k !== key);
+  const to = beforeKey ? keys.indexOf(beforeKey) : -1;
+  keys.splice(to < 0 ? keys.length : to, 0, key);
+  set().order = keys;
+}
+function removeFromFolders(id) {
+  const st = set();
+  st.folders = folders().map((f) => ({ ...f, apps: f.apps.filter((x) => x !== id) }));
+}
+// pasta com 0 ou 1 app deixa de existir (o app que sobrou volta para o lugar da pasta)
+function tidyFolders() {
+  const st = set();
+  for (const f of folders()) {
+    if (f.apps.length > 1) continue;
+    const key = `folder:${f.id}`, i = st.order.indexOf(key);
+    if (i >= 0) st.order.splice(i, 1, ...f.apps);
+  }
+  st.folders = folders().filter((f) => f.apps.length > 1);
+}
+function dropInto(dragKey, targetKey) {
+  const st = set();
+  if (dragKey.startsWith('folder:')) return false; // pasta dentro de pasta: não
+  if (targetKey.startsWith('folder:')) {
+    const f = folderById(targetKey.slice(7)); if (!f) return false;
+    removeFromFolders(dragKey);
+    folderById(f.id).apps.push(dragKey);
+    tidyFolders(); save(); renderApps();
+    toast(`Na pasta ${f.name}`, appById(dragKey)?.name || '');
+    return true;
+  }
+  // app sobre app: cria uma pasta no lugar do alvo
+  const id = Math.random().toString(36).slice(2, 9);
+  removeFromFolders(dragKey); removeFromFolders(targetKey);
+  reorder(`folder:${id}`, targetKey);
+  st.order = st.order.filter((k) => k !== targetKey && k !== dragKey);
+  st.folders = [...folders(), { id, name: 'Pasta', apps: [targetKey, dragKey] }];
+  tidyFolders(); save(); renderApps();
+  toast('Pasta criada', 'Abra a pasta para dar um nome.', { label: 'Renomear', run: () => renameFolder(id) });
+  return true;
+}
+async function renameFolder(id) {
+  const f = folderById(id); if (!f) return;
+  const name = await promptDialog('Nome da pasta', { label: 'Nome', value: f.name, okLabel: 'Salvar' });
+  if (!name) return;
+  f.name = name.slice(0, 40); save(); renderApps();
+  $(`.folder-dialog[data-fid="${CSS.escape(id)}"] .fd-name`)?.replaceChildren(document.createTextNode(f.name));
+}
+function ungroupFolder(id) {
+  const st = set(), key = `folder:${id}`, f = folderById(id); if (!f) return;
+  const i = st.order.indexOf(key);
+  if (i >= 0) st.order.splice(i, 1, ...f.apps);
+  st.folders = folders().filter((x) => x.id !== id);
+  save(); renderApps();
+}
+function openFolder(id) {
+  const f = folderById(id); if (!f) return;
+  const draw = (el) => {
+    const apps = folderById(id)?.apps.map(appById).filter((a) => a && !a.o.hidden) || [];
+    $('.fd-grid', el).innerHTML = apps.map((a, i) => appTileHTML(a, i, 'data-in-folder="1"')).join('');
+  };
+  const d = openDialog(`<div class="folder-dialog" data-fid="${esc(id)}"><button class="fd-name" data-fd="rename" title="Renomear">${esc(f.name)}</button><div class="fd-grid app-grid"></div>
+    <p class="fd-hint">Clique com o botão direito num app para tirá-lo da pasta.</p></div>`, { cls: 'fd-dialog', width: 560 });
+  draw(d.el);
+  d.el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-fd="rename"]')) { renameFolder(id); return; }
+    const el = e.target.closest('.app'); if (!el) return;
+    const a = appById(el.dataset.app);
+    if (!appUrl(a)) { e.preventDefault(); openApp(a); }
+    else setTimeout(() => d.close(), 50);
+  });
+  d.el.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.app'); if (!el) return;
+    e.preventDefault();
+    const a = appById(el.dataset.app);
+    contextMenu(e.clientX, e.clientY, [
+      { icon: 'external', label: 'Abrir', run: () => openApp(a) },
+      { icon: 'info', label: 'Detalhes, logs e uso…', hidden: a.kind !== 'runtipi', run: () => openAppDetails(a) },
+      { icon: 'arrowUp', label: 'Tirar da pasta', run: () => {
+        removeFromFolders(a.id); reorder(a.id, `folder:${id}`); tidyFolders(); save(); renderApps();
+        if (folderById(id)) draw(d.el); else d.close();
+      } },
+    ]);
+  });
+}
+function folderMenu(id, x, y) {
+  contextMenu(x, y, [
+    { icon: 'folder', label: 'Abrir', run: () => openFolder(id) },
+    { icon: 'edit', label: 'Renomear…', run: () => renameFolder(id) },
+    '-',
+    { icon: 'grid', label: 'Desfazer a pasta', run: () => ungroupFolder(id) },
+  ]);
 }
 (() => {
   const grid = $('#app-grid');
   grid.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="add-link"]')) { linkDialog(); return; }
+    const dot = e.target.closest('[data-page]'); if (dot) { goPage(+dot.dataset.page); return; }
+    const fo = e.target.closest('[data-folder]'); if (fo) { openFolder(fo.dataset.folder); return; }
     const el = e.target.closest('.app'); if (!el) return;
     const a = appById(el.dataset.app);
     if (!appUrl(a)) { e.preventDefault(); openApp(a); }
   });
   grid.addEventListener('contextmenu', (e) => {
+    const fo = e.target.closest('[data-folder]');
+    if (fo) { e.preventDefault(); folderMenu(fo.dataset.folder, e.clientX, e.clientY); return; }
     const el = e.target.closest('.app'); if (!el) return;
     e.preventDefault();
     appMenu(appById(el.dataset.app), e.clientX, e.clientY, el);
   });
-  let dragId = null;
+  // roda do mouse (vertical) sobre as páginas também troca de página
+  let wheelAt = 0;
+  grid.addEventListener('wheel', (e) => {
+    if (!grid.classList.contains('paged') || Math.abs(e.deltaY) < Math.abs(e.deltaX) || Math.abs(e.deltaY) < 20) return;
+    e.preventDefault();
+    if (Date.now() - wheelAt < 450) return;
+    wheelAt = Date.now(); goPage(page + (e.deltaY > 0 ? 1 : -1));
+  }, { passive: false });
+
+  // Arrastar: no meio de um ícone = juntar numa pasta; na borda = mudar de lugar.
+  // Perto da borda da tela, troca de página.
+  let dragKey = null, edgeTimer = 0;
+  const clear = () => $$('.drop-before,.drop-into', grid).forEach((x) => x.classList.remove('drop-before', 'drop-into'));
+  const zone = (e, el) => { const r = el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width; return fx > 0.25 && fx < 0.75 ? 'into' : 'before'; };
   grid.addEventListener('dragstart', (e) => {
     const el = e.target.closest('.app'); if (!el) return;
-    dragId = el.dataset.app; el.classList.add('dragging');
+    dragKey = el.dataset.key; el.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/x-brunos-app', dragId);
+    e.dataTransfer.setData('text/x-brunos-app', dragKey);
   });
   grid.addEventListener('dragover', (e) => {
-    if (!dragId) return;
+    if (!dragKey) return;
     e.preventDefault();
+    clear();
     const el = e.target.closest('.app');
-    $$('.drop-before', grid).forEach((x) => x.classList.remove('drop-before'));
-    if (el && el.dataset.app !== dragId) el.classList.add('drop-before');
+    if (el && el.dataset.key !== dragKey) el.classList.add(zone(e, el) === 'into' && !dragKey.startsWith('folder:') ? 'drop-into' : 'drop-before');
+    if (grid.classList.contains('paged')) {
+      const r = grid.getBoundingClientRect(), edge = e.clientX < r.left + 40 ? -1 : e.clientX > r.right - 40 ? 1 : 0;
+      if (edge && !edgeTimer) edgeTimer = setTimeout(() => { edgeTimer = 0; goPage(page + edge); }, 650);
+      if (!edge) { clearTimeout(edgeTimer); edgeTimer = 0; }
+    }
   });
   grid.addEventListener('drop', (e) => {
-    if (!dragId) return;
+    if (!dragKey) return;
     e.preventDefault(); e.stopPropagation();
-    const el = e.target.closest('.app');
-    const ids = allApps().map((a) => a.id).filter((id) => id !== dragId);
-    const to = el ? ids.indexOf(el.dataset.app) : ids.length;
-    ids.splice(to < 0 ? ids.length : to, 0, dragId);
-    set().order = ids; save(); renderApps();
+    const el = e.target.closest('.app'), key = dragKey;
+    dragKey = null; clear();
+    if (el && el.dataset.key !== key && zone(e, el) === 'into' && dropInto(key, el.dataset.key)) return;
+    reorder(key, el && el.dataset.key !== key ? el.dataset.key : null);
+    save(); renderApps();
   });
-  grid.addEventListener('dragend', () => { dragId = null; $$('.dragging,.drop-before', grid).forEach((x) => x.classList.remove('dragging', 'drop-before')); });
+  grid.addEventListener('dragend', () => { dragKey = null; clearTimeout(edgeTimer); edgeTimer = 0; $$('.dragging', grid).forEach((x) => x.classList.remove('dragging')); clear(); });
+  // setas do teclado trocam de página (fora de campos de texto, janelas e menus)
+  document.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (dialogs.length || currentSheet || menuOpen() || document.body.classList.contains('is-locked') || e.target.closest?.('input,textarea,select,.xterm,.cm-editor')) return;
+    if (goPage(page + (e.key === 'ArrowRight' ? 1 : -1))) e.preventDefault();
+  });
 })();
 function appMenu(a, x, y, el) {
   const st = set();
@@ -350,6 +538,7 @@ function appMenu(a, x, y, el) {
   el?.classList.add('menu-open');
   contextMenu(x, y, [
     { icon: 'external', label: 'Abrir', run: () => openApp(a) },
+    { icon: 'info', label: 'Detalhes, logs e uso…', hidden: a.kind !== 'runtipi', run: () => openAppDetails(a) },
     { icon: 'globe', label: 'Abrir pelo domínio local', hidden: !alt, run: () => window.open(appUrl(a, 'domain'), '_blank', 'noopener') },
     { icon: 'network', label: `Abrir por IP:porta (${a.port})`, hidden: !alt, run: () => window.open(appUrl(a, 'port'), '_blank', 'noopener') },
     { icon: 'copy', label: 'Copiar endereço', hidden: !appUrl(a), run: async () => { try { await navigator.clipboard.writeText(appUrl(a)); toast('Endereço copiado', appUrl(a)); } catch { toast('Não deu para copiar', appUrl(a)); } } },
@@ -357,10 +546,27 @@ function appMenu(a, x, y, el) {
     { icon: 'edit', label: 'Personalizar…', run: () => editAppDialog(a) },
     { icon: 'pin', label: pinned ? 'Remover do dock' : 'Fixar no dock', run: () => { st.dock = pinned ? st.dock.filter((i) => i !== a.id) : [...st.dock, a.id]; save(); renderDock(); } },
     { icon: 'refresh', label: 'Reiniciar app', hidden: !(S.dockerActions && a.kind === 'runtipi' && a.state !== 'stopped'), run: () => restartApp(a) },
+    { icon: 'power', label: a.state === 'stopped' ? 'Ligar app' : 'Parar app', hidden: !(S.dockerActions && a.kind === 'runtipi' && a.state !== 'unknown'), run: () => startStopApp(a) },
     '-',
     { icon: 'eyeOff', label: 'Ocultar da tela inicial', run: () => { st.apps[a.id] = { ...(st.apps[a.id] || {}), hidden: true }; save(); renderApps(); toast(`${a.name} oculto`, 'Mostre de novo em Configurações → Apps.'); } },
     { icon: 'trash', label: 'Remover atalho', danger: true, hidden: a.kind !== 'link', run: () => { st.links = st.links.filter((l) => `link:${l.id}` !== a.id); st.dock = st.dock.filter((i) => i !== a.id); save(); renderApps(); renderDock(); } },
   ], () => el?.classList.remove('menu-open'));
+}
+async function startStopApp(a) {
+  const stop = a.state !== 'stopped';
+  if (!(await confirmDialog(`${stop ? 'Parar' : 'Ligar'} ${a.name}?`, stop ? 'Pelo BrunOS o Runtipi não fica sabendo: se o servidor ou o Runtipi reiniciar, o app volta a ligar. Para parar de vez, pare pelo painel do Runtipi.' : 'Os containers do app serão ligados.', stop ? 'Parar' : 'Ligar', { danger: stop }))) return;
+  try { await (stop ? api.app.stop(a.urn) : api.app.start(a.urn)); toast(`${a.name} ${stop ? 'parado' : 'ligado'}`); setTimeout(loadApps, 1500); }
+  catch (e) { toastError(e, `Não foi possível ${stop ? 'parar' : 'ligar'}`); }
+}
+// Detalhes do app (logs, uso, disponibilidade, ações): módulo carregado só quando abre
+function openAppDetails(a) {
+  if (!a) return;
+  import('./appinfo.js').then((m) => m.appDetails(a, {
+    iconHTML: (x) => appIconHTML(x, 'app-icon ai-icon'), appUrl, openApp, runtipiBase, dockerActions: S.dockerActions,
+    monitored: (x) => !set().apps[x.id]?.noMonitor,
+    setMonitored: (x, on) => { const st = set(); st.apps[x.id] = { ...(st.apps[x.id] || {}), noMonitor: !on }; save(); },
+    reload: () => setTimeout(loadApps, 1500),
+  })).catch((e) => toastError(e, 'Não deu para abrir os detalhes'));
 }
 async function restartApp(a) {
   if (!(await confirmDialog(`Reiniciar ${a.name}?`, 'Os containers do app serão reiniciados. Leva alguns segundos.', 'Reiniciar'))) return;
@@ -551,7 +757,9 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor para IP:porta', desc: `Vazio = o mesmo endereço que você usou para abrir o BrunOS (${esc(location.hostname || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
     { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor, na ordem em que você marca', ctrl: dockPickerBtn() },
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
-    { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando', ctrl: sw('showStatus') },
+    { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando, vermelho fora do ar', ctrl: sw('showStatus') },
+    { group: 'Apps', cat: 'apps', icon: 'bell', title: 'Avisar quando um app cair', desc: 'A cada minuto o BrunOS confere se cada app responde e avisa no sino se algum parar. Dá para desligar por app em Detalhes do app', ctrl: sw('appMonitor', 'Avisar quando um app cair') },
+    { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Páginas na tela inicial', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
     { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'Nova aba ou na mesma aba', ctrl: `<div class="seg"><button class="${st.openIn === 'tab' ? 'on' : ''}" data-openin="tab">Nova aba</button><button class="${st.openIn === 'same' ? 'on' : ''}" data-openin="same">Mesma aba</button></div>` },
     { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? hidden.map((a) => a.name).join(', ') : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
     { group: 'Apps', cat: 'apps', icon: 'sort', title: 'Ordem dos apps', desc: 'Arraste os ícones na tela inicial para reordenar', ctrl: st.order.length ? `<button class="pill-btn" data-act="reset-order">Ordem alfabética</button>` : '' },
@@ -857,7 +1065,7 @@ function liveUsageDialog() {
       $('.proc-list', d.el).innerHTML = list.length ? list.map((u) => {
         const a = u.urn ? appById(u.urn) : null;
         const icon = a ? appIconHTML(a, 'mini') : `<span class="mini" style="--tile:#fff"><img src="assets/icons/tipi.webp" alt=""></span>`;
-        return `<div class="proc">${icon}<span class="nm">${esc(a?.name || u.name)}</span><span class="track"><i style="width:${clamp((u.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(u.cpu, 2)}%</span><span class="mem">${fmtBytes(u.memory)}</span></div>`;
+        return `<div class="proc ${a ? 'clickable' : ''}" ${a ? `data-proc-app="${esc(a.id)}" title="Detalhes, logs e uso de ${esc(a.name)}"` : ''}>${icon}<span class="nm">${esc(a?.name || u.name)}</span><span class="track"><i style="width:${clamp((u.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(u.cpu, 2)}%</span><span class="mem">${fmtBytes(u.memory)}</span></div>`;
       }).join('') : `<div class="empty-note">${S.docker ? 'Nenhum container rodando' : 'Docker não conectado'}</div>`;
     } catch { /* tenta de novo no próximo ciclo */ }
     if (liveOpen) usageTimer = setTimeout(drawUsage, 3000);
@@ -870,6 +1078,7 @@ function liveUsageDialog() {
   };
   d.el.addEventListener('click', (e) => {
     if (e.target.closest('[data-disk="temp-help"]')) { driveTempHelp(); return; }
+    const pa = e.target.closest('[data-proc-app]'); if (pa) { openAppDetails(appById(pa.dataset.procApp)); return; }
     const c = e.target.closest('[data-m]'); if (!c) return;
     metric = c.dataset.m; $$('[data-m]', d.el).forEach((x) => x.classList.toggle('on', x === c)); drawChart();
   });
@@ -1030,8 +1239,11 @@ async function enterDesktop(animate) {
     // init chega ao conectar e a cada reconexão: relê avisos e a contagem para não perder nada
     (d) => { S.snapshot = d.snapshot; S.history = d.history || []; bindStats(); emit('stats'); refreshNotifications(); refreshPowerBanner(); },
     (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); emit('stats'); },
-    (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); },
+    (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
   );
+  // estado dos apps (bolinhas) atualizado a cada minuto, junto com o monitor do servidor
+  clearInterval(S.appsTimer);
+  S.appsTimer = setInterval(() => { if (!document.body.classList.contains('is-locked') && !document.hidden) loadApps(); }, 60000);
   document.body.classList.remove('is-locked');
   if (animate) { document.body.classList.add('just-unlocked'); setTimeout(() => document.body.classList.remove('just-unlocked'), 1600); }
   if (!set().welcomed) {

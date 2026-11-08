@@ -68,3 +68,15 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     lá dentro. Saiu o SQL das linguagens para economizar.
 23. **Tipos de mídia próprios** (0.6.0). A imagem `scratch` não tem `/etc/mime.types`, e o `mime` do Go
     só conhece imagens e arquivos da web; `.mp4` e `.mp3` saíam como `application/octet-stream`.
+24. **Desinstalar pelo painel do Runtipi** (0.7.0, escolha do Bruno). Quem sabe o que está instalado é
+    o banco do Runtipi; apagar containers pelo Docker deixaria o Runtipi achando que o app existe. A
+    alternativa (runtipi-cli por SSH com um usuário restrito e um script que valida o comando) foi
+    oferecida e recusada por ora: o botão abre `/apps/<loja>/<app>`, rota conferida em
+    `packages/frontend/src/routes.ts` do Runtipi.
+25. **Ligar/parar pelo Docker** (0.7.0, escolha do Bruno). Funciona sem nada novo no servidor, mas o
+    Runtipi não fica sabendo (o app volta ao estado dele quando o Runtipi/servidor reinicia); a interface
+    avisa na confirmação. O proxy do Docker passou a liberar `GET containers/<id>/logs` e
+    `POST containers/<id>/(start|stop)`; o BrunOS só aceita containers do projeto do app pedido.
+26. **Monitor de disponibilidade sem guardar em disco** (0.7.0). 24 h × 1 ponto/minuto por app em
+    memória (alguns KB); reiniciar o BrunOS zera o gráfico. Avisa só depois de 2 minutos seguidos fora
+    do ar, e app parado de propósito não conta como queda.

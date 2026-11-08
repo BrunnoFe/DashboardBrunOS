@@ -158,6 +158,82 @@ func (c *Client) Restart(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/restart?t=10", nil)
 }
 
+// Start e Stop ligam/param um container (o Docker responde 304 se já estava assim: não é erro).
+func (c *Client) Start(ctx context.Context, id string) error {
+	return ignore304(c.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/start", nil))
+}
+
+func (c *Client) Stop(ctx context.Context, id string) error {
+	return ignore304(c.do(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/stop?t=20", nil))
+}
+
+func ignore304(err error) error {
+	if err != nil && strings.Contains(err.Error(), ": 304 ") {
+		return nil
+	}
+	return err
+}
+
+// Logs abre os logs do container (stdout e stderr). tail = últimas N linhas; follow = continua
+// mandando as novas. Quem chama precisa fechar. O conteúdo vem no formato multiplexado do Docker
+// quando o container não tem TTY: use Demux.
+func (c *Client) Logs(ctx context.Context, id string, tail int, follow bool) (io.ReadCloser, bool, error) {
+	q := url.Values{"stdout": {"1"}, "stderr": {"1"}, "tail": {fmt.Sprint(tail)}, "timestamps": {"1"}}
+	if follow {
+		q.Set("follow", "1")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/"+apiVersion+"/containers/"+url.PathEscape(id)+"/logs?"+q.Encode(), nil)
+	if err != nil {
+		return nil, false, err
+	}
+	hc := c.hc
+	if follow { // o stream fica aberto: sem o timeout geral do cliente
+		cp := *c.hc
+		cp.Timeout = 0
+		hc = &cp
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		resp.Body.Close()
+		return nil, false, fmt.Errorf("docker logs: %d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	// container com TTY manda texto puro; sem TTY, quadros com cabeçalho de 8 bytes
+	raw := resp.Header.Get("Content-Type") == "application/vnd.docker.raw-stream"
+	return resp.Body, !raw, nil
+}
+
+// Demux lê o formato multiplexado (cabeçalho [tipo,0,0,0,tamanho uint32 big-endian] + dados) e
+// escreve só os dados em w.
+func Demux(r io.Reader, w io.Writer) error {
+	var hdr [8]byte
+	for {
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nil
+			}
+			return err
+		}
+		n := int64(hdr[4])<<24 | int64(hdr[5])<<16 | int64(hdr[6])<<8 | int64(hdr[7])
+		if hdr[0] > 2 || n > 16<<20 { // não é multiplexado de verdade: copia o resto como está
+			if _, err := w.Write(hdr[:]); err != nil {
+				return err
+			}
+			_, err := io.Copy(w, r)
+			return err
+		}
+		if _, err := io.CopyN(w, r, n); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	var v struct {
 		Version string `json:"Version"`

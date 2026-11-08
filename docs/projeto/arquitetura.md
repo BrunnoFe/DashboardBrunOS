@@ -51,7 +51,17 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `estimate` (autonomia na tomada pelo último consumo medido descarregando; só em memória), histórico
   de carga a cada 5 min por 24 h (enviado no stream só a cada ~30 amostras).
 - **`internal/dockerc`**: cliente HTTP mínimo para a API Docker v1.41 (unix ou tcp): `Containers`,
-  `Stats` (one-shot; CPU por delta; memória = usage − inactive_file), `Restart`, `Ping`.
+  `Stats` (one-shot; CPU por delta; memória = usage − inactive_file), `Restart`, `Start`, `Stop` (304 não
+  é erro), `Logs(id, tail, follow)` + `Demux` (formato multiplexado com cabeçalho de 8 bytes), `Ping`.
+- **`internal/appmon`** (0.7.0): por projeto do compose, 1440 pontos (24 h, um por minuto) de CPU,
+  memória (MB) e disponibilidade (1 no ar, 0 fora, −1 parado/sem medição), só em memória. `Uptime`,
+  `Health` (fora do ar só depois de 2 minutos seguidos), `Alert` (`app-down:<urn>` / `app-up`).
+- **`apps.go`** (pacote main, 0.7.0): `hAppAction` (start/stop/restart de todos os containers do app),
+  `hAppContainers`, `hAppHistory`, `hAppLogs` (texto, até 5000 linhas / 8 MB), `hAppLogsStream` (SSE,
+  uma linha JSON por evento), `watchApps` (a cada minuto: `collectUsage` + `probe` em
+  `InternalIP:porta` — porta fechada ou travada = fora; qualquer resposta HTTP ou protocolo diferente =
+  no ar; container `restarting` = fora; parado = não conta). Preferências lidas do `settings.json`:
+  `appMonitor` (padrão ligado) e `apps[urn].noMonitor`.
 - **`internal/runtipi`**: `Discoverer` com cache de 20 s. Lê `apps/<loja>/<app>/config.json`,
   `app-data/<loja>/<app>/app.env` (**só** as chaves da lista permitida: `APP_PORT`, `APP_DOMAIN`,
   `APP_LOCAL_DOMAIN`, `APP_PROTOCOL`, `APP_EXPOSED`, `APP_EXPOSED_DOMAIN`, `LOCAL_DOMAIN`, `INTERNAL_IP`,
@@ -122,7 +132,9 @@ GET/PUT /api/settings                 (JSON livre do frontend, até 512 KB, /dat
 GET/PUT /api/wallpapers · GET/DELETE /api/wallpapers/{name}   (nome ^[a-f0-9]{16}\.(jpg|png|webp|avif|gif)$)
 GET  /api/stats · /api/stats/stream (SSE: event init {snapshot,history}; data {snapshot,point})
 GET  /api/system                      (info, runtipi, docker, dockerActions, terminal, version...)
-GET  /api/apps · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart
+GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
+GET  /api/apps/containers?urn · /api/apps/history?urn ({points,step,health,uptime?}) · /api/apps/logs?urn&id&tail
+GET  /api/apps/logs/stream?urn&id     (SSE: ready, data = linha em JSON, end)
 GET  /api/files/roots · disks · list · raw · zip · search · trash
 PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty
 GET  /api/terminal/sessions · stream?id= (SSE base64; eventos ready/exit/replaced)
@@ -183,6 +195,13 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 - `js/api.js`: arquivos > 16 MB vão por `chunkedUpload` (pedaços de 8 MB, até 8 tentativas com espera
   crescente, id guardado no `localStorage` por raiz|pasta|nome|tamanho|lastModified para retomar).
 - `js/ui.js`: `openDialog(..., {beforeClose})` (devolver false cancela o fechamento).
+- `js/appinfo.js` (0.7.0): `appDetails(a, ctx)` (estado, linha do tempo de 96 blocos de 15 min, gráfico
+  SVG de 24 h, logs com "Ao vivo", ligar/parar/reiniciar, "Abrir no Runtipi", "Desinstalar…" que abre
+  `/apps/<loja>/<app>` no painel do Runtipi, "Avisar se este app cair").
+- `js/app.js` (0.7.0): `homeItems()` (apps fora de pastas + pastas, na ordem de `order`, que agora guarda
+  também `folder:<id>`), `perPage()` (colunas × linhas que cabem abaixo dos widgets, mínimo 2 linhas),
+  páginas com `scroll-snap` + pontinhos + setas + roda do mouse; arrastar no meio de um ícone junta numa
+  pasta, na borda reordena; pasta com 1 app se desfaz.
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
@@ -191,7 +210,9 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 `showStatus`, `reduceMotion`, `openIn` (`tab`|`same`), `urlMode` (`auto`|`domain`|`port`), `serverHost`,
 `runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
 (atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
-`sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio). **Nunca** guardar senhas aqui.
+`sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio),
+`appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
+`[{id,name,apps:[ids]}]`), `apps[id].noMonitor`. **Nunca** guardar senhas aqui.
 
 ## Testes
 

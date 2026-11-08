@@ -159,6 +159,25 @@ const real = {
   usage: () => call('GET', '/api/usage'),
   restart: (urn) => call('POST', '/api/apps/restart', { urn }),
   logoUrl: (urn) => `/api/apps/logo?${q({ urn })}`,
+  app: {
+    start: (urn) => call('POST', '/api/apps/start', { urn }),
+    stop: (urn) => call('POST', '/api/apps/stop', { urn }),
+    containers: (urn) => call('GET', `/api/apps/containers?${q({ urn })}`),
+    history: (urn) => call('GET', `/api/apps/history?${q({ urn })}`),
+    async logs(urn, id, tail = 300) {
+      const res = await fetch(`/api/apps/logs?${q({ urn, id, tail })}`, { headers: H, credentials: 'same-origin' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erro ${res.status}`); }
+      return res.text();
+    },
+    // linhas novas dos logs (SSE); devolve a função que para de acompanhar
+    follow(urn, id, onLine, onEnd) {
+      const es = new EventSource(`/api/apps/logs/stream?${q({ urn, id })}`);
+      es.onmessage = (e) => onLine(JSON.parse(e.data));
+      es.addEventListener('end', () => { es.close(); onEnd?.(); });
+      es.onerror = () => { if (es.readyState === EventSource.CLOSED) onEnd?.(); };
+      return () => es.close();
+    },
+  },
   files: {
     roots: () => call('GET', '/api/files/roots'),
     disks: () => call('GET', '/api/files/disks'),
@@ -366,6 +385,32 @@ function makeDemo() {
     apps: () => wait({ apps, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
     usage: () => wait([{ urn: '', name: 'Runtipi (sistema)', project: 'runtipi', cpu: 1.2 + Math.random(), memory: 420e6 }, ...apps.filter((a) => a.state === 'running').map((a) => ({ urn: a.urn, name: a.name, project: a.project, cpu: Math.random() * 3, memory: 20e6 + Math.random() * 600e6 }))].sort((a, b) => b.cpu - a.cpu), 200),
     restart: () => Promise.reject(new Error('Indisponível na demonstração')),
+    app: (() => {
+      const ts = (ago) => new Date(Date.now() - ago * 1000).toISOString();
+      const demoLines = (name) => [
+        `${ts(3600)} [info] ${name} iniciando…`, `${ts(3590)} [info] escutando na porta 8080`, `${ts(1200)} [warn] uma requisição demorou 2,3 s`,
+        `${ts(300)} [info] tarefa agendada concluída`, `${ts(60)} [info] GET /api/status 200 4ms`, `${ts(5)} [info] GET /api/status 200 3ms`,
+      ];
+      return {
+        start: () => Promise.reject(new Error('Indisponível na demonstração')),
+        stop: () => Promise.reject(new Error('Indisponível na demonstração')),
+        containers: (urn) => { const a = apps.find((x) => x.urn === urn); const id = a?.id || 'app'; return wait(urn === 'immich:migrated'
+          ? [{ id: 'c1', name: 'immich-server', service: 'immich-server', state: 'running', status: 'Up 2 days', image: 'ghcr.io/immich-app/immich-server:v2' }, { id: 'c2', name: 'immich-db', service: 'immich-db', state: 'running', status: 'Up 2 days (healthy)', image: 'tensorchord/pgvecto-rs:pg16' }, { id: 'c3', name: 'immich-redis', service: 'immich-redis', state: 'running', status: 'Up 2 days', image: 'redis:7' }]
+          : [{ id: 'c1', name: `${id}_migrated-${id}-1`, service: id, state: a?.state === 'stopped' ? 'exited' : 'running', status: a?.state === 'stopped' ? 'Exited (0) 3 hours ago' : 'Up 2 days', image: `${id}:latest` }]); },
+        history: (urn) => {
+          const t0 = Math.floor(Date.now() / 60000) * 60, seed = urn.length;
+          const points = Array.from({ length: 1440 }, (_, i) => {
+            const t = t0 - (1439 - i) * 60, hour = new Date(t * 1000).getHours();
+            const busy = hour >= 19 && hour <= 23 ? 3 : 1;
+            return { t, cpu: Math.max(0, +(busy * (0.6 + Math.sin(i / 37 + seed) * 0.4 + Math.random() * 0.5)).toFixed(2)), mem: +(180 + seed * 9 + Math.sin(i / 200) * 25).toFixed(1), up: urn === 'homarr:migrated' ? -1 : (i > 300 && i < 309 && urn === 'plex:migrated') ? 0 : 1 };
+          });
+          const counted = points.filter((p) => p.up >= 0);
+          return wait({ points, step: 60, health: urn === 'homarr:migrated' ? 'unknown' : 'up', ...(counted.length ? { uptime: +(counted.filter((p) => p.up === 1).length / counted.length * 100).toFixed(2) } : {}) }, 250);
+        },
+        logs: (urn) => wait(demoLines(urn.split(':')[0]).join('\n') + '\n', 200),
+        follow(urn, id, onLine) { const t = setInterval(() => onLine(`${new Date().toISOString()} [info] GET /api/status 200 ${2 + Math.floor(Math.random() * 6)}ms`), 2500); return () => clearInterval(t); },
+      };
+    })(),
     term: (() => {
       const enc = new TextEncoder(); let out = null, line = '';
       const prompt = '\x1b[1;32mptbruno@homeio\x1b[0m:\x1b[1;34m~\x1b[0m$ ';

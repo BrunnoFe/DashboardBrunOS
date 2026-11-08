@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "brunos",
-      "image": "ghcr.io/brunnofe/brunos:0.6.0",
+      "image": "ghcr.io/brunnofe/brunos:0.7.0",
       "isMain": true,
       "internalPort": 8080,
       "user": "${BRUNOS_PUID}:${BRUNOS_PGID}",
@@ -39,8 +39,8 @@
         "-loglevel=warn",
         "-listenip=0.0.0.0",
         "-allowfrom=brunos",
-        "-allowGET=/v1\\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/stats)",
-        "-allowPOST=/v1\\..{1,2}/containers/[a-zA-Z0-9_.-]+/restart",
+        "-allowGET=/v1\\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/(stats|logs))",
+        "-allowPOST=/v1\\..{1,2}/containers/[a-zA-Z0-9_.-]+/(restart|start|stop)",
         "-watchdoginterval=3600",
         "-stoponwatchdog",
         "-shutdowngracetime=5"

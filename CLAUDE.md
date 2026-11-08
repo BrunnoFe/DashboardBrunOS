@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.6.0 em 08/11/2026)
+- Versão atual: veja `VERSION` (0.7.0 em 08/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -58,7 +58,9 @@ main.go                     config por env, rotas HTTP, auth/CSRF, settings, wal
 internal/auth/              usuários (PBKDF2), sessões, limitador de tentativas
 internal/store/             JSON/arquivos atômicos
 internal/sysinfo/           coleta de CPU, memória, temperatura (hwmon), ventoinha, bateria, discos, rede
-internal/dockerc/           cliente Docker mínimo (lista, stats, restart) via proxy
+internal/dockerc/           cliente Docker mínimo (lista, stats, start/stop/restart, logs) via proxy
+internal/appmon/            uso e disponibilidade por app em 24 h (memória) e aviso de app fora do ar
+apps.go                     rotas de apps (ações, containers, logs, histórico) e vigia de disponibilidade
 internal/runtipi/           descobre apps instalados no Runtipi (config.json, app.env com lista permitida)
 internal/files/             gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca, discos
                             mapeados, editor de texto, extrair, duplicados, mapa do espaço)
@@ -83,6 +85,7 @@ web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista 
 web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)
 web/static/js/editor.js     editor de texto (CodeMirror 6 de web/static/vendor/codemirror, sob demanda)
 web/static/js/filetools.js  mapa do espaço (treemap) e arquivos duplicados
+web/static/js/appinfo.js    janela Detalhes do app (logs, uso 24 h, disponibilidade, ligar/parar, desinstalar)
 tools/codemirror/           receita (npm + esbuild) que gera o bundle do CodeMirror; não roda no build
 web/static/css/app.css      base visual (adaptada do umbrelOS)
 web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)

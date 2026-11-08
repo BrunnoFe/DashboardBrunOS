@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"brunos/internal/appmon"
 	"brunos/internal/auth"
 	"brunos/internal/diskhist"
 	"brunos/internal/dockerc"
@@ -101,6 +102,7 @@ type server struct {
 	power     *power.Monitor
 	logins    *logins.Store
 	diskHist  *diskhist.Store
+	appmon    *appmon.Monitor
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -129,7 +131,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now()}
+	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now(), appmon: appmon.New()}
 
 	hostProc := ""
 	if st, err := os.Stat(cfg.HostProc); err == nil && st.IsDir() {
@@ -192,6 +194,7 @@ func main() {
 	go s.stats.Run(ctx)
 	go s.power.Run(ctx, s.batteryReading)
 	go s.watchDisks(ctx)
+	go s.watchApps(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -259,7 +262,13 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/apps", a(s.hApps))
 	mux.HandleFunc("GET /api/apps/logo", a(s.hAppLogo))
 	mux.HandleFunc("GET /api/usage", a(s.hUsage))
-	mux.HandleFunc("POST /api/apps/restart", a(s.hAppRestart))
+	mux.HandleFunc("POST /api/apps/restart", a(s.hAppAction("restart")))
+	mux.HandleFunc("POST /api/apps/start", a(s.hAppAction("start")))
+	mux.HandleFunc("POST /api/apps/stop", a(s.hAppAction("stop")))
+	mux.HandleFunc("GET /api/apps/containers", a(s.hAppContainers))
+	mux.HandleFunc("GET /api/apps/history", a(s.hAppHistory))
+	mux.HandleFunc("GET /api/apps/logs", a(s.hAppLogs))
+	mux.HandleFunc("GET /api/apps/logs/stream", a(s.hAppLogsStream))
 
 	s.files.Register(mux, a)
 	s.events.Register(mux, a)
@@ -764,9 +773,11 @@ func (s *server) containers(ctx context.Context) ([]dockerc.Container, error) {
 
 type appOut struct {
 	runtipi.App
-	State      string `json:"state"` // running | stopped | partial | unknown
-	Containers int    `json:"containers"`
-	Running    int    `json:"running"`
+	State      string   `json:"state"` // running | stopped | partial | unknown
+	Containers int      `json:"containers"`
+	Running    int      `json:"running"`
+	Health     string   `json:"health"`           // up | down | unknown (monitor de disponibilidade)
+	Uptime     *float64 `json:"uptime,omitempty"` // % das últimas 24 h
 }
 
 func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
@@ -799,6 +810,10 @@ func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
 				o.State = "running"
 			}
 		}
+		o.Health = healthName(s.appmon.Health(a.Project))
+		if pct, ok := s.appmon.Uptime(a.Project); ok {
+			o.Uptime = &pct
+		}
 		out = append(out, o)
 	}
 	writeJSON(w, 200, map[string]any{"apps": out, "runtipi": info, "docker": err == nil, "dockerActions": s.cfg.DockerActions && err == nil})
@@ -823,18 +838,25 @@ type appUsage struct {
 	Memory  uint64  `json:"memory"`
 }
 
-// hUsage soma CPU e memória dos containers de cada app (só calcula quando alguém pede).
+// hUsage soma CPU e memória dos containers de cada app (calcula quando alguém pede, e o vigia de
+// apps também chama a cada minuto para o histórico de 24 h).
 func (s *server) hUsage(w http.ResponseWriter, r *http.Request) {
+	out, err := s.collectUsage(r.Context())
+	if err != nil {
+		out = []appUsage{}
+	}
+	writeJSON(w, 200, out)
+}
+
+func (s *server) collectUsage(ctx context.Context) ([]appUsage, error) {
 	s.usageMu.Lock()
 	defer s.usageMu.Unlock()
 	if time.Since(s.usageAt) < 2500*time.Millisecond && s.usage != nil {
-		writeJSON(w, 200, s.usage)
-		return
+		return s.usage, nil
 	}
-	cts, err := s.containers(r.Context())
+	cts, err := s.containers(ctx)
 	if err != nil {
-		writeJSON(w, 200, []appUsage{})
-		return
+		return nil, err
 	}
 	apps, _ := s.tipi.Apps()
 	names := map[string]runtipi.App{}
@@ -857,7 +879,7 @@ func (s *server) hUsage(w http.ResponseWriter, r *http.Request) {
 	results := make(chan res, len(running))
 	sem := make(chan struct{}, 4) // no máximo 4 consultas ao Docker ao mesmo tempo
 	var wg sync.WaitGroup
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	for _, c := range running {
 		wg.Add(1)
@@ -905,52 +927,5 @@ func (s *server) hUsage(w http.ResponseWriter, r *http.Request) {
 		return out[i].Memory > out[j].Memory
 	})
 	s.usage, s.usageAt = out, time.Now()
-	writeJSON(w, 200, out)
-}
-
-func (s *server) hAppRestart(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.DockerActions || s.docker == nil {
-		writeJSON(w, 403, map[string]string{"error": "ações no Docker estão desligadas (BRUNOS_DOCKER_ACTIONS)"})
-		return
-	}
-	var req struct {
-		URN string `json:"urn"`
-	}
-	if err := decode(r, &req, 4<<10); err != nil {
-		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
-		return
-	}
-	apps, _ := s.tipi.Apps()
-	project := ""
-	for _, a := range apps {
-		if a.URN == req.URN {
-			project = a.Project
-		}
-	}
-	if project == "" {
-		writeJSON(w, 404, map[string]string{"error": "app não encontrado"})
-		return
-	}
-	cts, err := s.containers(r.Context())
-	if err != nil {
-		writeJSON(w, 502, map[string]string{"error": "Docker indisponível"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	n := 0
-	for _, c := range cts {
-		if c.Project() == project && c.State == "running" {
-			if err := s.docker.Restart(ctx, c.ID); err != nil {
-				writeJSON(w, 502, map[string]string{"error": "falha ao reiniciar: " + c.Name()})
-				return
-			}
-			n++
-		}
-	}
-	s.ctMu.Lock()
-	s.ctAt = time.Time{}
-	s.ctMu.Unlock()
-	slog.Info("app reiniciado", "app", req.URN, "containers", n, "por", session(r).Username)
-	writeJSON(w, 200, map[string]int{"restarted": n})
+	return out, nil
 }

@@ -95,5 +95,20 @@ Pedidos (com prints):
 - **Mapa do espaço**: treemap das pastas, com cache de 10 min para navegar nas subpastas na hora.
 - `openDialog` ganhou `beforeClose` (o editor pergunta antes de fechar com alterações).
 
+## 0.7.0 (08/11/2026): apps (etapa 5 do plano)
+- **Detalhes do app** (botão direito no ícone, ou clique na lista do Uso ao vivo): estado,
+  disponibilidade das últimas 24 h (blocos de 15 min), gráfico de CPU/memória de 24 h, logs de cada
+  container (com "Ao vivo" por SSE, sem códigos de cor), ligar/parar/reiniciar.
+- **Desinstalar**: o Bruno pediu; escolheu o botão que abre a página do app no painel do Runtipi
+  (`/apps/<loja>/<app>`, conferido no código do Runtipi) em vez de dar ao BrunOS o runtipi-cli por SSH.
+- **Ligar/parar** pelo Docker (com `BRUNOS_DOCKER_ACTIONS`); o Runtipi não fica sabendo, e a interface
+  avisa. Proxy do Docker passou a liberar `GET .../logs` e `POST .../start|stop`.
+- **Monitor de disponibilidade** (`internal/appmon` + `apps.go`): a cada minuto, mede CPU/memória de
+  cada app e testa a porta (qualquer resposta HTTP = no ar); 2 minutos seguidos fora do ar → aviso no
+  sino, e outro quando volta. Bolinha vermelha no ícone. Liga/desliga em Configurações → Apps, e por
+  app em Detalhes. Histórico só na memória (24 h).
+- **Pastas** (arrastar um app sobre o meio de outro) e **páginas** na tela inicial (quando os apps
+  não cabem: deslizar, setas, roda do mouse ou pontinhos).
+
 ## Próximas
 Veja `roadmap.md`.

@@ -8,8 +8,8 @@ IMAGE="${1:-brunos:ci}"
 FIX="${FIX:-/tmp/bt}"
 PORT=8099
 NET=brunos-smoke
-ALLOW_GET='/v1\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/stats)'
-ALLOW_POST='/v1\..{1,2}/containers/[a-zA-Z0-9_.-]+/restart'
+ALLOW_GET='/v1\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/(stats|logs))'
+ALLOW_POST='/v1\..{1,2}/containers/[a-zA-Z0-9_.-]+/(restart|start|stop)'
 
 cleanup() {
   status=$?
@@ -17,7 +17,7 @@ cleanup() {
     echo "::group::logs do brunos"; docker logs brunos 2>&1 | tail -n 80 || true; echo "::endgroup::"
     echo "::group::logs do proxy"; docker logs brunos-docker-proxy 2>&1 | tail -n 40 || true; echo "::endgroup::"
   fi
-  docker rm -f brunos brunos-docker-proxy brunos-ssh >/dev/null 2>&1 || true
+  docker rm -f brunos brunos-docker-proxy brunos-ssh tipi-fake >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   exit $status
 }
@@ -32,6 +32,10 @@ docker run -d --name brunos-docker-proxy --network "$NET" \
   wollomatic/socket-proxy:1 \
   -loglevel=info -listenip=0.0.0.0 -allowfrom=brunos \
   "-allowGET=$ALLOW_GET" "-allowPOST=$ALLOW_POST" -shutdowngracetime=5 >/dev/null
+
+# um "app do Runtipi" de mentira: container com o rótulo do compose do Syncthing da fixture
+docker run -d --name tipi-fake --label com.docker.compose.project=syncthing_migrated --label com.docker.compose.service=syncthing \
+  busybox:1.36 sh -c 'trap "exit 0" TERM; while true; do echo ola-brunos-log; sleep 1; done' >/dev/null
 
 # servidor OpenSSH de verdade, para testar a janela Terminal (o BrunOS conecta nele por SSH)
 docker run -d --name brunos-ssh --network "$NET" \
@@ -60,7 +64,7 @@ BASE="http://127.0.0.1:$PORT" FIX="$FIX" python3 "$(dirname "$0")/apitest.py"
 
 # Integração com Docker, sistema e limites, com uma sessão nova
 python3 - "$PORT" <<'EOF'
-import json, sys, time, urllib.request, http.cookiejar
+import json, sys, time, urllib.request, urllib.error, http.cookiejar
 B = f"http://127.0.0.1:{sys.argv[1]}"
 op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 def req(m, p, b=None):
@@ -83,6 +87,30 @@ print("✓ sistema:", sysinfo["info"]["os"], "·", sysinfo["info"]["cpuModel"])
 st = req("GET", "/api/stats")["snapshot"]
 assert st["mem"]["total"] > 0 and st["disks"], "estatísticas incompletas"
 print(f"✓ estatísticas: CPU {st['cpu']['percent']}% · {len(st['disks'])} disco(s) · interfaces {st['net']['ifaces']}")
+# apps: containers, logs (pelo proxy), parar e ligar
+urn = "syncthing:migrated"
+cts = req("GET", f"/api/apps/containers?urn={urn}")
+assert len(cts) == 1 and cts[0]["state"] == "running" and cts[0]["service"] == "syncthing", f"containers do app: {cts}"
+cid = cts[0]["id"]
+with op.open(urllib.request.Request(f"{B}/api/apps/logs?urn={urn}&id={cid}&tail=20")) as x:
+    logs = x.read().decode()
+assert "ola-brunos-log" in logs and "\x01\x00\x00\x00" not in logs, f"logs: {logs[:300]!r}"
+print("✓ apps: logs do container pelo proxy (sem os cabeçalhos do Docker)")
+try:
+    op.open(urllib.request.Request(f"{B}/api/apps/logs?urn=plex:migrated&id={cid}"))
+    raise AssertionError("leu logs de um container que não é do app")
+except urllib.error.HTTPError as e:
+    assert e.code == 404
+print("✓ apps: não lê logs de container de outro app")
+r = req("POST", "/api/apps/stop", {"urn": urn}); assert r["containers"] == 1, r
+time.sleep(1)
+assert req("GET", f"/api/apps/containers?urn={urn}")[0]["state"] == "exited", "não parou"
+r = req("POST", "/api/apps/start", {"urn": urn}); assert r["containers"] == 1, r
+time.sleep(1)
+assert req("GET", f"/api/apps/containers?urn={urn}")[0]["state"] == "running", "não ligou"
+print("✓ apps: parar e ligar pelo proxy")
+h = req("GET", f"/api/apps/history?urn={urn}")
+assert h["step"] == 60 and isinstance(h["points"], list), h
 EOF
 
 # Terminal: SSH de verdade do container do BrunOS até um OpenSSH

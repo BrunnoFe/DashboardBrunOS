@@ -8,8 +8,8 @@
   "port": 8790,
   "categories": ["utilities"],
   "description": "",
-  "tipi_version": 6,
-  "version": "0.6.0",
+  "tipi_version": 7,
+  "version": "0.7.0",
   "source": "https://github.com/BrunnoFe/DashboardBrunOS",
   "exposable": true,
   "dynamic_config": true,
@@ -44,7 +44,7 @@
     {
       "type": "boolean",
       "label": "Permitir reiniciar apps pelo BrunOS",
-      "hint": "Habilita o item “Reiniciar app” no menu dos ícones.",
+      "hint": "Habilita reiniciar, ligar e parar apps pelo BrunOS (Detalhes do app). Parar pelo BrunOS não muda o estado no Runtipi.",
       "env_variable": "BRUNOS_DOCKER_ACTIONS",
       "default": false
     },
@@ -57,5 +57,5 @@
     }
   ],
   "created_at": 1794018606000,
-  "updated_at": 1794099931785
+  "updated_at": 1794102580979
 }

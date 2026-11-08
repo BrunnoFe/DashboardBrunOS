@@ -13,7 +13,8 @@ main.go                  servidor HTTP, rotas, autenticação, preferências, ap
 internal/auth            usuário, senha (PBKDF2-SHA256, 600k iterações), sessões, limite de tentativas
 internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos, rede (lê /proc e /sys)
 internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
-internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, reiniciar)
+internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, ligar/parar/reiniciar, logs)
+internal/appmon          uso e disponibilidade de cada app nas últimas 24 h (aviso quando um app cai)
 internal/files           gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca,
                          editor de texto, extrair, duplicados, mapa do espaço)
 internal/events          central de notificações (o sino da tela inicial)
@@ -83,7 +84,7 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## API (resumo)
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}`
+`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}` · `POST /api/apps/{start,stop}` · `GET /api/apps/{containers,history,logs,logs/stream}`
 
 ## Créditos e licenças de terceiros
 
@@ -105,6 +106,10 @@ O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `gola
 
 O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.
 
-A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche. Para a temperatura dos HDs, o módulo `drivetemp` do Linux precisa estar carregado; a própria janela mostra os comandos.
+A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche.
+
+## Apps
+
+Clique com o botão direito num ícone → *Detalhes, logs e uso* para ver a disponibilidade e o consumo de CPU e memória nas últimas 24 h, os logs de cada container (inclusive ao vivo) e ligar, parar ou reiniciar o app (com *Permitir reiniciar apps* ligado no formulário do Runtipi). Ligar e parar pelo BrunOS não muda o estado no Runtipi. *Desinstalar* abre a página do app no painel do Runtipi. A cada minuto o BrunOS confere se cada app responde e avisa no sino quando algum cai (dá para desligar em *Configurações → Apps*). Arraste um app sobre outro para criar uma pasta; com muitos apps, a tela inicial vira páginas. Para a temperatura dos HDs, o módulo `drivetemp` do Linux precisa estar carregado; a própria janela mostra os comandos.
 
 Em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.

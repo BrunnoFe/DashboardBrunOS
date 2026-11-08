@@ -17,7 +17,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | A1 | Aviso de atualização de apps do Runtipi | M | a investigar | O Runtipi guarda a versão instalada no Postgres, não em arquivos. Opções: comparar `tipi_version` do repositório da loja com algo legível em `app-data` (verificar), ou API interna do Runtipi. Não abrir acesso ao banco. |
 | A2 | Widgets com dados dos apps (Immich: fotos/vídeos; AdGuard: consultas/bloqueios; Plex: tocando agora) | M | a fazer | Cada integração precisa de URL + token do app, guardados no servidor (criptografados? decidir) e **nunca** enviados ao navegador; o backend faz as chamadas. |
 | A3 | PWA (instalar no celular) | B | adiado (celular) | `manifest.webmanifest`, ícones, service worker mínimo (só cache da casca; API nunca em cache). Base para F6 e C2. |
-| A4 | Monitor de disponibilidade dos apps com alerta | M | a fazer | Checagem HTTP periódica (porta/domínio de cada app) + estado do container; histórico de uptime; alertas pela central (C1). |
+| A4 | Monitor de disponibilidade dos apps com alerta | M | feito (0.7.0) | Checagem HTTP periódica (porta/domínio de cada app) + estado do container; histórico de uptime; alertas pela central (C1). |
 
 ## B. Energia e bateria (o notebook é o servidor; a bateria é o nobreak)
 
@@ -49,11 +49,11 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| E1 | Logs do container | B | a fazer | Liberar `GET /containers/{id}/logs` no proxy (`-allowGET`); stream com `follow` via SSE; limitar tamanho. |
-| E2 | Ligar/parar apps | B | a fazer | `-allowPOST` para `start`/`stop`; mesma opção `BRUNOS_DOCKER_ACTIONS`. Atenção: parar via Docker não muda o estado no Runtipi (documentar). |
-| E3 | Pastas na tela inicial | M | a fazer | Preferência `folders: [{id,name,apps:[...]}]`; arrastar app sobre app cria pasta; janela da pasta estilo iOS/Umbrel. |
-| E4 | Páginas na tela inicial | M | a fazer | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
-| E5 | Uso por app ao longo do tempo | M | a fazer | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
+| E1 | Logs do container | B | feito (0.7.0) | Liberar `GET /containers/{id}/logs` no proxy (`-allowGET`); stream com `follow` via SSE; limitar tamanho. |
+| E2 | Ligar/parar apps | B | feito (0.7.0) | `-allowPOST` para `start`/`stop`; mesma opção `BRUNOS_DOCKER_ACTIONS`. Parar via Docker não muda o estado no Runtipi (a interface avisa). **Desinstalar** (pedido do Bruno em 08/11/2026): botão que abre `/apps/<loja>/<app>` no painel do Runtipi (escolha do Bruno, em vez de runtipi-cli via SSH restrito). |
+| E3 | Pastas na tela inicial | M | feito (0.7.0) | Preferência `folders: [{id,name,apps:[...]}]`; arrastar app sobre app cria pasta; janela da pasta estilo iOS/Umbrel. |
+| E4 | Páginas na tela inicial | M | feito (0.7.0) | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
+| E5 | Uso por app ao longo do tempo | M | feito (0.7.0) | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
 
 ## F. Arquivos
 
@@ -119,7 +119,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 1 | 0.4.0 | Fundações (`internal/events`, `internal/hostcmd`) · C1 · B1 · B2 · D1 — **feito, aguardando teste no servidor** |
 | 2 | 0.5.0 | H3 · D2 · D4 — **feito, aguardando teste no servidor** |
 | 4 | 0.6.0 | F1 → F2 → F4 → F5 → D5 — **feito, aguardando teste no servidor** |
-| 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 |
+| 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 (+ desinstalar pelo Runtipi) — **feito, aguardando teste no servidor** |
 | 6 | 0.8.0 | G1 · G2 · G3 |
 | 7 | 0.9.0 | A2 · I1 · I3 · J2 |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
