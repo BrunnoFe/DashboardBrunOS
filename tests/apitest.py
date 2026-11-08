@@ -100,7 +100,7 @@ s,b,_=req('POST','/api/files/extract',{'root':'home','path':'ptbruno/pacote.zip'
 zb=io.BytesIO(); z=zipfile.ZipFile(zb,'w'); z.writestr('../../../../evil.txt','x'); z.close()
 req('PUT','/api/files/upload?root=home&path=ptbruno&name=mau.zip', raw=zb.getvalue(), ctype='application/octet-stream')
 s,b,_=req('POST','/api/files/extract',{'root':'home','path':'ptbruno/mau.zip'}); check('extrair: zip-slip recusado sem deixar nada', s==400 and not os.path.exists(FIX+'/files/home/ptbruno/mau') and not os.path.exists(FIX+'/evil.txt') and not os.path.exists(FIX+'/files/evil.txt'), (s,b))
-for n in ('dup1.bin','dup2.bin'): req('PUT','/api/files/upload?root=home&path=ptbruno/Dups&name='+n, raw=b'conteudo igual', ctype='application/octet-stream')
+for n in ('dup1.bin','dup2.bin'): req('PUT','/api/files/upload?root=home&path=ptbruno&name=Dups/'+n, raw=b'conteudo igual', ctype='application/octet-stream')
 s,b,_=req('GET','/api/files/duplicates?root=home&path=ptbruno/Dups&min=1'); dp=json.loads(b); check('duplicados', s==200 and len(dp['groups'])==1 and sorted(f['path'] for f in dp['groups'][0]['files'])==['ptbruno/Dups/dup1.bin','ptbruno/Dups/dup2.bin'] and dp['wasted']==14, b)
 s,b,_=req('GET','/api/files/usage?root=home&path=ptbruno'); us=json.loads(b); check('mapa do espaço', s==200 and us['size']>0 and any(i['name']=='Dups' and i['dir'] and i['size']==28 for i in us['items']), b[:300])
 s,b,_=req('GET','/api/files/usage?root=home&path=../..'); check('mapa do espaço: caminho preso na raiz', s==200 and json.loads(b)['path']=='', (s,b[:200]))
