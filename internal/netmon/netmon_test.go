@@ -27,6 +27,9 @@ func TestOutage(t *testing.T) {
 	}
 	step := func() { m.Check(context.Background()); now = now.Add(time.Minute) }
 
+	if m.Status().Outages == nil {
+		t.Fatal("sem quedas a lista deve ser vazia, não nil (vira null no JSON)")
+	}
 	step()
 	st := m.Status()
 	if !st.Up || st.Ms != 12 || len(st.Points) != 1 {

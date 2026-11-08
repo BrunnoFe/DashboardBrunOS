@@ -246,7 +246,7 @@ func (m *Monitor) Status() Status {
 	if m.last.Ms >= 0 {
 		st.Ms = m.last.Ms
 	}
-	st.Outages = append([]Outage(nil), m.outages...)
+	st.Outages = append([]Outage{}, m.outages...) // [] e não null, mesmo sem quedas
 	sort.Slice(st.Outages, func(i, j int) bool { return st.Outages[i].Start > st.Outages[j].Start })
 	if len(st.Outages) > 20 {
 		st.Outages = st.Outages[:20]
