@@ -47,7 +47,7 @@ docker run -d --name brunos --network "$NET" -p "127.0.0.1:$PORT:8080" \
   -e DOCKER_HOST=tcp://brunos-docker-proxy:2375 -e BRUNOS_DOCKER_ACTIONS=true \
   -v "$FIX/data:/data" -v "$FIX/runtipi:/runtipi:ro" -v "$FIX/files:/files" \
   -v "$FIX/outside:$FIX/outside" \
-  -v /proc:/host/proc:ro -v /etc/os-release:/host/os-release:ro -v /etc/hostname:/host/hostname:ro \
+  -v /proc:/host/proc:ro -v /etc/os-release:/host/os-release:ro -v /etc/hostname:/host/hostname:ro -v /etc/passwd:/host/passwd:ro \
   "$IMAGE" >/dev/null
 
 echo "Aguardando o healthcheck do container…"
@@ -111,6 +111,14 @@ assert req("GET", f"/api/apps/containers?urn={urn}")[0]["state"] == "running", "
 print("✓ apps: parar e ligar pelo proxy")
 h = req("GET", f"/api/apps/history?urn={urn}")
 assert h["step"] == 60 and isinstance(h["points"], list), h
+# processos do servidor (lidos do /proc do host) com o app de cada container
+pr = req("GET", "/api/processes")
+assert pr["summary"]["total"] > 5 and pr["summary"]["cores"] >= 1, pr["summary"]
+assert any(p["name"] == "brunos" and p.get("app") for p in pr["procs"]), "não achei o processo do BrunOS ligado ao container dele"
+assert any(p["user"] == "root" for p in pr["procs"]), "nomes de usuário (passwd) não apareceram"
+fake = [p for p in pr["procs"] if p.get("app") == "Syncthing"]
+assert fake, "o processo do container do app de teste deveria aparecer como Syncthing"
+print(f"✓ processos: {pr['summary']['total']} processos, app de cada container reconhecido")
 EOF
 
 # Terminal: SSH de verdade do container do BrunOS até um OpenSSH

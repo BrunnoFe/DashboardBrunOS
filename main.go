@@ -31,9 +31,12 @@ import (
 	"brunos/internal/dockerc"
 	"brunos/internal/events"
 	"brunos/internal/files"
+	"brunos/internal/history"
 	"brunos/internal/hostcmd"
 	"brunos/internal/logins"
+	"brunos/internal/netmon"
 	"brunos/internal/power"
+	"brunos/internal/procs"
 	"brunos/internal/runtipi"
 	"brunos/internal/sshknown"
 	"brunos/internal/store"
@@ -103,6 +106,9 @@ type server struct {
 	logins    *logins.Store
 	diskHist  *diskhist.Store
 	appmon    *appmon.Monitor
+	hist      *history.Store
+	procs     *procs.Reader
+	netmon    *netmon.Monitor
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -173,6 +179,15 @@ func main() {
 	}
 	am.OnBlock = s.loginBlocked
 	s.diskHist = diskhist.New(filepath.Join(cfg.DataDir, "disk-history.json"))
+	s.hist = history.New(filepath.Join(cfg.DataDir, "history.json"))
+	s.stats.OnSample = s.hist.Add
+	procDir := hostProc
+	if procDir == "" {
+		procDir = "/proc" // sem o /proc do host: só os processos do próprio container
+	}
+	s.procs = procs.New(procDir, env("HOST_PASSWD", "/host/passwd"))
+	s.netmon = netmon.New(filepath.Join(cfg.DataDir, "internet.json"), s.events)
+	s.netmon.Enabled = func() bool { v, ok := s.readSettings()["netMonitor"].(bool); return !ok || v }
 	power.HostOK = terminal.HostRe.MatchString
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
 		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key"), known))
@@ -195,6 +210,7 @@ func main() {
 	go s.power.Run(ctx, s.batteryReading)
 	go s.watchDisks(ctx)
 	go s.watchApps(ctx)
+	go s.netmon.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -214,6 +230,7 @@ func main() {
 		slog.Error("servidor parou", "erro", err)
 		os.Exit(1)
 	}
+	s.hist.Save() // guarda o histórico de 24 h / 7 dias antes de desligar
 }
 
 func healthcheck() int {
@@ -274,6 +291,9 @@ func (s *server) routes() http.Handler {
 	s.events.Register(mux, a)
 	s.power.Register(mux, a)
 	s.diskHist.Register(mux, a)
+	s.hist.Register(mux, a)
+	s.netmon.Register(mux, a)
+	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
 	if s.term != nil {
 		s.term.Register(mux, a)
 	}

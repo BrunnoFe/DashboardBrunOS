@@ -76,6 +76,9 @@ type Collector struct {
 	disksAt time.Time
 	temps   map[string]*diskTemp // temperatura por disco (sda, nvme0n1)
 	wake    chan struct{}
+
+	// OnSample recebe cada amostra (para o histórico de 24 h / 7 dias). dt = segundos desde a anterior.
+	OnSample func(cpu, memPct float64, temp *float64, rx, tx, dt float64)
 }
 
 func NewCollector(cfg Config) *Collector {
@@ -207,6 +210,9 @@ func (c *Collector) sample() {
 		memPct = round1(100 * float64(s.Mem.Used) / float64(s.Mem.Total))
 	}
 	p := Point{T: s.T, CPU: s.CPU.Percent, Mem: memPct, Temp: s.Temp, Rx: s.Net.Rx, Tx: s.Net.Tx}
+	if c.OnSample != nil {
+		c.OnSample(p.CPU, p.Mem, p.Temp, p.Rx, p.Tx, dt)
+	}
 
 	msg, _ := json.Marshal(map[string]any{"snapshot": s, "point": p})
 

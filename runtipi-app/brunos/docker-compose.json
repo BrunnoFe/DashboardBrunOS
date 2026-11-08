@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "brunos",
-      "image": "ghcr.io/brunnofe/brunos:0.7.0",
+      "image": "ghcr.io/brunnofe/brunos:0.8.0",
       "isMain": true,
       "internalPort": 8080,
       "user": "${BRUNOS_PUID}:${BRUNOS_PGID}",
@@ -23,7 +23,8 @@
         { "hostPath": "${BRUNOS_RUNTIPI_PATH}", "containerPath": "/files${BRUNOS_RUNTIPI_PATH}", "readOnly": true },
         { "hostPath": "/proc", "containerPath": "/host/proc", "readOnly": true },
         { "hostPath": "/etc/os-release", "containerPath": "/host/os-release", "readOnly": true },
-        { "hostPath": "/etc/hostname", "containerPath": "/host/hostname", "readOnly": true }
+        { "hostPath": "/etc/hostname", "containerPath": "/host/hostname", "readOnly": true },
+        { "hostPath": "/etc/passwd", "containerPath": "/host/passwd", "readOnly": true }
       ],
       "dependsOn": ["brunos-docker-proxy"],
       "deploy": { "resources": { "limits": { "memory": "128M" } } }

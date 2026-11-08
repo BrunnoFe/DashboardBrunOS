@@ -316,6 +316,40 @@ func (s *server) hAppLogsStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// hProcesses lista os processos do servidor, com o nome do app quando o processo é de um container.
+func (s *server) hProcesses(w http.ResponseWriter, r *http.Request) {
+	list, sum := s.procs.List(r.URL.Query().Get("kernel") == "1")
+	if s.docker != nil {
+		if cts, err := s.containers(r.Context()); err == nil {
+			apps, _ := s.tipi.Apps()
+			byProject := map[string]string{}
+			for _, a := range apps {
+				byProject[a.Project] = a.Name
+			}
+			names := map[string]string{}
+			for _, c := range cts {
+				n := byProject[c.Project()]
+				if n == "" {
+					n = c.Name()
+				}
+				names[c.ID] = n
+			}
+			for i := range list {
+				if list[i].Container != "" {
+					list[i].App = names[list[i].Container]
+					if list[i].App == "" {
+						list[i].App = "container " + list[i].Container[:12]
+					}
+				}
+			}
+		}
+	}
+	if len(list) > 300 {
+		list = list[:300]
+	}
+	writeJSON(w, 200, map[string]any{"procs": list, "summary": sum})
+}
+
 // ── Vigia de apps: uso a cada minuto (histórico de 24 h) e disponibilidade ──
 
 // monitorPrefs lê das preferências se o monitor está ligado e quais apps ficam de fora.

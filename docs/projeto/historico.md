@@ -110,5 +110,18 @@ Pedidos (com prints):
 - **Pastas** (arrastar um app sobre o meio de outro) e **páginas** na tela inicial (quando os apps
   não cabem: deslizar, setas, roda do mouse ou pontinhos).
 
+## 0.8.0 (08/11/2026): monitoramento (etapa 6 do plano)
+- **Histórico longo** (`internal/history`, `/data/history.json`): média por minuto (24 h) e por hora
+  (7 dias) de CPU, memória, temperatura e rede, ponderada pelo tempo de cada amostra do coletor; grava a
+  cada 10 min e ao desligar. No Uso ao vivo, seletor 5 min / 24 h / 7 dias.
+- **Processos do servidor** (`internal/procs`): como o htop, lendo o `/proc` do host; CPU por diferença
+  entre duas leituras, memória, usuário (com `/etc/passwd` montado só leitura, escolha do Bruno) e o
+  app de cada container (pelo `cgroup`). Aba "Processos" no Uso ao vivo, com filtro. Sem matar processos.
+- **Internet** (`internal/netmon`): a cada minuto mede o tempo de conexão TCP com Cloudflare, Google
+  e Quad9; 2 minutos sem nenhum → aviso "a internet caiu", e outro quando volta (com a duração). Quedas
+  em `/data/internet.json`. Widget Internet e janela com o gráfico de 24 h.
+- Speedtest Tracker ficou para a 0.9.0: a API dele exige token, e o Bruno preferiu decidir como guardar
+  tokens junto com as outras integrações.
+
 ## Próximas
 Veja `roadmap.md`.

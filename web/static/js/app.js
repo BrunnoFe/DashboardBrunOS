@@ -4,6 +4,7 @@ import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML, driveTempHelp } from './disks.js';
+import { internetWidgetHTML, paintInternet, internetDialog } from './internet.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -14,7 +15,7 @@ const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
   wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
-  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, appPages: true, folders: [], openIn: 'tab',
+  widgets: ['files', 'storage', 'system'], showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
@@ -218,6 +219,7 @@ const WIDGETS = {
   system: { label: 'Sistema', title: 'CPU, memória e temperatura' },
   network: { label: 'Rede', title: 'Download e upload' },
   battery: { label: 'Bateria', title: 'Carga, tomada, autonomia e saúde da bateria' },
+  internet: { label: 'Internet', title: 'Latência e quedas da internet' },
 };
 const MAX_WIDGETS = 6;
 function favorites() {
@@ -253,10 +255,19 @@ function renderWidgets() {
         <span class="cell"><span class="k">${svg('upload')} Upload</span><span class="v" data-bind="tx">—</span></span></span></button>`;
     } else if (w === 'battery') {
       body = batteryWidgetHTML();
+    } else if (w === 'internet') {
+      body = internetWidgetHTML();
     }
     return `<div class="widget-wrap" style="--i:${i}">${body}<div class="widget-label">${WIDGETS[w].label}</div></div>`;
   }).join('');
   bindStats();
+  if (ws.includes('internet')) refreshInternet();
+}
+// widget Internet: o servidor mede a cada minuto; aqui só busca o resultado
+async function refreshInternet() {
+  if (!set().widgets.includes('internet')) return;
+  try { S.internet = await api.internet(); } catch { return; }
+  paintInternet(document, S.internet);
 }
 
 /* Valores ao vivo: qualquer elemento com data-bind / data-bind-w é atualizado a cada amostra */
@@ -772,6 +783,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
     { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Abre um terminal no servidor por SSH, com o seu usuário e senha (nada fica guardado)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
     { group: 'Sistema', cat: 'system', icon: 'copy', title: 'Exportar preferências', desc: 'Copia o JSON com apps, dock e aparência', ctrl: `<button class="pill-btn" data-act="copy-config">Copiar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
@@ -1018,7 +1030,7 @@ let liveOpen = false;
 function liveUsageDialog() {
   if (liveOpen) return;
   liveOpen = true;
-  let metric = 'cpu', usageTimer;
+  let metric = 'cpu', usageTimer, period = 'live', longPts = [], longTimer, listMode = 'apps', procFilter = '';
   const d = openDialog(`<h2>Uso ao vivo</h2>
     <div class="stat-cards">
       <button class="stat-card on" data-m="cpu"><div class="k">CPU</div><div class="v" data-bind="cpu"></div><div class="s" data-bind="cores"></div><div class="track"><i data-bind-w="cpu"></i></div></button>
@@ -1026,16 +1038,32 @@ function liveUsageDialog() {
       <button class="stat-card" data-m="temp"><div class="k">Temperatura</div><div class="v" data-bind="temp"></div><div class="s" data-bind="fan"></div><div class="track"><i data-bind-w="temp"></i></div></button>
       <button class="stat-card" data-m="net"><div class="k">Rede</div><div class="v v-sm" data-bind="rx"></div><div class="s">↑ <span data-bind="tx"></span></div><div class="track"><i data-bind-w="net"></i></div></button>
     </div>
-    <div class="spark-box"><div class="lbl"><span data-spark-title></span><span data-spark-extra></span></div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none">
+    <div class="spark-box"><div class="lbl"><span data-spark-title></span><span data-spark-extra></span><span class="f-spacer"></span>
+      <div class="seg seg-sm"><button class="on" data-period="live">5 min</button><button data-period="24h">24 h</button><button data-period="7d">7 dias</button></div></div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none">
       <defs><linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--brand-lighter);stop-opacity:.45"/><stop offset="1" style="stop-color:var(--brand-lighter);stop-opacity:0"/></linearGradient></defs>
       <path data-area fill="url(#sparkFill)"/><path data-line fill="none" style="stroke:var(--brand-lightest)" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path data-line2 fill="none" style="stroke:rgba(255,255,255,.45)" stroke-width="1.2" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/></svg></div>
     <div class="live-sec">Discos</div><div class="disk-list"></div>
-    <div class="live-sec">Apps <small>${S.docker ? 'CPU e memória por app (Docker)' : 'conecte o Docker para ver o consumo por app'}</small></div>
-    <div class="proc-list"><div class="empty-note">Carregando…</div></div>`, { width: 640, onClose: () => { liveOpen = false; off(); clearTimeout(usageTimer); } });
+    <div class="live-sec-row"><span class="live-sec">${'<span data-list-title>Apps</span>'} <small data-list-sub>${S.docker ? 'CPU e memória por app (Docker)' : 'conecte o Docker para ver o consumo por app'}</small></span><span class="f-spacer"></span>
+      <input class="text-input sm proc-filter" placeholder="Filtrar" hidden aria-label="Filtrar processos">
+      <div class="seg seg-sm"><button class="on" data-list="apps">Apps</button><button data-list="procs">Processos</button></div></div>
+    <div class="proc-list"><div class="empty-note">Carregando…</div></div>`, { width: 680, onClose: () => { liveOpen = false; off(); clearTimeout(usageTimer); clearTimeout(longTimer); } });
   const titles = { cpu: 'CPU', mem: 'Memória', temp: 'Temperatura', net: 'Rede (download e upload)' };
+  const loadLong = async () => {
+    clearTimeout(longTimer);
+    if (period === 'live' || !liveOpen) return;
+    try { longPts = (await api.statsHistory(period)).points || []; } catch { longPts = []; }
+    drawChart();
+    longTimer = setTimeout(loadLong, 60000);
+  };
   const drawChart = () => {
-    const h = S.history;
-    if (!h.length) return;
+    let h = period === 'live' ? S.history : longPts;
+    if (metric === 'temp') h = h.filter((p) => p.temp);
+    if (h.length < 2) {
+      $('[data-line]', d.el).setAttribute('d', ''); $('[data-area]', d.el).setAttribute('d', ''); $('[data-line2]', d.el).setAttribute('d', '');
+      $('[data-spark-title]', d.el).textContent = `${titles[metric]} · ${period === 'live' ? 'aguardando dados' : 'ainda sem histórico (o BrunOS guarda a média de cada minuto)'}`;
+      $('[data-spark-extra]', d.el).textContent = '';
+      return;
+    }
     const val = (p) => metric === 'net' ? p.rx : p[metric] ?? 0;
     const vals = h.map(val), vals2 = metric === 'net' ? h.map((p) => p.tx) : null;
     const all = vals2 ? vals.concat(vals2) : vals;
@@ -1048,6 +1076,14 @@ function liveUsageDialog() {
     $('[data-area]', d.el).setAttribute('d', `${line}L300 70L0 70Z`);
     $('[data-line2]', d.el).setAttribute('d', vals2 ? toPath(vals2) : '');
     const mins = Math.round((h[h.length - 1].t - h[0].t) / 60);
+    if (period !== 'live') {
+      const unit = metric === 'net' ? '' : metric === 'temp' ? ' °C' : '%';
+      const f = (v) => (metric === 'net' ? fmtRate(v) : `${fmt(v, metric === 'cpu' ? 1 : 0)}${unit}`);
+      const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+      $('[data-spark-title]', d.el).textContent = `${titles[metric]} · ${period === '24h' ? 'últimas 24 h' : 'últimos 7 dias'}`;
+      $('[data-spark-extra]', d.el).textContent = `máx. ${f(mx)} · média ${f(avg)}${metric === 'net' ? ' (download)' : ''}`;
+      return;
+    }
     $('[data-spark-title]', d.el).textContent = `${titles[metric]} · últimos ${mins || 1} min`;
     $('[data-spark-extra]', d.el).textContent = metric === 'cpu' ? `carga ${statValues().vals.load}` : metric === 'net' ? 'linha tracejada: upload' : metric === 'temp' ? (S.snapshot?.battery ? `bateria ${statValues().vals.battery}` : '') : '';
   };
@@ -1057,9 +1093,25 @@ function liveUsageDialog() {
     if (rows !== lastDisks) { $('.disk-list', d.el).innerHTML = rows; lastDisks = rows; } // não refaz à toa (o botão perderia o clique)
   };
   if (set().diskForecast) api.disks.forecast().then((r) => { forecast = r.disks || []; if (liveOpen) drawDisks(); }).catch(() => { /* sem previsão: só não mostra */ });
+  const drawProcs = async () => {
+    const r = await api.processes();
+    if (!liveOpen || listMode !== 'procs') return;
+    const s = r.summary;
+    $('[data-list-sub]', d.el).textContent = `${s.total} processos · ${s.threads} threads · ${s.running} rodando agora`;
+    const q = procFilter.trim().toLowerCase();
+    const list = (q ? r.procs.filter((p) => `${p.name} ${p.cmd} ${p.user} ${p.app || ''}`.toLowerCase().includes(q)) : r.procs).slice(0, 80);
+    const max = Math.max(5, ...list.map((p) => p.cpu));
+    $('.proc-list', d.el).innerHTML = list.length ? list.map((p) => `<div class="proc pr-row" title="${esc(p.cmd || p.name)}\nPID ${p.pid} · ${esc(p.user)} · ${p.threads} thread(s)">
+        <span class="pr-name"><b>${esc(p.name)}</b><small>${esc(p.cmd || '')}</small></span>
+        ${p.app ? `<span class="pr-app">${esc(p.app)}</span>` : ''}<span class="pr-user">${esc(p.user)}</span>
+        <span class="track"><i style="width:${clamp((p.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(p.cpu, 1)}%</span><span class="mem">${fmtBytes(p.mem)}</span></div>`).join('')
+      : `<div class="empty-note">${q ? 'Nenhum processo com esse nome' : 'Nenhum processo'}</div>`;
+  };
   const drawUsage = async () => {
     try {
+      if (listMode === 'procs') { await drawProcs(); if (liveOpen) usageTimer = setTimeout(drawUsage, 3000); return; }
       const list = await api.usage();
+      if (listMode !== 'apps') return;
       if (!liveOpen) return;
       const max = Math.max(5, ...list.map((u) => u.cpu));
       $('.proc-list', d.el).innerHTML = list.length ? list.map((u) => {
@@ -1079,9 +1131,21 @@ function liveUsageDialog() {
   d.el.addEventListener('click', (e) => {
     if (e.target.closest('[data-disk="temp-help"]')) { driveTempHelp(); return; }
     const pa = e.target.closest('[data-proc-app]'); if (pa) { openAppDetails(appById(pa.dataset.procApp)); return; }
+    const pe = e.target.closest('[data-period]');
+    if (pe) { period = pe.dataset.period; $$('[data-period]', d.el).forEach((x) => x.classList.toggle('on', x === pe)); if (period === 'live') { clearTimeout(longTimer); drawChart(); } else loadLong(); return; }
+    const lm = e.target.closest('[data-list]');
+    if (lm) {
+      listMode = lm.dataset.list; $$('[data-list]', d.el).forEach((x) => x.classList.toggle('on', x === lm));
+      $('[data-list-title]', d.el).textContent = listMode === 'apps' ? 'Apps' : 'Processos';
+      $('[data-list-sub]', d.el).textContent = listMode === 'apps' ? (S.docker ? 'CPU e memória por app (Docker)' : 'conecte o Docker para ver o consumo por app') : 'lendo…';
+      $('.proc-filter', d.el).hidden = listMode !== 'procs';
+      $('.proc-list', d.el).innerHTML = '<div class="empty-note">Carregando…</div>';
+      clearTimeout(usageTimer); drawUsage(); return;
+    }
     const c = e.target.closest('[data-m]'); if (!c) return;
     metric = c.dataset.m; $$('[data-m]', d.el).forEach((x) => x.classList.toggle('on', x === c)); drawChart();
   });
+  $('.proc-filter', d.el).addEventListener('input', debounce((e) => { procFilter = e.target.value; clearTimeout(usageTimer); drawUsage(); }, 250));
   const off = on('stats', draw);
   draw(); drawUsage();
 }
@@ -1097,6 +1161,8 @@ function commandPalette() {
     { icon: 'bell', label: 'Notificações', run: () => toggleNotifications() },
     { icon: 'power', label: 'Energia e desligamento seguro', run: () => openPower() },
     { icon: 'battery', label: 'Bateria e quedas de energia', run: () => openBattery() },
+    { icon: 'globe', label: 'Internet: latência e quedas', run: () => internetDialog() },
+    { icon: 'cpu', label: 'Processos do servidor', run: () => { liveUsageDialog(); setTimeout(() => $('[data-list="procs"]')?.click(), 50); } },
     { icon: 'link', label: 'Novo atalho…', run: () => linkDialog() },
     { icon: 'image', label: 'Próximo papel de parede', run: () => { const ids = BUILTIN_WALLPAPERS.map((i) => `builtin:${i}`); set().wallpaper = ids[(ids.indexOf(set().wallpaper) + 1) % ids.length]; save(); setWallpaper(set().wallpaper); } },
     { icon: 'upload', label: 'Enviar papel de parede…', run: () => $('#wp-file').click() },
@@ -1243,7 +1309,7 @@ async function enterDesktop(animate) {
   );
   // estado dos apps (bolinhas) atualizado a cada minuto, junto com o monitor do servidor
   clearInterval(S.appsTimer);
-  S.appsTimer = setInterval(() => { if (!document.body.classList.contains('is-locked') && !document.hidden) loadApps(); }, 60000);
+  S.appsTimer = setInterval(() => { if (!document.body.classList.contains('is-locked') && !document.hidden) { loadApps(); refreshInternet(); } }, 60000);
   document.body.classList.remove('is-locked');
   if (animate) { document.body.classList.add('just-unlocked'); setTimeout(() => document.body.classList.remove('just-unlocked'), 1600); }
   if (!set().welcomed) {
@@ -1280,6 +1346,7 @@ $('#search-pill').addEventListener('click', commandPalette);
 $('#desktop').addEventListener('click', (e) => {
   if (e.target.closest('[data-action="live"]')) liveUsageDialog();
   if (e.target.closest('[data-action="battery"]')) openBattery();
+  if (e.target.closest('[data-action="internet"]')) internetDialog();
   const fav = e.target.closest('[data-fav-root]');
   if (fav) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath });
 });

@@ -112,6 +112,44 @@ body.reduce-motion .status-dot.down { animation: none; }
 .fd-hint { font-size: 11.5px; opacity: .5 !important; }
 .proc.clickable { cursor: pointer; }
 
+/* ── Monitoramento (0.8.0): períodos, processos, internet ──────── */
+.seg.seg-sm { padding: 2px; border-radius: 9px; }
+.seg.seg-sm button { padding: 3px 9px; font-size: 11.5px; }
+.spark-box .lbl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.live-sec-row { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; flex-wrap: wrap; }
+.live-sec-row .live-sec { margin: 0 4px; }
+.proc-filter { width: 130px !important; }
+.pr-row { height: auto; min-height: 38px; padding: 5px 10px; }
+.pr-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pr-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-name small { font-size: 10.5px; opacity: .45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.pr-app { flex: none; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: hsl(var(--bh) 60% 50% / .25); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-user { flex: none; width: 64px; font-size: 11px; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+@media (max-width: 640px) { .pr-user, .pr-row .track { display: none; } }
+.w-internet { gap: 0; }
+.w-internet .w-value { margin-top: 2px; }
+.w-internet.down .w-value { color: #ffb4b6; }
+.w-net-spark { width: 100%; height: 34px; margin: 4px 0 0; opacity: .9; }
+.w-internet .w-sub { margin-top: auto; margin-bottom: 0; }
+.inet { display: flex; flex-direction: column; gap: 12px; }
+.inet-load { display: grid; place-items: center; padding: 30px; }
+.inet-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.inet-card { border-radius: 14px; padding: 11px 12px; background: rgba(255,255,255,.04); box-shadow: var(--shadow-btn-hl-soft); display: flex; flex-direction: column; gap: 4px; }
+.inet-card small { font-size: 11px; opacity: .55; font-weight: 600; }
+.inet-card b { font-size: 19px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.inet-card b.bad { color: #ff8a8d; }
+.inet-chart { border-radius: 14px; background: rgba(255,255,255,.04); padding: 10px 12px; }
+.inet-chart svg { width: 100%; height: 120px; display: block; }
+.inet-lbl { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.inet-lbl small { font-weight: 500; opacity: .5; }
+.inet-empty { font-size: 12px !important; text-align: center; padding: 8px 0 0; }
+.inet-outs { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
+.inet-out { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; }
+.inet-out:hover { background: rgba(255,255,255,.04); }
+.inet-out > span .svg { width: 15px; height: 15px; color: #ff8a8d; }
+.inet-out small { opacity: .55; margin-left: auto; text-align: right; }
+.inet-out.open b { color: #ff8a8d; }
+
 /* ── Detalhes do app ───────────────────────────────────────────── */
 .ai-dialog { max-height: calc(100dvh - 70px); }
 .ai { display: flex; flex-direction: column; gap: 14px; }

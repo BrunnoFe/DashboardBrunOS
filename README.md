@@ -15,6 +15,9 @@ internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos,
 internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
 internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, ligar/parar/reiniciar, logs)
 internal/appmon          uso e disponibilidade de cada app nas últimas 24 h (aviso quando um app cai)
+internal/history         histórico de uso do servidor (24 h por minuto, 7 dias por hora)
+internal/procs           processos do servidor (como o htop), só leitura
+internal/netmon          latência e quedas da internet
 internal/files           gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca,
                          editor de texto, extrair, duplicados, mapa do espaço)
 internal/events          central de notificações (o sino da tela inicial)
@@ -53,7 +56,8 @@ FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste   # mesmo teste do GitHub
 | `/home` | `/files/home` | gerenciador de arquivos |
 | `/mnt` | `/files/mnt` | cada pasta em `/mnt/*` pode virar um disco no gerenciador. Em *Arquivos → Discos → Mapear* você escolhe quais aparecem (fica salvo em `/data/disks.json`); sem escolha, aparecem só as pastas com um disco montado |
 | pasta do Runtipi | `/files<mesmo caminho>` (ro) | impede apagar o Runtipi pelo gerenciador |
-| `/proc`, `/etc/os-release`, `/etc/hostname` | `/host/...` (ro) | rede do servidor e informações do sistema |
+| `/proc`, `/etc/os-release`, `/etc/hostname` | `/host/...` (ro) | rede do servidor, processos e informações do sistema |
+| `/etc/passwd` | `/host/passwd` (ro) | nome do usuário dono de cada processo (só nomes; senhas ficam no `/etc/shadow`, que não é montado) |
 
 O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário já pode. Se os discos em `/mnt` pertencem ao root e você quer escrever neles pelo painel, rode `sudo chown -R ptbruno:ptbruno /mnt/1TB_HDD` (ou ajuste as permissões só das pastas que quiser).
 
@@ -84,7 +88,7 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## API (resumo)
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}` · `POST /api/apps/{start,stop}` · `GET /api/apps/{containers,history,logs,logs/stream}`
+`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}` · `POST /api/apps/{start,stop}` · `GET /api/apps/{containers,history,logs,logs/stream}` · `GET /api/stats/history` · `GET /api/processes` · `GET /api/internet`
 
 ## Créditos e licenças de terceiros
 
@@ -106,7 +110,7 @@ O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `gola
 
 O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.
 
-A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche.
+A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche, o histórico de CPU, memória, temperatura e rede (5 min, 24 h ou 7 dias) e a lista de processos do servidor. O widget *Internet* mostra a latência e quantas vezes a internet caiu (o sino avisa quando cai e quando volta).
 
 ## Apps
 

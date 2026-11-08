@@ -70,9 +70,9 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| G1 | Histórico longo (24 h e 7 dias) | M | a fazer | Agregados por minuto/hora em arquivo circular em `/data`; gráfico com seletor de período. |
-| G2 | Processos do servidor (tipo htop) | B | a fazer | Ler `/host/proc/[pid]/stat`, `status`, `cmdline` (já montado ro). Ordenar por CPU/memória. Sem matar processos. |
-| G3 | Internet: latência, quedas, Speedtest Tracker | B | a fazer | Ping TCP/HTTP periódico (sem ICMP, que exige capability); integração com a API do Speedtest Tracker. |
+| G1 | Histórico longo (24 h e 7 dias) | M | feito (0.8.0) | Agregados por minuto/hora em arquivo circular em `/data`; gráfico com seletor de período. |
+| G2 | Processos do servidor (tipo htop) | B | feito (0.8.0) | Ler `/host/proc/[pid]/stat`, `status`, `cmdline`, `cgroup` (app de cada container). Nomes de usuário por `/etc/passwd` montado ro (escolha do Bruno). Sem matar processos. |
+| G3 | Internet: latência, quedas, Speedtest Tracker | B | latência e quedas feitas (0.8.0); **Speedtest vai para a 0.9.0** (precisa de token; o Bruno preferiu decidir tokens junto com as integrações) | Ping TCP/HTTP periódico (sem ICMP, que exige capability); integração com a API do Speedtest Tracker. |
 
 ## H. Segurança
 
@@ -120,8 +120,8 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 2 | 0.5.0 | H3 · D2 · D4 — **feito, aguardando teste no servidor** |
 | 4 | 0.6.0 | F1 → F2 → F4 → F5 → D5 — **feito, aguardando teste no servidor** |
 | 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 (+ desinstalar pelo Runtipi) — **feito, aguardando teste no servidor** |
-| 6 | 0.8.0 | G1 · G2 · G3 |
-| 7 | 0.9.0 | A2 · I1 · I3 · J2 |
+| 6 | 0.8.0 | G1 · G2 · G3 (sem Speedtest) — **feito, aguardando teste no servidor** |
+| 7 | 0.9.0 | A2 · I1 · I3 · J2 · Speedtest Tracker (do G3) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
 | 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |

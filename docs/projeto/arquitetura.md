@@ -56,6 +56,16 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
 - **`internal/appmon`** (0.7.0): por projeto do compose, 1440 pontos (24 h, um por minuto) de CPU,
   memória (MB) e disponibilidade (1 no ar, 0 fora, −1 parado/sem medição), só em memória. `Uptime`,
   `Health` (fora do ar só depois de 2 minutos seguidos), `Alert` (`app-down:<urn>` / `app-up`).
+- **`internal/history`** (0.8.0): `Collector.OnSample` → `Add(cpu, mem%, temp, rx, tx, dt)`; acumula a
+  média ponderada do minuto e da hora; anéis de 1440 minutos e 168 horas; `Series("1h"|"24h"|"7d")`
+  (o período em andamento entra como último ponto); `/data/history.json` a cada 10 min e no desligamento.
+- **`internal/procs`** (0.8.0): `Reader.List(kernel)` lê `/host/proc/<pid>/{stat,status,cmdline,cgroup}`;
+  CPU = Δticks ÷ Δtotal do `/proc/stat` × núcleos (primeira chamada lê duas vezes com 400 ms); esconde
+  threads do kernel; usuário por `/host/passwd` (`HOST_PASSWD`); id do container (64 hex) no cgroup →
+  o `main` troca pelo nome do app.
+- **`internal/netmon`** (0.8.0): a cada minuto, TCP para `1.1.1.1:443`, `8.8.8.8:443`, `9.9.9.9:443` em
+  paralelo (vale o mais rápido); 2 minutos sem nenhum → `internet-down`, e `internet-up` na volta com a
+  duração; 24 h na memória, quedas (100) em `/data/internet.json`. Preferência `netMonitor` (padrão ligado).
 - **`apps.go`** (pacote main, 0.7.0): `hAppAction` (start/stop/restart de todos os containers do app),
   `hAppContainers`, `hAppHistory`, `hAppLogs` (texto, até 5000 linhas / 8 MB), `hAppLogsStream` (SSE,
   uma linha JSON por evento), `watchApps` (a cada minuto: `collectUsage` + `probe` em
@@ -135,6 +145,9 @@ GET  /api/system                      (info, runtipi, docker, dockerActions, ter
 GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
 GET  /api/apps/containers?urn · /api/apps/history?urn ({points,step,health,uptime?}) · /api/apps/logs?urn&id&tail
 GET  /api/apps/logs/stream?urn&id     (SSE: ready, data = linha em JSON, end)
+GET  /api/stats/history?range=1h|24h|7d ({range,step,points:[{t,cpu,mem,temp?,rx,tx}]})
+GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,user,state,threads,cpu,mem,memPct,app?}],summary})
+GET  /api/internet                    ({up,checked,ms,avg,uptime?,points:[{t,ms}],outages:[{start,end}],enabled})
 GET  /api/files/roots · disks · list · raw · zip · search · trash
 PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty
 GET  /api/terminal/sessions · stream?id= (SSE base64; eventos ready/exit/replaced)
@@ -161,7 +174,7 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 `auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
 `events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento),
 `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos), `uploads.json`
-(envios em pedaços pendentes).
+(envios em pedaços pendentes), `history.json` (uso por minuto/hora), `internet.json` (quedas de internet).
 
 ## Frontend (`web/static`)
 
@@ -195,6 +208,8 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 - `js/api.js`: arquivos > 16 MB vão por `chunkedUpload` (pedaços de 8 MB, até 8 tentativas com espera
   crescente, id guardado no `localStorage` por raiz|pasta|nome|tamanho|lastModified para retomar).
 - `js/ui.js`: `openDialog(..., {beforeClose})` (devolver false cancela o fechamento).
+- `js/internet.js` (0.8.0): `internetWidgetHTML`, `paintInternet(root, status)`, `internetDialog()`.
+  O Uso ao vivo (`app.js`) ganhou o seletor 5 min / 24 h / 7 dias e a aba Processos (com filtro).
 - `js/appinfo.js` (0.7.0): `appDetails(a, ctx)` (estado, linha do tempo de 96 blocos de 15 min, gráfico
   SVG de 24 h, logs com "Ao vivo", ligar/parar/reiniciar, "Abrir no Runtipi", "Desinstalar…" que abre
   `/apps/<loja>/<app>` no painel do Runtipi, "Avisar se este app cair").
@@ -211,7 +226,7 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 `runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
 (atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
 `sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio),
-`appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
+`netMonitor` (0.8.0, padrão true), widget `internet` (0.8.0), `appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
 `[{id,name,apps:[ids]}]`), `apps[id].noMonitor`. **Nunca** guardar senhas aqui.
 
 ## Testes

@@ -80,3 +80,10 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
 26. **Monitor de disponibilidade sem guardar em disco** (0.7.0). 24 h × 1 ponto/minuto por app em
     memória (alguns KB); reiniciar o BrunOS zera o gráfico. Avisa só depois de 2 minutos seguidos fora
     do ar, e app parado de propósito não conta como queda.
+27. **Internet medida por TCP, não por ping** (0.8.0). ICMP exigiria `CAP_NET_RAW` no container. Abrir
+    uma conexão na porta 443 de três provedores grandes (vale o mais rápido) mede a latência e só acusa
+    queda quando nenhum responde por 2 minutos.
+28. **`/etc/passwd` montado só leitura** (0.8.0, escolha do Bruno) para mostrar o dono dos processos. O
+    arquivo só tem nomes de usuário (as senhas ficam no `/etc/shadow`, que continua fora).
+29. **Speedtest Tracker adiado para a 0.9.0** (escolha do Bruno). A API atual exige um token; a forma de
+    guardar tokens de apps será decidida uma vez só, junto com Immich/AdGuard/Plex/Tailscale.

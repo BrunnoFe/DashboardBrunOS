@@ -119,6 +119,9 @@ const real = {
     return () => { stopped = true; clearTimeout(retry); es?.close(); };
   },
   system: () => call('GET', '/api/system'),
+  statsHistory: (range) => call('GET', `/api/stats/history?${q({ range })}`),
+  internet: () => call('GET', '/api/internet'),
+  processes: (kernel = false) => call('GET', `/api/processes${kernel ? '?kernel=1' : ''}`),
   events: {
     list: () => call('GET', '/api/events'),
     read: (ids = []) => call('POST', '/api/events/read', { ids }),
@@ -381,6 +384,30 @@ function makeDemo() {
       const t = setInterval(() => onPoint(tick()), 2000);
       return () => clearInterval(t);
     },
+    statsHistory: (range) => {
+      const step = range === '7d' ? 3600 : 60, n = range === '7d' ? 168 : range === '1h' ? 60 : 1440;
+      const t0 = Math.floor(Date.now() / 1000 / step) * step;
+      return wait({ range, step, points: Array.from({ length: n }, (_, i) => {
+        const t = t0 - (n - 1 - i) * step, hr = new Date(t * 1000).getHours(), evening = hr >= 19 && hr <= 23;
+        return { t, cpu: +(6 + (evening ? 14 : 3) * Math.random() + Math.sin(i / 20) * 2).toFixed(1), mem: +(33 + Math.sin(i / 90) * 4 + (evening ? 3 : 0)).toFixed(1),
+          temp: +(48 + (evening ? 7 : 1) + Math.random() * 2).toFixed(1), rx: Math.round((evening ? 900e3 : 60e3) * (0.5 + Math.random())), tx: Math.round((evening ? 200e3 : 20e3) * (0.5 + Math.random())) };
+      }) }, 250);
+    },
+    internet: () => {
+      const t0 = Math.floor(Date.now() / 60000) * 60;
+      const points = Array.from({ length: 1440 }, (_, i) => ({ t: t0 - (1439 - i) * 60, ms: i > 610 && i < 618 ? -1 : +(11 + Math.random() * 6 + (i % 97 === 0 ? 40 : 0)).toFixed(1) }));
+      return wait({ up: true, checked: true, ms: 12.4, avg: 14.1, uptime: 99.44, enabled: true, points,
+        outages: [{ start: t0 - 829 * 60, end: t0 - 822 * 60 }, { start: t0 - 3 * 86400, end: t0 - 3 * 86400 + 2400 }] }, 200);
+    },
+    processes: () => wait({ summary: { total: 214, threads: 1180, running: 2, cores: 2, memKB: 7.7e6, load: 0.42 }, procs: [
+      { pid: 1820, name: 'immich', cmd: 'node /usr/src/app/dist/main', user: 'root', cpu: 6.4, mem: 512e6, memPct: 6.5, threads: 11, app: 'Immich' },
+      { pid: 2210, name: 'Plex Media Serv', cmd: '/usr/lib/plexmediaserver/Plex Media Server', user: 'ptbruno', cpu: 3.1, mem: 260e6, memPct: 3.3, threads: 23, app: 'Plex' },
+      { pid: 2981, name: 'postgres', cmd: 'postgres: immich immich 172.18.0.5(45234) idle', user: 'uid 999', cpu: 1.2, mem: 140e6, memPct: 1.8, threads: 1, app: 'Immich' },
+      { pid: 1, name: 'systemd', cmd: '/sbin/init', user: 'root', cpu: 0.3, mem: 12e6, memPct: 0.2, threads: 1 },
+      { pid: 911, name: 'dockerd', cmd: '/usr/bin/dockerd -H fd://', user: 'root', cpu: 0.9, mem: 95e6, memPct: 1.2, threads: 18 },
+      { pid: 3012, name: 'brunos', cmd: '/brunos', user: 'ptbruno', cpu: 0.2, mem: 11e6, memPct: 0.1, threads: 7, app: 'BrunOS' },
+      { pid: 1204, name: 'sshd', cmd: 'sshd: /usr/sbin/sshd -D [listener]', user: 'root', cpu: 0, mem: 8e6, memPct: 0.1, threads: 1 },
+    ].map((p) => ({ ppid: 1, state: 'S', ...p })) }, 300),
     system: () => wait({ info: { hostname: 'server', os: 'Ubuntu 24.04 LTS', kernel: '6.8.0', cpuModel: 'Intel(R) Core(TM) i5 (demonstração)', cores: 2, arch: 'amd64' }, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false, version: 'demo', startedAt: now - 7200, maxUploadGB: 50 }),
     apps: () => wait({ apps, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
     usage: () => wait([{ urn: '', name: 'Runtipi (sistema)', project: 'runtipi', cpu: 1.2 + Math.random(), memory: 420e6 }, ...apps.filter((a) => a.state === 'running').map((a) => ({ urn: a.urn, name: a.name, project: a.project, cpu: Math.random() * 3, memory: 20e6 + Math.random() * 600e6 }))].sort((a, b) => b.cpu - a.cpu), 200),
