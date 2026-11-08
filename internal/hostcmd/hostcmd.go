@@ -63,7 +63,7 @@ const (
 )
 
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
-func CmdLimit(pct int) string     { return fmt.Sprintf("limite %d", pct) }
+func CmdLimit(pct int) string { return fmt.Sprintf("limite %d", pct) }
 func CmdProtect(on bool) string {
 	if on {
 		return "protecao on"

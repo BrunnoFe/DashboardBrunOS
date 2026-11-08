@@ -125,18 +125,18 @@ type Monitor struct {
 	chargeBusy bool
 	chargeTry  time.Time
 	mu         sync.Mutex
-	cfg      Config
-	st       stateFile
-	onBat    bool
-	resumed  bool // abriu com uma queda em aberto no arquivo
-	seen     bool
-	percent  int
-	phase    string
-	deadline time.Time
-	attempts int
-	lastSave time.Time
-	lastText string
-	execMu   sync.Mutex // um desligamento por vez
+	cfg        Config
+	st         stateFile
+	onBat      bool
+	resumed    bool // abriu com uma queda em aberto no arquivo
+	seen       bool
+	percent    int
+	phase      string
+	deadline   time.Time
+	attempts   int
+	lastSave   time.Time
+	lastText   string
+	execMu     sync.Mutex // um desligamento por vez
 }
 
 // New lê a configuração e o histórico. Arquivos vazios = só em memória (testes).
