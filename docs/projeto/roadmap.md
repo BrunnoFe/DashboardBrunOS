@@ -43,7 +43,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | D2 | Temperatura dos HDs | B | feito (0.5.0) | hwmon `drivetemp` (módulo do kernel: `sudo modprobe drivetemp` + `/etc/modules-load.d`; a interface ensina) e `nvme`. HD só é lido de novo quando teve atividade (não acorda disco parado). Aviso na central: HD ≥ 55 °C, SSD ≥ 70 °C. |
 | D3 | Saúde SMART | M | a fazer | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
 | D4 | Previsão de disco cheio | B | feito (0.5.0), **opcional e desligada por padrão** (pedido do Bruno: Configurações → Sistema → Previsão de disco cheio, preferência `diskForecast`) | Uso diário (gravado sempre) por disco em `/data/disk-history.json` (180 dias), regressão linear sobre 30 dias. Avisos: "vai encher em ≤ 30 dias" e "≥ 90% ocupado" (este é o "disco > 90%" do C1). |
-| D5 | Mapa do espaço (treemap) no gerenciador | M | a fazer | Varredura limitada (tempo/entradas) em segundo plano, cache por pasta; desenho em canvas/SVG. |
+| D5 | Mapa do espaço (treemap) no gerenciador | M | feito (0.6.0) | Varredura limitada (tempo/entradas) em segundo plano, cache por pasta; desenho em canvas/SVG. |
 
 ## E. Apps
 
@@ -59,11 +59,11 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| F1 | Vídeo com avançar/retroceder (HTTP Range) | B | a fazer | `http.ServeContent` no `/api/files/raw` (já com `os.Root`); confirmar `Accept-Ranges`. |
-| F2 | Editor de texto com realce | M | a fazer | Editor leve (CodeMirror 6 vendorizado sob demanda?) ou textarea com realce simples; salvar com verificação de mtime (conflito). Limite de tamanho. |
-| F3 | Link de compartilhamento com expiração e senha | M | a fazer | Desligado por padrão. Token aleatório, `/s/<token>` público só leitura, expiração, contador, revogar. Cuidado: expõe arquivo para fora. |
-| F4 | Envio em pedaços com retomada | M | a fazer | Protocolo simples (offset) ou tus; arquivo temporário por id; limpeza de pendentes. |
-| F5 | Extrair zip e encontrar duplicados | B–M | a fazer | `archive/zip` com proteção contra zip-slip e bomba (limites); duplicados por tamanho → hash. |
+| F1 | Vídeo com avançar/retroceder (HTTP Range) | B | feito (0.6.0) | O Range já funcionava (`http.ServeContent`), mas a imagem `scratch` não tem `/etc/mime.types`: `.mp4`/`.mp3` iam como download. Tabela própria de tipos de mídia, `.mkv` liberado, aviso quando o navegador não toca o codec. |
+| F2 | Editor de texto com realce | M | feito (0.6.0) | CodeMirror 6 (escolha do Bruno) num bundle vendorizado (`tools/codemirror` → `web/static/vendor/codemirror/`, ~650 KB, ~230 KB gzip, carregado sob demanda). Salvar atômico com conferência de mtime (409 se mudou), máx. 5 MB, recusa binário/não-UTF-8/links. "Novo arquivo de texto". |
+| F3 | Link de compartilhamento com expiração e senha | M | adiado (junto com a etapa 3) | Desligado por padrão. Token aleatório, `/s/<token>` público só leitura, expiração, contador, revogar. Cuidado: expõe arquivo para fora. |
+| F4 | Envio em pedaços com retomada | M | feito (0.6.0) | Arquivos > 16 MB em pedaços de 8 MB com posição (offset); `.brunos-part-<id>` na pasta de destino; estado em `/data/uploads.json` (sobrevive a reinício); retoma após queda ou recarregar a página (mesmo arquivo, mesma pasta); pendentes > 48 h apagados. |
+| F5 | Extrair zip e encontrar duplicados | B–M | feito (0.6.0) | `.zip`, `.tar`, `.tar.gz` pelo `os.Root` (zip-slip impossível), links ignorados, limite de espaço livre − 1 GB e 200 mil itens, apaga tudo se falhar. Duplicados: tamanho → resumo (começo+fim) → SHA-256; já marca as cópias menos a mais antiga. |
 | F6 | Enviar do celular pelo menu Compartilhar | B | adiado (celular) | Depende de A3 (Web Share Target no manifest) → pasta configurável. |
 
 ## G. Monitoramento
@@ -78,8 +78,8 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| H1 | Verificação em dois passos (TOTP) | M | a fazer | RFC 6238 com stdlib (HMAC-SHA1); QR code (gerar em JS ou Go sem dependência); códigos de recuperação. |
-| H2 | Sessões ativas com "encerrar" | B | a fazer | `sessions.json` já guarda ip/userAgent/criação; listar e revogar. |
+| H1 | Verificação em dois passos (TOTP) | M | adiado | RFC 6238 com stdlib (HMAC-SHA1); QR code (gerar em JS ou Go sem dependência); códigos de recuperação. |
+| H2 | Sessões ativas com "encerrar" | B | adiado | `sessions.json` já guarda ip/userAgent/criação; listar e revogar. |
 | H3 | Aviso de login novo | B | feito (0.5.0) | `internal/logins`: navegador + sistema + rede (rede local conta como um lugar só; internet por faixa /24 ou /48), `/data/logins.json`. Também avisa quando um endereço é bloqueado por errar a senha (no máximo 1 aviso a cada 6 h por endereço). |
 | H4 | Contas de convidado (família) | A | a fazer | Papéis (admin/convidado), permissões por recurso (arquivos, terminal, configurações, apps visíveis). Muda auth e todas as rotas. |
 
@@ -118,14 +118,17 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 |---|---|---|
 | 1 | 0.4.0 | Fundações (`internal/events`, `internal/hostcmd`) · C1 · B1 · B2 · D1 — **feito, aguardando teste no servidor** |
 | 2 | 0.5.0 | H3 · D2 · D4 — **feito, aguardando teste no servidor** |
-| 3 | 0.6.0 | H1 · H2 |
-| 4 | 0.7.0 | F1 → F2 → F4 → F5 → D5 → F3 |
-| 5 | 0.8.0 | E1 · E2 · E3 · E4 · E5 · A4 |
-| 6 | 0.9.0 | G1 · G2 · G3 |
-| 7 | 0.10.0 | A2 · I1 · I3 · J2 |
-| 8 | 0.11.0 | J1 · J3 · K1 · K2 · K3 |
-| 9 | 0.12.0 | A1 · B3 · B4 · D3 · I2 · H4 |
+| 4 | 0.6.0 | F1 → F2 → F4 → F5 → D5 — **feito, aguardando teste no servidor** |
+| 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 |
+| 6 | 0.8.0 | G1 · G2 · G3 |
+| 7 | 0.9.0 | A2 · I1 · I3 · J2 |
+| 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
+| 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
+| 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) |
+
+Em 08/11/2026 o Bruno escolheu o **CodeMirror 6** para o editor (F2), em vez de um editor leve feito à
+mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob demanda.
 
 **Decisões que ficam para o início de cada etapa** (perguntar com opções): A2/I3 como guardar tokens;
 F2 qual editor; J1 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais

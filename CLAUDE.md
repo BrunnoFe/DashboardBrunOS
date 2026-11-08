@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.5.0 em 08/11/2026)
+- Versão atual: veja `VERSION` (0.6.0 em 08/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -39,8 +39,8 @@ SSH embutido e configurações sincronizadas no servidor.
    sum.golang.org. Não adicione dependências sem necessidade forte; se adicionar, vendorize e inclua na
    checagem do CI (`.github/workflows/docker.yml`).
 2. **Frontend sem build**: HTML/CSS/JS puros com ES modules em `web/static/`, embutidos no binário com
-   `go:embed`. Bibliotecas de terceiros ficam em `web/static/vendor/` (hoje só o xterm.js) e são
-   carregadas sob demanda (import dinâmico).
+   `go:embed`. Bibliotecas de terceiros ficam em `web/static/vendor/` (xterm.js e CodeMirror 6, este
+   gerado por `tools/codemirror`) e são carregadas sob demanda (import dinâmico).
 3. **Container sem privilégios**: imagem `scratch`, usuário 1000:1000, `read_only`, `cap_drop: ALL`,
    `no-new-privileges`, limite de 128 MB. O Docker só é acessado por um **socket-proxy** com lista de
    rotas permitidas. Nada de `privileged`, `pid: host` ou socket do Docker direto. Ações que precisam
@@ -60,7 +60,8 @@ internal/store/             JSON/arquivos atômicos
 internal/sysinfo/           coleta de CPU, memória, temperatura (hwmon), ventoinha, bateria, discos, rede
 internal/dockerc/           cliente Docker mínimo (lista, stats, restart) via proxy
 internal/runtipi/           descobre apps instalados no Runtipi (config.json, app.env com lista permitida)
-internal/files/             gerenciador de arquivos (os.Root, lixeira, upload, zip, busca, discos mapeados)
+internal/files/             gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca, discos
+                            mapeados, editor de texto, extrair, duplicados, mapa do espaço)
 internal/terminal/          terminal SSH (x/crypto/ssh, sessões, SSE)
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
 internal/events/            central de notificações (sino), /data/events.json
@@ -80,6 +81,9 @@ web/static/js/terminal.js   janela Terminal (xterm.js)
 web/static/js/notifications.js  sino e painel de avisos
 web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
 web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)
+web/static/js/editor.js     editor de texto (CodeMirror 6 de web/static/vendor/codemirror, sob demanda)
+web/static/js/filetools.js  mapa do espaço (treemap) e arquivos duplicados
+tools/codemirror/           receita (npm + esbuild) que gera o bundle do CodeMirror; não roda no build
 web/static/css/app.css      base visual (adaptada do umbrelOS)
 web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)
 runtipi-app/brunos/         app para a loja do Runtipi (config.json, docker-compose.json, metadata/)

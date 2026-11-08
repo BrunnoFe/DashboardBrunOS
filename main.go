@@ -181,6 +181,7 @@ func main() {
 		slog.Warn("discos mapeados", "erro", err)
 	}
 	fsvc.MaxUpload = cfg.MaxUploadGB << 30
+	fsvc.LoadUploads(filepath.Join(cfg.DataDir, "uploads.json")) // envios em pedaços que ficaram pela metade
 	s.files = fsvc
 	for _, r := range fsvc.Roots() {
 		slog.Info("pasta disponível", "nome", r.Name, "id", r.ID, "somenteLeitura", r.ReadOnly)

@@ -79,5 +79,21 @@ Pedidos (com prints):
   aviso de "quase cheio" vale sempre.
 - No celular, a lista de discos põe a barra de uso na linha de baixo (o nome cortava).
 
+## 0.6.0 (08/11/2026): arquivos (etapa 4 do plano; a etapa 3 foi adiada)
+- O Bruno pediu para adiar a etapa 3 (dois passos, sessões ativas); o link público (F3) foi junto.
+- **Vídeo e áudio**: a imagem `scratch` não tem `/etc/mime.types` e a tabela do Go só conhece imagens e
+  arquivos da web, então `.mp4`/`.mp3` iam como download. Agora há uma tabela própria de tipos de
+  mídia (avançar/retroceder funciona pelo Range), `.mkv` liberado e um aviso quando o navegador não
+  toca o codec.
+- **Editor de texto** (CodeMirror 6, escolha do Bruno): "Editar" no menu e na pré-visualização,
+  Ctrl+S, procurar/substituir, cores por linguagem, aviso ao sair sem salvar. Salva de forma atômica
+  e recusa se o arquivo mudou desde que abriu. "Novo arquivo de texto".
+- **Envio com retomada**: arquivos acima de 16 MB vão em pedaços de 8 MB; queda de conexão ou página
+  recarregada continuam de onde pararam.
+- **Extrair** `.zip`, `.tar`, `.tar.gz` (seguro contra zip-slip e zip-bomba) e **encontrar
+  duplicados** (com seleção pronta para mandar à lixeira).
+- **Mapa do espaço**: treemap das pastas, com cache de 10 min para navegar nas subpastas na hora.
+- `openDialog` ganhou `beforeClose` (o editor pergunta antes de fechar com alterações).
+
 ## Próximas
 Veja `roadmap.md`.

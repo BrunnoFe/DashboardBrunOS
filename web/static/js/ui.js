@@ -104,6 +104,11 @@ const P = {
   box: '<path d="M21 8l-9-5-9 5 9 5zM3 8v8l9 5 9-5V8M12 13v8"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
   bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>',
+  more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+  filePlus: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>',
+  unzip: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 3v2M12 7v2M12 11v2"/><rect x="10" y="14" width="4" height="4" rx="1"/>',
+  treemap: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M12 12h9M16.5 12v9"/>',
+  dupes: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/><path d="M12 14h4"/>',
 };
 export const svg = (name, cls = '') => `<svg class="svg ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`;
 
@@ -167,12 +172,15 @@ export const menuOpen = () => !!menuCloser;
 
 /* ── Diálogos ──────────────────────────────────────────────────── */
 export const dialogs = [];
-export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onClose, width, backdropClose = true } = {}) {
+// beforeClose: função (pode ser async) que devolve false para não fechar (ex.: alterações não salvas).
+export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onClose, width, backdropClose = true, beforeClose } = {}) {
   const wrap = html(`<div class="dlg-wrap ${wrapCls}"><div class="dialog ${cls}" role="dialog" aria-modal="true">${inner}</div>${closeBtn ? `<button class="dlg-x" aria-label="Fechar">${svg('x')}</button>` : ''}</div>`);
   const dlg = $('.dialog', wrap);
   if (width) dlg.style.width = `min(${width}px, 100%)`;
-  const close = () => {
-    if (wrap._closing) return; wrap._closing = true;
+  const close = (force = false) => {
+    if (wrap._closing) return;
+    if (beforeClose && force !== true) { Promise.resolve(beforeClose()).then((ok) => { if (ok !== false) close(true); }); return; }
+    wrap._closing = true;
     wrap.classList.add('closing');
     const i = dialogs.indexOf(close); if (i >= 0) dialogs.splice(i, 1);
     if (!dialogs.length) document.body.classList.remove('has-dialog');
@@ -180,7 +188,7 @@ export function openDialog(inner, { cls = '', wrapCls = '', closeBtn = true, onC
     setTimeout(() => wrap.remove(), 180);
   };
   wrap.addEventListener('mousedown', (e) => { if (backdropClose && e.target === wrap) close(); });
-  $('.dlg-x', wrap)?.addEventListener('click', close);
+  $('.dlg-x', wrap)?.addEventListener('click', () => close());
   $('#dialog-host').append(wrap);
   dialogs.push(close);
   document.body.classList.add('has-dialog');

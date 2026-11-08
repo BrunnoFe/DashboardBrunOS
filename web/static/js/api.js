@@ -21,6 +21,68 @@ async function call(method, path, body, { raw = false } = {}) {
 }
 const q = (o) => new URLSearchParams(o).toString();
 
+/* ── Envio em pedaços com retomada ───────────────────────────────── */
+const BIG_UPLOAD = 16 << 20, CHUNK = 8 << 20;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* sem storage: só não retoma depois de recarregar */ } };
+
+function sendChunk(id, offset, blob, onProgress, setXhr) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    setXhr(xhr);
+    xhr.open('PUT', `/api/files/upload/chunk?${q({ id, offset })}`);
+    xhr.setRequestHeader('X-BrunOS', '1');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      let data = {}; try { data = JSON.parse(xhr.responseText); } catch { /* vazio */ }
+      if (xhr.status < 300) resolve(data.offset);
+      else reject(Object.assign(new Error(data.error || `Erro ${xhr.status}`), { status: xhr.status, data }));
+    };
+    xhr.onerror = () => reject(Object.assign(new Error('Conexão perdida'), { status: 0 }));
+    xhr.onabort = () => reject(Object.assign(new Error('Cancelado'), { status: -1 }));
+    xhr.send(blob);
+  });
+}
+
+function chunkedUpload(root, path, name, file, onProgress) {
+  const key = `brunos.upload.${[root, path, name, file.size, file.lastModified].join('|')}`;
+  let aborted = false, xhr = null, id = null;
+  const promise = (async () => {
+    let offset = 0;
+    id = lsGet(key);
+    if (id) { try { offset = (await call('GET', `/api/files/upload/status?${q({ id })}`)).offset; } catch { id = null; } }
+    if (!id) { id = (await call('POST', '/api/files/upload/start', { root, path, name, size: file.size })).id; lsSet(key, id); }
+    let fails = 0;
+    while (offset < file.size) {
+      if (aborted) { call('POST', '/api/files/upload/cancel', { id }).catch(() => {}); lsSet(key, null); throw new Error('Cancelado'); }
+      const start = offset, end = Math.min(file.size, offset + CHUNK);
+      try {
+        offset = await sendChunk(id, start, file.slice(start, end), (p) => onProgress?.((start + p * (end - start)) / file.size), (x) => { xhr = x; });
+        fails = 0;
+        onProgress?.(offset / file.size);
+      } catch (e) {
+        if (aborted || e.status === -1) throw new Error('Cancelado');
+        if (e.status === 409 && e.data?.offset != null) { offset = e.data.offset; continue; } // servidor já tinha esse pedaço
+        if (e.status === 404) { lsSet(key, null); throw e; }
+        if (e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) throw e; // erro que não melhora tentando de novo
+        if (++fails > 8) throw new Error('Conexão perdida. Envie o mesmo arquivo de novo para continuar de onde parou');
+        await sleep(Math.min(30000, 1000 * 2 ** fails));
+        try { offset = (await call('GET', `/api/files/upload/status?${q({ id })}`)).offset; } catch { /* tenta de novo no próximo ciclo */ }
+      }
+    }
+    const r = await call('POST', '/api/files/upload/finish', { id });
+    lsSet(key, null);
+    return r;
+  })();
+  const abort = () => {
+    aborted = true; xhr?.abort();
+    if (id) { call('POST', '/api/files/upload/cancel', { id }).catch(() => {}); lsSet(key, null); }
+  };
+  return { promise, abort };
+}
+
 const real = {
   demo: false,
   public: () => call('GET', '/api/public'),
@@ -114,7 +176,21 @@ const real = {
     trashEmpty: (root = '') => call('POST', '/api/files/trash/empty', { root }),
     rawUrl: (root, path, download) => `/api/files/raw?${q({ root, path, ...(download ? { download: 1 } : {}) })}`,
     zipUrl: (root, paths) => `/api/files/zip?${new URLSearchParams([['root', root], ...paths.map((p) => ['p', p])])}`,
+    text: (root, path) => call('GET', `/api/files/text?${q({ root, path })}`),
+    async saveText(root, path, text, mtime) {
+      const res = await fetch(`/api/files/text?${q({ root, path, mtime })}`, { method: 'PUT', headers: { ...H, 'Content-Type': 'text/plain; charset=utf-8' }, body: text, credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { const e = new Error(data.error || `Erro ${res.status}`); e.status = res.status; throw e; }
+      return data;
+    },
+    newFile: (root, path, name) => call('POST', '/api/files/newfile', { root, path, name }),
+    extract: (root, path) => call('POST', '/api/files/extract', { root, path }),
+    duplicates: (root, path, min) => call('GET', `/api/files/duplicates?${q({ root, path, min })}`),
+    usage: (root, path, refresh) => call('GET', `/api/files/usage?${q({ root, path, ...(refresh ? { refresh: 1 } : {}) })}`),
+    // Arquivos grandes vão em pedaços de 8 MB: se a conexão cair, continua de onde parou (e, se a
+    // página for recarregada, escolher o mesmo arquivo para a mesma pasta retoma o envio).
     upload(root, path, name, file, onProgress) {
+      if (file.size > BIG_UPLOAD) return chunkedUpload(root, path, name, file, onProgress);
       const xhr = new XMLHttpRequest();
       const promise = new Promise((resolve, reject) => {
         xhr.open('PUT', `/api/files/upload?${q({ root, path, name })}`);
@@ -344,6 +420,26 @@ function makeDemo() {
       restore: async (root, id) => { const i = trashItems.findIndex((t) => t.id === id); const [t] = trashItems.splice(i, 1); let parent; try { parent = nodeAt(root, split(t.path)[0]); } catch { parent = tree[root]; } parent.children.push(t._item); return wait({ path: t.path }); },
       trashDelete: async (root, id) => { const i = trashItems.findIndex((t) => t.id === id); trashItems.splice(i, 1); return wait({ ok: true }); },
       trashEmpty: async () => { trashItems.length = 0; return wait({ ok: true }); },
+      text: async (root, path) => {
+        const n = nodeAt(root, path);
+        n.text ??= path.endsWith('.py') ? '# análise dos dados do ERP (demonstração)\nimport numpy as np\n\ndef media(xs):\n    """Média simples."""\n    return sum(xs) / len(xs)\n\nprint(media([1, 2, 3]))\n'
+          : '# Notas\n\n- [x] Testar o **BrunOS** no servidor\n- [ ] Ligar o `drivetemp`\n\n```yaml\nservices:\n  brunos:\n    image: ghcr.io/brunnofe/brunos:0.6.0\n```\n';
+        return wait({ text: n.text, mtime: n.mtime * 1000, size: n.text.length, readOnly: false });
+      },
+      saveText: async (root, path, text) => { const n = nodeAt(root, path); n.text = text; n.size = text.length; n.mtime = Math.floor(Date.now() / 1000); return wait({ mtime: n.mtime * 1000 }, 200); },
+      newFile: async (root, path, name) => { const n = nodeAt(root, path); if (n.children.some((c) => c.name === name)) throw new Error('já existe um item com esse nome'); n.children.push({ ...F(name, 0, 0), text: '' }); return wait({ path: `${path}/${name}` }); },
+      extract: () => Promise.reject(new Error('Indisponível na demonstração')),
+      duplicates: () => wait({ groups: [
+        { size: 7.4e9, files: [{ path: 'Filmes/Filme (2003).mkv', mtime: now - 30 * day }, { path: 'Séries/Filme (2003) cópia.mkv', mtime: now - 2 * day }] },
+        { size: 2.1e6, files: [{ path: 'Fotos/wallpaper-lago.jpg', mtime: now - 60 * day }, { path: 'Downloads/wallpaper-lago (1).jpg', mtime: now - 5 * day }, { path: 'Documentos/lago.jpg', mtime: now - 1 * day }] },
+      ], wasted: 7.4e9 + 4.2e6, scanned: 1834, truncated: false }, 900),
+      usage: async (root, path) => {
+        const sizeOf = (n) => n.dir ? n.children.reduce((s, c) => s + sizeOf(c), 0) : n.size;
+        const countOf = (n) => n.dir ? n.children.reduce((s, c) => s + countOf(c), 0) : 1;
+        const n = nodeAt(root, path);
+        const items = n.children.map((c) => ({ name: c.name, dir: !!c.dir, size: sizeOf(c), ...(c.dir ? { count: countOf(c) } : {}) })).sort((a, b) => b.size - a.size);
+        return wait({ path, size: sizeOf(n), count: countOf(n), items, truncated: false, scannedAt: now }, 400);
+      },
       rawUrl: () => '',
       zipUrl: () => '',
       upload(root, path, name, file, onProgress) {

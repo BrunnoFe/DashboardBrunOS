@@ -1,0 +1,19 @@
+CodeMirror 6 (licença MIT, ver LICENSE), empacotado num arquivo só por tools/codemirror (npm ci && npm run build).
+https://codemirror.net
+
+@codemirror/autocomplete 6.20.4
+@codemirror/commands 6.11.1
+@codemirror/lang-css 6.3.1
+@codemirror/lang-html 6.4.12
+@codemirror/lang-javascript 6.2.5
+@codemirror/lang-json 6.0.2
+@codemirror/lang-markdown 6.5.2
+@codemirror/lang-python 6.2.1
+@codemirror/lang-xml 6.1.0
+@codemirror/lang-yaml 6.1.3
+@codemirror/language 6.13.1
+@codemirror/legacy-modes 6.5.5
+@codemirror/search 6.7.2
+@codemirror/state 6.7.6
+@codemirror/view 6.43.15
+@lezer/highlight 1.2.5

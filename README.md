@@ -14,7 +14,8 @@ internal/auth            usuário, senha (PBKDF2-SHA256, 600k iterações), sess
 internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos, rede (lê /proc e /sys)
 internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
 internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, reiniciar)
-internal/files           gerenciador de arquivos (os.Root, lixeira, upload, zip, busca)
+internal/files           gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca,
+                         editor de texto, extrair, duplicados, mapa do espaço)
 internal/events          central de notificações (o sino da tela inicial)
 internal/power           quedas de energia e desligamento seguro pela bateria
 internal/diskhist        uso diário dos discos e previsão de disco cheio
@@ -23,6 +24,7 @@ internal/hostcmd         comandos no servidor por SSH (usado pelo desligamento s
 internal/terminal        terminal SSH embutido
 web/static               interface (HTML/CSS/JS puros, sem build), embutida no binário
 runtipi-app/brunos       pacote para a app store (config.json + docker-compose.json)
+tools/codemirror         receita do pacote do CodeMirror usado pelo editor (só para atualizá-lo)
 tests/                   fixture, testes da API e teste de fumaça com Docker
 ```
 
@@ -81,13 +83,14 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 
 ## API (resumo)
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast`
+`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}`
 
 ## Créditos e licenças de terceiros
 
 - **Papéis de parede** em `web/static/assets/wallpapers`: do repositório do [umbrelOS](https://github.com/getumbrel/umbrel), licença PolyForm Noncommercial 1.0.0. São para uso pessoal e não comercial; troque pelos seus se for distribuir.
 - **Ícones dos apps** em `web/static/assets/icons`: projeto [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). As marcas pertencem aos respectivos donos.
 - **Fonte Inter**: SIL Open Font License 1.1 (`web/static/assets/fonts/LICENSE-Inter.txt`).
+- **Editor de texto**: [CodeMirror 6](https://codemirror.net) (MIT), empacotado em `web/static/vendor/codemirror` pela receita de `tools/codemirror`.
 - Inspiração visual: umbrelOS. A interface foi escrita do zero; os valores das sombras de vidro, da curva de ampliação do dock e da animação de abertura das janelas foram adaptados do `tailwind.config.ts` e do `index.css` do Umbrel.
 
 ## Terminal

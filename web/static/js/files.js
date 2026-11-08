@@ -172,6 +172,7 @@ function drawToolbar() {
     ? `<button class="pill-btn danger" data-f="empty-trash" ${F.trash.length ? '' : 'disabled'}>${svg('trash')}Esvaziar lixeira</button>`
     : `<button class="pill-btn" data-f="mkdir" ${ro || F.mode !== 'browse' ? 'disabled' : ''} title="Nova pasta">${svg('folderPlus')}<span class="hide-sm">Pasta</span></button>
        <button class="pill-btn" data-f="upload" ${ro || F.mode !== 'browse' ? 'disabled' : ''} title="Enviar arquivos">${svg('upload')}<span class="hide-sm">Enviar</span></button>
+       <button class="icon-btn" data-f="tools" ${F.mode !== 'browse' ? 'disabled' : ''} title="Mais: novo arquivo, mapa do espaço, duplicados" aria-label="Mais ferramentas">${svg('more')}</button>
        <button class="icon-btn ${F.showHidden ? 'on' : ''}" data-f="hidden" title="${F.showHidden ? 'Esconder' : 'Mostrar'} arquivos ocultos" aria-label="Arquivos ocultos">${svg(F.showHidden ? 'eye' : 'eyeOff')}</button>
        <div class="view-toggle"><button class="icon-btn ${F.view === 'list' ? 'on' : ''}" data-view="list" aria-label="Lista">${svg('list')}</button><button class="icon-btn ${F.view === 'grid' ? 'on' : ''}" data-view="grid" aria-label="Grade">${svg('grid')}</button></div>`;
 }
@@ -358,12 +359,52 @@ async function useAsWallpaper(e) {
   } catch (x) { toastError(x); }
 }
 
+/* ── Editor, extrair e ferramentas (0.6.0) ─────────────────────── */
+const ARCHIVE = /\.(zip|tar|tgz|tar\.gz)$/i;
+const EDITABLE_NAME = /\.(txt|md|markdown|log|json|webmanifest|ya?ml|toml|ini|conf|cfg|properties|env|csv|tsv|xml|html?|svg|js|mjs|cjs|ts|css|py|go|rs|sh|bash|zsh|c|h|cpp|java|rb|php|sql|r|m|tex|bib|srt|vtt|nfo|diff|patch|nginx|dockerfile)$|^(dockerfile|makefile|\.env(\..+)?|\.gitignore|\.bashrc|\.profile)$/i;
+const canEdit = (e) => e && !e.dir && EDITABLE_NAME.test(e.name);
+async function editFile(path, name) {
+  const root = F.root;
+  try {
+    const m = await import('./editor.js');
+    m.openEditor({ root, path, name, onSaved: () => { if (F && F.root === root) reload({ keepSel: true }); } });
+  } catch (x) { toastError(x, 'Não foi possível abrir o editor'); }
+}
+async function newTextFile() {
+  const name = await promptDialog('Novo arquivo de texto', { label: 'Nome', value: 'novo.txt', okLabel: 'Criar' });
+  if (!name) return;
+  try {
+    const r = await api.files.newFile(F.root, F.path, name);
+    await reload(); F.sel = new Set([name]); draw();
+    editFile(r.path, name);
+  } catch (x) { toastError(x, 'Não foi possível criar o arquivo'); }
+}
+async function extractArchive(e) {
+  const root = F.root;
+  toast('Extraindo…', e.name);
+  try {
+    const r = await api.files.extract(root, pathOf(e));
+    toast('Extraído', `Pasta “${baseOf(r.path)}”`, { label: 'Abrir', run: () => F && go(root, r.path) });
+    if (F && F.root === root) reload({ keepSel: true });
+  } catch (x) { toastError(x, 'Não foi possível extrair'); }
+}
+function toolsItems() {
+  const ro = rootRO(), root = F.root, path = F.path, rootName = rootById(root)?.name || '';
+  return [
+    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro, run: newTextFile },
+    { icon: 'treemap', label: 'Mapa do espaço desta pasta', run: () => import('./filetools.js').then((m) => m.spaceDialog({ root, path, rootName, onOpen: (p) => F && go(root, p) })) },
+    { icon: 'dupes', label: 'Encontrar arquivos duplicados', run: () => import('./filetools.js').then((m) => m.duplicatesDialog({ root, path, rootName, readOnly: ro, onChanged: () => F && F.root === root && reload({ keepSel: true }) })) },
+  ];
+}
+
 function itemMenu(e, x, y) {
   if (!F.sel.has(keyOf(e))) { F.sel = new Set([keyOf(e)]); F.anchor = keyOf(e); draw(); }
   const sel = selectedEntries(), one = sel.length === 1 ? sel[0] : null, ro = rootRO();
   const isFav = one?.dir && (F.ctx.favorites || []).some((f) => f.root === F.root && f.path === pathOf(one));
   contextMenu(x, y, [
     { icon: one?.dir ? 'folder' : 'eye', label: one?.dir ? 'Abrir' : 'Visualizar', hidden: !one, run: () => openEntry(one), kbd: 'Enter' },
+    { icon: 'edit', label: ro ? 'Abrir no editor (só leitura)' : 'Editar', hidden: !canEdit(one), run: () => editFile(pathOf(one), one.name) },
+    { icon: 'unzip', label: 'Extrair aqui', hidden: !(one && !one.dir && ARCHIVE.test(one.name)) || ro, run: () => extractArchive(one) },
     { icon: 'folder', label: 'Mostrar na pasta', hidden: !(one && F.mode === 'search'), run: () => go(F.root, parentOf(one.path)).then(() => { F.sel = new Set([one.name]); draw(); }) },
     { icon: 'download', label: sel.length > 1 || one?.dir ? 'Baixar como .zip' : 'Baixar', run: () => download(sel) },
     { icon: 'image', label: 'Usar como papel de parede', hidden: !(one && THUMB_EXT.test(one.name)) || api.demo, run: () => useAsWallpaper(one) },
@@ -382,12 +423,15 @@ function blankMenu(x, y) {
   const ro = rootRO() || F.mode !== 'browse';
   contextMenu(x, y, [
     { icon: 'folderPlus', label: 'Nova pasta', hidden: ro, run: mkdir },
+    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro, run: newTextFile },
     { icon: 'upload', label: 'Enviar arquivos…', hidden: ro, run: () => pickUpload(false) },
     { icon: 'folder', label: 'Enviar pasta…', hidden: ro, run: () => pickUpload(true) },
     { icon: 'paste', label: `Colar${clipboard ? ` (${clipboard.paths.length})` : ''}`, disabled: !clipboard, hidden: ro, run: () => paste() },
     '-',
     { icon: 'download', label: 'Baixar esta pasta (.zip)', hidden: F.mode !== 'browse', run: () => { const a = document.createElement('a'); a.href = api.files.zipUrl(F.root, [F.path || '.']); a.click(); } },
     { icon: 'star', label: 'Adicionar esta pasta aos favoritos', hidden: !F.path || F.mode !== 'browse', run: () => toggleFavorite({ name: baseOf(F.path), dir: true, _path: F.path }) },
+    { icon: 'treemap', label: 'Mapa do espaço desta pasta', hidden: F.mode !== 'browse', run: toolsItems()[1].run },
+    { icon: 'dupes', label: 'Encontrar arquivos duplicados', hidden: F.mode !== 'browse', run: toolsItems()[2].run },
     { icon: F.showHidden ? 'eyeOff' : 'eye', label: F.showHidden ? 'Esconder ocultos' : 'Mostrar ocultos', run: toggleHidden },
     { icon: 'refresh', label: 'Atualizar', run: () => reload({ keepSel: true }) },
   ]);
@@ -395,20 +439,34 @@ function blankMenu(x, y) {
 function toggleHidden() { F.showHidden = !F.showHidden; F.ctx.saveSetting('filesHidden', F.showHidden); draw(); }
 
 /* ── Pré-visualização ──────────────────────────────────────────── */
+// O navegador não toca todo formato (ex.: .mkv com áudio AC3/DTS, .mov HEVC): em vez de uma tela
+// preta, explica e oferece o download.
+function mediaFallback(el, f) {
+  el.addEventListener('error', () => {
+    const stage = el.closest('.pv-stage'); if (!stage) return;
+    stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>O navegador não consegue tocar este arquivo (formato ou codec não suportado).<br>Baixe para assistir num player como o VLC.</p><button class="pill-btn" data-pv="dl">${svg('download')}Baixar</button></div>`;
+  }, { once: true });
+}
 function preview(e) {
   const files = visibleEntries().filter((x) => !x.dir);
   let idx = Math.max(0, files.findIndex((x) => keyOf(x) === keyOf(e)));
-  const d = openDialog('<div class="pv"><div class="pv-head"><b class="pv-name"></b><span class="pv-meta"></span><span class="f-spacer"></span><button class="pill-btn" data-pv="dl">' + svg('download') + 'Baixar</button></div><div class="pv-stage"></div><button class="pv-nav prev" data-pv="prev" aria-label="Anterior">' + svg('chevL') + '</button><button class="pv-nav next" data-pv="next" aria-label="Próximo">' + svg('chevR') + '</button></div>', { cls: 'pv-dialog', width: 1100 });
+  const d = openDialog('<div class="pv"><div class="pv-head"><b class="pv-name"></b><span class="pv-meta"></span><span class="f-spacer"></span><button class="pill-btn" data-pv="edit" hidden>' + svg('edit') + 'Editar</button><button class="pill-btn" data-pv="dl">' + svg('download') + 'Baixar</button></div><div class="pv-stage"></div><button class="pv-nav prev" data-pv="prev" aria-label="Anterior">' + svg('chevL') + '</button><button class="pv-nav next" data-pv="next" aria-label="Próximo">' + svg('chevR') + '</button></div>', { cls: 'pv-dialog', width: 1100 });
   const show = async () => {
     const f = files[idx], stage = $('.pv-stage', d.el), url = api.files.rawUrl(F.root, pathOf(f));
     $('.pv-name', d.el).textContent = f.name;
     $('.pv-meta', d.el).textContent = `${fmtBytes(f.size)} · ${timeAgo(f.mtime)} · ${idx + 1} de ${files.length}`;
     $('[data-pv="prev"]', d.el).hidden = idx === 0; $('[data-pv="next"]', d.el).hidden = idx === files.length - 1;
+    $('[data-pv="edit"]', d.el).hidden = !canEdit(f) || f.size > 5 * 1024 * 1024;
     const k = extKind(f.name), ext = f.name.split('.').pop().toLowerCase();
     if (api.demo) { stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>A pré-visualização funciona com o servidor rodando.</p></div>`; return; }
     if (k === 'img' && ext !== 'heic' && ext !== 'tiff' && ext !== 'tif') stage.innerHTML = `<img src="${esc(url)}" alt="">`;
-    else if (k === 'vid' && /^(mp4|webm|mov|m4v|ogv)$/.test(ext)) stage.innerHTML = `<video src="${esc(url)}" controls autoplay playsinline></video>`;
-    else if (k === 'aud') stage.innerHTML = `<div class="pv-audio">${fileSVG(f.name, 'file-ico big')}<audio src="${esc(url)}" controls autoplay></audio></div>`;
+    else if (k === 'vid' && /^(mp4|webm|mov|m4v|ogv|mkv)$/.test(ext)) {
+      stage.innerHTML = `<video src="${esc(url)}" controls autoplay playsinline preload="metadata"></video>`;
+      mediaFallback($('video', stage), f);
+    } else if (k === 'aud') {
+      stage.innerHTML = `<div class="pv-audio">${fileSVG(f.name, 'file-ico big')}<audio src="${esc(url)}" controls autoplay preload="metadata"></audio></div>`;
+      mediaFallback($('audio', stage), f);
+    }
     else if (k === 'pdf') stage.innerHTML = `<iframe src="${esc(url)}" title="${esc(f.name)}"></iframe>`;
     else if (k === 'code' || k === 'txt' || ext === 'csv' || ext === 'tsv') {
       if (f.size > 0 && !/^(txt|md|log|json|ya?ml|toml|ini|conf|cfg|csv|tsv|xml|html?|svg|js|ts|css|py|go|rs|sh|env|c|h|cpp|java|rb|php|sql|r|m|tex|bib|srt|vtt|nfo|properties)$/.test(ext)) { stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>Sem pré-visualização para este tipo de arquivo.</p></div>`; return; }
@@ -426,6 +484,7 @@ function preview(e) {
     if (b.dataset.pv === 'prev' && idx > 0) { idx--; show(); }
     if (b.dataset.pv === 'next' && idx < files.length - 1) { idx++; show(); }
     if (b.dataset.pv === 'dl') download([files[idx]]);
+    if (b.dataset.pv === 'edit') { const f = files[idx]; d.close(); editFile(pathOf(f), f.name); }
   });
   d.el._keys = (ev) => {
     if (ev.key === 'ArrowLeft' && idx > 0) { idx--; show(); ev.preventDefault(); }
@@ -552,6 +611,7 @@ function wire() {
     else if (t.closest('[data-f="fwd"]')) forward();
     else if (t.closest('[data-f="mkdir"]')) mkdir();
     else if ((el = t.closest('[data-f="upload"]'))) { const r = el.getBoundingClientRect(); contextMenu(r.left, r.bottom + 6, [{ icon: 'upload', label: 'Arquivos…', run: () => pickUpload(false) }, { icon: 'folder', label: 'Pasta inteira…', run: () => pickUpload(true) }]); }
+    else if ((el = t.closest('[data-f="tools"]')) && !el.disabled) { const r = el.getBoundingClientRect(); contextMenu(r.left, r.bottom + 6, toolsItems()); }
     else if (t.closest('[data-f="hidden"]')) toggleHidden();
     else if (t.closest('[data-f="empty-trash"]')) {
       if (await confirmDialog('Esvaziar a lixeira?', `${F.trash.length} item(ns) serão apagados para sempre.`, 'Esvaziar', { danger: true })) {

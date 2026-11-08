@@ -58,3 +58,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     "rede local" (o DHCP troca IPs); na internet, a faixa /24 (IPv4) ou /48 (IPv6), para não avisar a
     cada troca de IP do provedor. Celular no 4G pode mudar de faixa e gerar avisos; se incomodar,
     afrouxar para /16.
+21. **Etapa 3 adiada, F3 junto** (08/11/2026, pedido do Bruno). O link público de compartilhamento
+    abre arquivos para fora de casa e foi planejado para depois da verificação em dois passos; adiado
+    com ela. As etapas seguintes foram renumeradas (a antiga 0.7.0 virou 0.6.0, e assim por diante).
+22. **Editor com CodeMirror 6 vendorizado** (0.6.0, escolha do Bruno entre ele e um editor leve feito à
+    mão). Como o frontend não tem build, o CodeMirror vem pronto num arquivo só
+    (`web/static/vendor/codemirror/codemirror.mjs`, ~650 KB, ~230 KB gzip), gerado por `tools/codemirror`
+    (versões fixas, esbuild) e carregado só quando o editor abre. Para atualizar: `npm ci && npm run build`
+    lá dentro. Saiu o SQL das linguagens para economizar.
+23. **Tipos de mídia próprios** (0.6.0). A imagem `scratch` não tem `/etc/mime.types`, e o `mime` do Go
+    só conhece imagens e arquivos da web; `.mp4` e `.mp3` saíam como `application/octet-stream`.

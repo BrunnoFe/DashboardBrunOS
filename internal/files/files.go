@@ -68,6 +68,8 @@ type Service struct {
 	cfgs      func() []RootConfig
 	MaxUpload int64
 	MapFile   string
+	up        uploads    // envios em pedaços pendentes (resumable.go)
+	usage     usageCache // mapa do espaço (usage.go)
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)

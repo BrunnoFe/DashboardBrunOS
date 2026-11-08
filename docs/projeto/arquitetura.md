@@ -64,6 +64,15 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   mudou. Operações: List, Open, Mkdir, Rename, Paste (copia entre discos em EXDEV), Delete, Upload
   (temporário + rename, nome único "x (2).ext"), Search (3 s / 50 mil entradas), lixeira em
   `<raiz>/.brunos-trash/<id>` + `<id>.json`.
+  0.6.0: `mediaTypes` (tipos de vídeo/áudio próprios: a imagem `scratch` não tem `/etc/mime.types`);
+  `edit.go` (`ReadText`/`SaveText` com mtime em ms, máx. 5 MB, temporário + rename mantendo a
+  permissão, confere se dá para abrir o arquivo para escrita antes; `NewFile`); `resumable.go` (envio em
+  pedaços: `.brunos-part-<id>` na pasta de destino, estado em `/data/uploads.json`, pedaço até 32 MB,
+  posição errada → 409 com a certa, pendentes > 48 h apagados); `extract.go` (zip/tar/tar.gz pelo
+  `os.Root`, sem links, orçamento = espaço livre − 1 GB, 200 mil itens, apaga a pasta se falhar);
+  `duplicates.go` (tamanho → SHA-256 de começo+fim → SHA-256 inteiro; 300 mil arquivos, 90 s, 50 GB
+  lidos no máximo); `usage.go` (soma por pasta numa varredura só, cache de 10 min por raiz, 30 s / 1
+  milhão de itens, uma varredura por vez).
 - **`internal/terminal`**: `Manager` (até 4 sessões, 12 aberturas/min, ociosa fecha em 3 min, buffer
   de 512 KB enquanto ninguém lê). TOFU em `/data/known_hosts.json`
   (`{"version":1,"hosts":{"host:porta":{type,fingerprint,key,addedAt}}}`). Prefere chave ED25519 como
@@ -122,6 +131,11 @@ GET  /api/events                      POST /api/events/read {ids:[]} (vazio = to
 GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
 PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}
 GET  /api/disks/forecast              ({disks:[{name,perDay,daysLeft?,enough,points:[{d,u,f}]}]})
+GET  /api/files/text?root&path        ({text,mtime(ms),size,readOnly}; 413 grande, 415 binário/não-UTF-8)
+PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   POST /api/files/newfile
+POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})
+GET  /api/files/upload/status?id      POST /api/files/upload/finish {id} · upload/cancel {id}
+POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min · /api/files/usage?root&path[&refresh=1]
 ```
 
 O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central.
@@ -134,7 +148,8 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 
 `auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
 `events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento),
-`logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos).
+`logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos), `uploads.json`
+(envios em pedaços pendentes).
 
 ## Frontend (`web/static`)
 
@@ -162,6 +177,12 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
   mostra a faixa de contagem.
 - `js/disks.js` (0.5.0): `diskRowsHTML(disks, forecast)` (lista de discos do Uso ao vivo, com
   temperatura e previsão), `forecastText(f)`, `driveTempHelp()` (comandos do drivetemp).
+- `js/editor.js` (0.6.0): `openEditor({root, path, name, onSaved})`; importa
+  `vendor/codemirror/codemirror.mjs` (bundle gerado por `tools/codemirror`, ver o README de lá) só ao abrir.
+- `js/filetools.js` (0.6.0): `spaceDialog` (treemap "squarified" em divs + lista) e `duplicatesDialog`.
+- `js/api.js`: arquivos > 16 MB vão por `chunkedUpload` (pedaços de 8 MB, até 8 tentativas com espera
+  crescente, id guardado no `localStorage` por raiz|pasta|nome|tamanho|lastModified para retomar).
+- `js/ui.js`: `openDialog(..., {beforeClose})` (devolver false cancela o fechamento).
 
 ### Preferências (`/api/settings`, objeto do frontend)
 

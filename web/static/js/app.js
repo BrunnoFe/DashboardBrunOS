@@ -1055,6 +1055,7 @@ function applyPrefs() {
 document.addEventListener('keydown', (e) => {
   if (document.body.classList.contains('is-locked')) return;
   if (e.target.closest?.('.xterm')) return; // dentro do terminal, Esc e Ctrl+K são do shell
+  if (e.key === 'Escape' && e.target.closest?.('.cm-editor')) return; // no editor, Esc fecha a busca dele
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); commandPalette(); }
   else if (e.key === 'Escape') {
     if (menuOpen()) closeMenu();

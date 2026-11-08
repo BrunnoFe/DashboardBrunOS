@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -34,6 +35,138 @@ func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("POST /api/files/trash/restore", wrap(s.hTrashRestore))
 	mux.HandleFunc("POST /api/files/trash/delete", wrap(s.hTrashDelete))
 	mux.HandleFunc("POST /api/files/trash/empty", wrap(s.hTrashEmpty))
+	mux.HandleFunc("GET /api/files/text", wrap(s.hTextGet))
+	mux.HandleFunc("PUT /api/files/text", wrap(s.hTextPut))
+	mux.HandleFunc("POST /api/files/newfile", wrap(s.hNewFile))
+	mux.HandleFunc("POST /api/files/upload/start", wrap(s.hUpStart))
+	mux.HandleFunc("PUT /api/files/upload/chunk", wrap(s.hUpChunk))
+	mux.HandleFunc("GET /api/files/upload/status", wrap(s.hUpStatus))
+	mux.HandleFunc("POST /api/files/upload/finish", wrap(s.hUpFinish))
+	mux.HandleFunc("POST /api/files/upload/cancel", wrap(s.hUpCancel))
+	mux.HandleFunc("POST /api/files/extract", wrap(s.hExtract))
+	mux.HandleFunc("GET /api/files/duplicates", wrap(s.hDuplicates))
+	mux.HandleFunc("GET /api/files/usage", wrap(s.hUsage))
+}
+
+func (s *Service) hUpStart(w http.ResponseWriter, r *http.Request) {
+	s.op(w, r, func(q opReq) (any, error) {
+		id, err := s.StartUpload(q.Root, q.Path, q.Name, q.Size)
+		return map[string]any{"id": id, "offset": 0}, err
+	})
+}
+
+func (s *Service) hUpChunk(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	offset, err := strconv.ParseInt(q.Get("offset"), 10, 64)
+	if err != nil || offset < 0 {
+		writeJSON(w, 400, map[string]string{"error": "posição inválida"})
+		return
+	}
+	if r.ContentLength > ChunkMax {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "pedaço grande demais"})
+		return
+	}
+	n, err := s.UploadChunk(q.Get("id"), offset, r.Body)
+	if errors.Is(err, ErrOffset) {
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "offset": n})
+		return
+	}
+	if errors.Is(err, ErrUploadGone) {
+		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"offset": n})
+}
+
+func (s *Service) hUpStatus(w http.ResponseWriter, r *http.Request) {
+	off, size, err := s.UploadStatus(r.URL.Query().Get("id"))
+	if errors.Is(err, ErrUploadGone) {
+		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"offset": off, "size": size})
+}
+
+func (s *Service) hUpFinish(w http.ResponseWriter, r *http.Request) {
+	s.op(w, r, func(q opReq) (any, error) {
+		p, err := s.FinishUpload(q.ID)
+		return map[string]string{"path": p}, err
+	})
+}
+
+func (s *Service) hUpCancel(w http.ResponseWriter, r *http.Request) {
+	s.op(w, r, func(q opReq) (any, error) { return nil, s.CancelUpload(q.ID) })
+}
+
+func (s *Service) hExtract(w http.ResponseWriter, r *http.Request) {
+	s.op(w, r, func(q opReq) (any, error) {
+		p, err := s.Extract(q.Root, q.Path)
+		return map[string]string{"path": p}, err
+	})
+}
+
+func (s *Service) hDuplicates(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	minSize, _ := strconv.ParseInt(q.Get("min"), 10, 64)
+	if minSize <= 0 {
+		minSize = 1 << 20
+	}
+	res, err := s.Duplicates(q.Get("root"), q.Get("path"), minSize)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, res)
+}
+
+func (s *Service) hUsage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	res, err := s.Usage(q.Get("root"), q.Get("path"), q.Get("refresh") == "1")
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, res)
+}
+
+func (s *Service) hTextGet(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tf, err := s.ReadText(q.Get("root"), q.Get("path"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, tf)
+}
+
+func (s *Service) hTextPut(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	expect, _ := strconv.ParseInt(q.Get("mtime"), 10, 64)
+	if r.ContentLength > EditMax {
+		writeErr(w, ErrTooBig)
+		return
+	}
+	mt, err := s.SaveText(q.Get("root"), q.Get("path"), r.Body, expect)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"mtime": mt})
+}
+
+func (s *Service) hNewFile(w http.ResponseWriter, r *http.Request) {
+	s.op(w, r, func(q opReq) (any, error) {
+		p, err := s.NewFile(q.Root, q.Path, q.Name)
+		return map[string]string{"path": p}, err
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -53,6 +186,16 @@ func writeErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrExists):
 		code, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, ErrBadName), errors.Is(err, ErrBadPath), errors.Is(err, ErrIntoItself):
+		code, msg = http.StatusBadRequest, err.Error()
+	case errors.Is(err, ErrConflict):
+		code, msg = http.StatusConflict, err.Error()
+	case errors.Is(err, ErrTooBig):
+		code, msg = http.StatusRequestEntityTooLarge, err.Error()
+	case errors.Is(err, ErrBinary), errors.Is(err, ErrEncoding), errors.Is(err, ErrLink):
+		code, msg = http.StatusUnsupportedMediaType, err.Error()
+	case errors.Is(err, ErrUploadGone):
+		code, msg = http.StatusNotFound, err.Error()
+	case errors.Is(err, ErrNoSpace), errors.Is(err, ErrArchive):
 		code, msg = http.StatusBadRequest, err.Error()
 	default:
 		// mensagens que já são amigáveis (em português) passam; o resto vira genérico
@@ -112,7 +255,7 @@ func (s *Service) hList(w http.ResponseWriter, r *http.Request) {
 // nunca consegue rodar código com a sessão do BrunOS.
 var inlineTypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true, "image/avif": true, "image/bmp": true,
-	"video/mp4": true, "video/webm": true, "video/ogg": true, "video/quicktime": true,
+	"video/mp4": true, "video/webm": true, "video/ogg": true, "video/quicktime": true, "video/x-matroska": true,
 	"audio/mpeg": true, "audio/ogg": true, "audio/wav": true, "audio/x-wav": true, "audio/flac": true, "audio/mp4": true, "audio/aac": true, "audio/webm": true,
 	"application/pdf": true,
 }
@@ -122,6 +265,25 @@ var textExts = map[string]bool{
 	".js": true, ".ts": true, ".css": true, ".py": true, ".go": true, ".rs": true, ".sh": true, ".env": true, ".c": true,
 	".h": true, ".cpp": true, ".java": true, ".rb": true, ".php": true, ".sql": true, ".r": true, ".m": true, ".tex": true,
 	".bib": true, ".srt": true, ".vtt": true, ".nfo": true, ".properties": true, ".dockerfile": true,
+}
+
+// mediaTypes: a imagem do BrunOS é "scratch" (sem /etc/mime.types), e a tabela embutida do Go só
+// conhece imagens e arquivos da web. Sem isto, .mp4 e .mp3 iam como download e o player do navegador
+// não conseguia avançar/retroceder direito.
+var mediaTypes = map[string]string{
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg", ".mov": "video/quicktime",
+	".mkv": "video/x-matroska",
+	".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".opus": "audio/ogg",
+	".wav": "audio/wav", ".flac": "audio/flac", ".weba": "audio/webm",
+	".bmp": "image/bmp", ".avif": "image/avif", ".webp": "image/webp",
+}
+
+func contentType(ext string) string {
+	if t, ok := mediaTypes[ext]; ok {
+		return t
+	}
+	t, _, _ := mime.ParseMediaType(mime.TypeByExtension(ext))
+	return t
 }
 
 func contentDisposition(kind, name string) string {
@@ -148,10 +310,7 @@ func (s *Service) hRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	name := st.Name()
 	ext := strings.ToLower(filepath.Ext(name))
-	ctype, _, _ := mime.ParseMediaType(mime.TypeByExtension(ext))
-	if ext == ".mov" {
-		ctype = "video/quicktime"
-	}
+	ctype := contentType(ext)
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "private, max-age=600")
@@ -292,6 +451,7 @@ type opReq struct {
 	DestPath string   `json:"destPath"`
 	Copy     bool     `json:"copy"`
 	ID       string   `json:"id"`
+	Size     int64    `json:"size"`
 }
 
 func (s *Service) op(w http.ResponseWriter, r *http.Request, fn func(opReq) (any, error)) {
