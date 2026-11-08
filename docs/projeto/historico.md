@@ -159,5 +159,18 @@ Pedidos (com prints):
 - **Leveza**: com a tela fechada não busca nada; aberta, só o que algum widget usa, no ritmo de cada app;
   segundo plano (5 min) só para aviso ligado ou gráfico sem histórico no app.
 
+## 0.9.1 (08/11/2026): melhorias dos widgets e páginas montadas (etapa 7a+)
+- **Colunas por página** com encaixe (decisão 35): um Grande com Pequenos empilhados ao lado; controle
+  "− N colunas +" no modo Organizar e na janela Widgets; no celular nunca passa do que cabe.
+- **Arrastar widgets sempre** (como os ícones), inclusive para outra página; **alça de tamanho** no modo
+  Organizar, pulando entre os 5 Tamanhos.
+- **Páginas montadas pelo Bruno**: apps em qualquer página (arrastando ou "Mover para a página…"),
+  página só de widgets, só de apps ou mista; páginas de continuação quando os apps não cabem; o modo
+  Organizar mostra uma página nova vazia para soltar coisas.
+- **Arquivos personalizável**: pastas escolhidas (navegador de pastas), grade ou lista, ícone e cor por
+  pasta, espaço livre do disco.
+- Correções: Destaque/Armazenamento com 3 a 5 informações (fileira sem buraco, nada passa da altura);
+  "Aparência própria" da 0.9.0 não aplicava a transparência/cor (faltava um espaço na classe).
+
 ## Próximas
 Veja `roadmap.md`.

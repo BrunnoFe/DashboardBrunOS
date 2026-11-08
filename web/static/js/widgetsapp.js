@@ -1,8 +1,8 @@
 // Janela Widgets (etapa 7): Meus widgets · Modelos · Integrações, e o editor com prévia ao vivo.
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
-import { $, $$, esc, svg, on, toast, toastError, confirmDialog, timeAgo, clamp } from './ui.js';
-import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
+import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp } from './ui.js';
+import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
 const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
@@ -79,7 +79,7 @@ function drawMine() {
   const pages = Object.keys(w2.areas).map(Number).sort((a, b) => a - b).filter((p) => w2.areas[p].some((id) => w2.items[id]));
   main().innerHTML = `<div class="wapp-head"><div><h3>Meus widgets</h3><p>Os widgets da tela inicial, por página. Clique para editar.</p></div>
     <span class="f-spacer"></span><button class="pill-btn" data-act="organize">${svg('sort')}Organizar na tela inicial</button><button class="pill-btn primary" data-act="new">${svg('plus')}Novo widget</button></div>
-    ${pages.length ? pages.map((p) => `<div class="wapp-sec">Página ${p + 1}</div><div class="wapp-cards">${w2.areas[p].filter((id) => w2.items[id]).map((id) => {
+    ${pages.length ? pages.map((p) => `<div class="wapp-sec wapp-sec-row"><span>Página ${p + 1}</span><label class="wapp-inline">Colunas dos widgets <select class="text-input sm" data-pcols="${p}"><option value="0">automático</option>${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${w2.cols?.[p] === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div><div class="wapp-cards">${w2.areas[p].filter((id) => w2.items[id]).map((id) => {
       const it = normalize(w2.items[id]);
       return `<div class="wapp-card" data-edit="${esc(id)}">${previewBox(it, id)}<div class="wapp-card-txt"><b>${esc(it.title || FORMATS[it.format].label)}</b><small>${FORMATS[it.format].label} · ${SIZES[it.size].label}</small></div>
         <div class="wapp-card-acts"><button class="icon-btn" data-dup="${esc(id)}" title="Duplicar">${svg('copy')}</button><button class="icon-btn danger" data-del="${esc(id)}" title="Remover">${svg('trash')}</button></div></div>`;
@@ -172,7 +172,7 @@ function drawEditor() {
       <div class="wed-sec"><span class="wed-lbl">Formato</span><div class="wed-chips">${Object.entries(FORMATS).map(([k, x]) => `<button type="button" class="wchip ${d.format === k ? 'on' : ''}" data-format="${k}" title="${esc(x.desc)}">${svg(x.icon)}${x.label}</button>`).join('')}</div><small class="hint">${esc(f.desc)}</small></div>
       <div class="wed-sec"><span class="wed-lbl">Tamanho</span><div class="wed-chips">${Object.entries(SIZES).map(([k, x]) => `<button type="button" class="wchip ${d.size === k ? 'on' : ''}" data-size="${k}"><i class="wsz-ico z-${k}"></i>${x.label}</button>`).join('')}</div></div>
       <div class="wed-sec"><label>Página<select class="text-input" data-f="page">${Array.from({ length: total + (st.editId ? 0 : 1) }, (_, i) => `<option value="${i}" ${i === st.page ? 'selected' : ''}>${i < total ? `Página ${i + 1}` : 'Página nova'}</option>`).join('')}${st.editId ? `<option value="${total}">Página nova</option>` : ''}</select></label></div>
-      ${d.format === 'shortcuts' ? '<div class="wed-sec"><small class="hint">Mostra as pastas favoritas do Arquivos (estrela na barra lateral). O tamanho decide quantas aparecem.</small></div>' : `
+      ${d.format === 'shortcuts' ? foldersHTML() : `
       <div class="wed-sec"><span class="wed-lbl">Métricas <small>${d.slots.length}/${f.max}</small></span>
         <div class="wslots">${d.slots.map(slotHTML).join('') || '<small class="hint">Nenhuma métrica ainda.</small>'}</div>
         ${d.slots.length < f.max ? `<button type="button" class="pill-btn" data-act="add-slot">${svg('plus')}Adicionar métrica</button>` : ''}
@@ -197,6 +197,56 @@ function drawEditor() {
     <aside class="wed-side"><div class="wed-preview">${previewEditor()}</div>
       <div class="wed-actions">${st.editId ? `<button class="pill-btn danger" data-act="remove">${svg('trash')}Remover</button>` : ''}<span class="f-spacer"></span><button class="pill-btn" data-act="cancel">Cancelar</button><button class="pill-btn primary" data-act="save">${svg('check')}Salvar</button></div></aside>
   </div>`;
+}
+/* Formato Atalhos: pastas escolhidas, grade ou lista, ícone, cor e espaço livre */
+function foldersHTML() {
+  const d = st.draft, roots = st.ctx.roots();
+  const rootName = (id) => roots.find((r) => r.id === id)?.name || id;
+  return `<div class="wed-sec"><span class="wed-lbl">Pastas <small>${d.folders.length || 'favoritas'}</small></span>
+    <div class="wslots">${d.folders.length ? d.folders.map((f, i) => `<div class="wslot wfold" data-fold="${i}">
+      <div class="wslot-top"><span class="wfold-ico" style="--fh:${f.color ?? 'var(--bh)'}">${svg(f.icon || 'folder')}</span>
+        <input class="text-input sm" data-fo="name" value="${esc(f.name || '')}" placeholder="${esc(f.path.split('/').pop() || rootName(f.root))}" aria-label="Nome do atalho">
+        <button type="button" class="icon-btn" data-foact="up" title="Subir" ${i === 0 ? 'disabled' : ''}>${svg('arrowUp')}</button>
+        <button type="button" class="icon-btn" data-foact="down" title="Descer" ${i === d.folders.length - 1 ? 'disabled' : ''}>${svg('arrowDown')}</button>
+        <button type="button" class="icon-btn danger" data-foact="del" title="Tirar">${svg('x')}</button></div>
+      <small class="hint wfold-path">${esc(rootName(f.root))}${f.path ? ` / ${esc(f.path)}` : ''}</small>
+      <div class="wfold-opts"><select class="text-input sm" data-fo="icon" aria-label="Ícone">${FOLDER_ICONS.map((n) => `<option value="${n}" ${(f.icon || 'folder') === n ? 'selected' : ''}>${{ folder: 'pasta', film: 'filmes', music: 'música', image: 'fotos', doc: 'documentos', download: 'downloads', box: 'backup', disks: 'disco', star: 'favorita', home: 'casa', user: 'pessoal', code: 'código' }[n]}</option>`).join('')}</select>
+        <span class="wfold-hues"><button type="button" class="swatch ${f.color == null ? 'on' : ''}" data-fohue="" title="Cor de destaque" style="background:var(--brand)"></button>${FOLDER_HUES.map((h) => `<button type="button" class="swatch ${f.color === h ? 'on' : ''}" data-fohue="${h}" style="background:hsl(${h} 75% 52%)" aria-label="Matiz ${h}"></button>`).join('')}</span></div>
+    </div>`).join('') : '<small class="hint">Sem pastas escolhidas, o widget mostra as favoritas do Arquivos (estrela na barra lateral).</small>'}</div>
+    <button type="button" class="pill-btn" data-act="add-folder">${svg('folderPlus')}Adicionar pasta</button></div>
+  <div class="wed-sec"><span class="wed-lbl">Disposição</span><div class="seg">${[['grid', 'Grade'], ['list', 'Lista']].map(([k, l]) => `<button type="button" class="${d.files.layout === k ? 'on' : ''}" data-flayout="${k}">${l}</button>`).join('')}</div>
+    <label class="wsw">Espaço livre do disco${sw(d.files.showFree, 'data-f="showfree"')}</label>
+    <small class="hint">O tamanho do widget decide quantas pastas aparecem.</small></div>`;
+}
+// Navegador de pastas (usa a mesma API do Arquivos) → { root, path }
+function pickFolder() {
+  return new Promise((resolve) => {
+    const roots = st.ctx.roots();
+    if (!roots.length) { toast('Nenhuma pasta disponível', 'Mapeie um disco ou monte /files.'); resolve(null); return; }
+    let root = roots[0].id, path = '', done = false;
+    const d = openDialog(`<h2>${svg('folder')}Escolher pasta</h2><div class="wpick"><div class="seg wpick-roots">${roots.map((r) => `<button type="button" data-root="${esc(r.id)}">${esc(r.name)}</button>`).join('')}</div>
+      <div class="wpick-crumbs"></div><div class="wpick-list"></div>
+      <div class="dlg-actions"><button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="button" class="pill-btn primary" data-c="ok">${svg('check')}Escolher esta pasta</button></div></div>`,
+    { width: 480, onClose: () => { if (!done) resolve(null); } });
+    const draw = async () => {
+      $$('[data-root]', d.el).forEach((b) => b.classList.toggle('on', b.dataset.root === root));
+      const parts = path.split('/').filter(Boolean);
+      $('.wpick-crumbs', d.el).innerHTML = `<button type="button" data-go="">${esc(roots.find((r) => r.id === root)?.name || root)}</button>${parts.map((p, i) => ` / <button type="button" data-go="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`).join('')}`;
+      const box = $('.wpick-list', d.el);
+      box.innerHTML = '<div class="empty-note">Carregando…</div>';
+      try {
+        const dirs = (await api.files.list(root, path)).entries.filter((x) => x.dir && !x.hidden);
+        box.innerHTML = dirs.length ? dirs.map((x) => `<button type="button" class="wpick-dir" data-go="${esc(path ? `${path}/${x.name}` : x.name)}">${svg('folder')}<span>${esc(x.name)}</span>${svg('chevR')}</button>`).join('') : '<div class="empty-note">Sem subpastas</div>';
+      } catch (e) { box.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; }
+    };
+    d.el.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-root]'); if (r) { root = r.dataset.root; path = ''; draw(); return; }
+      const g = e.target.closest('[data-go]'); if (g) { path = g.dataset.go; draw(); return; }
+      const c = e.target.closest('[data-c]'); if (!c) return;
+      done = true; d.close(); resolve(c.dataset.c === 'ok' ? { root, path } : null);
+    });
+    draw();
+  });
 }
 function previewEditor() {
   const [w, h] = PREVIEW[st.draft.size] || PREVIEW.s;
@@ -337,6 +387,14 @@ async function onClick(e) {
   if ((el = q('[data-alert]'))) { const id = el.dataset.alert; const a = st.integ.alerts[id] ||= { on: false }; a.on = !a.on; el.classList.toggle('on', a.on); el.setAttribute('aria-checked', a.on); return; }
   const d = st.draft;
   if (st.view === 'edit' && d) {
+    if ((el = q('[data-foact]'))) {
+      const i = +el.closest('[data-fold]').dataset.fold, a = el.dataset.foact;
+      if (a === 'del') d.folders.splice(i, 1);
+      else { const j = a === 'up' ? i - 1 : i + 1; if (j >= 0 && j < d.folders.length) [d.folders[i], d.folders[j]] = [d.folders[j], d.folders[i]]; }
+      redrawEditor(); return;
+    }
+    if ((el = q('[data-fohue]'))) { const f = d.folders[+el.closest('[data-fold]').dataset.fold]; f.color = el.dataset.fohue === '' ? undefined : +el.dataset.fohue; redrawEditor(); return; }
+    if ((el = q('[data-flayout]'))) { d.files.layout = el.dataset.flayout; redrawEditor(); return; }
     if ((el = q('[data-format]'))) { setFormat(el.dataset.format); redrawEditor(); return; }
     if ((el = q('[data-size]'))) { d.size = el.dataset.size; $$('[data-size]', st.body).forEach((b) => b.classList.toggle('on', b === el)); redrawPreview(); return; }
     if ((el = q('[data-layout]'))) { d.layout = el.dataset.layout; redrawEditor(); return; }
@@ -358,6 +416,7 @@ async function onClick(e) {
       else if (k === 'follow') { d.look.follow = d.look.follow === false; redrawEditor(); return; }
       else if (k === 'ownhue') { d.look.hue = d.look.hue == null ? 200 : null; redrawEditor(); return; }
       else if (k === 'hidelabel') d.look.hideLabel = !d.look.hideLabel;
+      else if (k === 'showfree') d.files.showFree = !d.files.showFree;
       el.classList.toggle('on'); redrawPreview(); return;
     }
   }
@@ -365,6 +424,7 @@ async function onClick(e) {
     const a = el.dataset.act;
     if (a === 'new') { show('models'); }
     else if (a === 'organize') st.ctx.organize();
+    else if (a === 'add-folder') { const f = await pickFolder(); if (f && st?.draft) { st.draft.folders.push(f); redrawEditor(); } }
     else if (a === 'add-slot') { const m = firstMetric(d.format); if (m) { d.slots.push({ metric: m }); redrawEditor(); } else toast('Nenhuma métrica disponível', 'Cadastre uma integração ou escolha outro formato.'); }
     else if (a === 'cancel') { st.draft = null; show(st.editId ? 'mine' : 'models'); }
     else if (a === 'save') saveDraft();
@@ -385,7 +445,14 @@ function onInput(e) {
     return;
   }
   if (st.view === 'models' && t.dataset.f === 'page') { st.page = +t.value; return; }
+  if (t.dataset.pcols != null) { if (e.type === 'change') st.ctx.setCols(+t.dataset.pcols, +t.value); return; }
   const d = st.draft; if (st.view !== 'edit' || !d) return;
+  if (t.dataset.fo) {
+    const f = d.folders[+t.closest('[data-fold]').dataset.fold], k = t.dataset.fo;
+    if (k === 'name') f.name = t.value.trim() ? t.value.slice(0, 40) : undefined;
+    else if (k === 'icon') { if (e.type !== 'change') return; f.icon = t.value === 'folder' ? undefined : t.value; redrawEditor(); return; }
+    redrawPreview(); return;
+  }
   if (t.dataset.f) {
     const k = t.dataset.f;
     if (k === 'title') d.title = t.value;

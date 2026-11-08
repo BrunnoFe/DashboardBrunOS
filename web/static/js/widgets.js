@@ -182,6 +182,8 @@ export function normalize(item) {
   it.list = { ...BLANK.list, ...(item?.list || {}) };
   it.click = { ...BLANK.click, ...(item?.click || {}) };
   it.look = { ...BLANK.look, ...(item?.look || {}) };
+  it.files = { layout: 'grid', showFree: false, ...(item?.files || {}) };
+  it.folders = Array.isArray(item?.folders) ? item.folders.filter((f) => f && f.root).slice(0, 24) : [];
   if (!SIZES[it.size]) it.size = 's';
   if (!FORMATS[it.format]) it.format = 'stat';
   it.slots = (it.slots || []).filter((s) => s && typeof s.metric === 'string').slice(0, FORMATS[it.format].max || 0);
@@ -252,10 +254,10 @@ function statHTML(item, ctx) {
   const big = item.size === 't' || item.size === 'l';
   return `${item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : ''}
     <span class="w-value wf-main${lv(levelOf(val, def, main))}">${glyph}<span>${esc(f.v)}</span><span class="w-unit">${esc(f.u + maxTxt)}</span></span>
-    ${main.spark ? `<span class="wf-spark">${sparkFor(main, ctx, item.size, 200, big ? 70 : 30)}</span>` : ''}
+    ${main.spark ? `<span class="wf-spark ${cells.length && !big ? 'low' : ''}">${sparkFor(main, ctx, item.size, 200, big ? 70 : cells.length ? 18 : 30)}</span>` : ''}
     ${subTxt ? `<span class="w-sub wf-sub">${esc(subTxt)}</span>` : ''}
-    ${cells.length ? `<span class="wb-cells wf-cells">${cells.map((c) => { const d = ctx.def(c.metric), v = ctx.value(c.metric); return `<span class="cell"><span class="k">${esc(labelOf(c, d))}</span><span class="v${lv(levelOf(v, d, c))}">${esc(fmtText(v, d, c))}</span></span>`; }).join('')}</span>`
-    : pct != null && item.bar !== false ? `<span class="track ${item.look?.follow === false ? '' : 'white'}"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}`;
+    ${pct != null && item.bar !== false && (!cells.length || big) ? `<span class="track wf-bar ${item.look?.follow === false ? '' : 'white'}"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}
+    ${cells.length ? `<span class="wb-cells wf-cells" style="--n:${cells.length}">${cells.map((c) => { const d = ctx.def(c.metric), v = ctx.value(c.metric); return `<span class="cell" title="${esc(labelOf(c, d))}"><span class="k">${esc(labelOf(c, d))}</span><span class="v${lv(levelOf(v, d, c))}">${esc(fmtText(v, d, c))}</span></span>`; }).join('')}</span>` : ''}`;
 }
 
 function gridHTML(item, ctx) {
@@ -318,11 +320,33 @@ function chartHTML(item, ctx) {
   return `${cap}${headVal}</span>${legend}<span class="wf-chart">${svgTxt || `<span class="w-empty">${ctx.loading?.(item) ? 'carregando…' : 'ainda sem histórico'}</span>`}</span>${st}`;
 }
 
+// Ícones e cores que o Bruno pode escolher para cada pasta do formato Atalhos
+export const FOLDER_ICONS = ['folder', 'film', 'music', 'image', 'doc', 'download', 'box', 'disks', 'star', 'home', 'user', 'code'];
+export const FOLDER_HUES = [209, 259, 330, 6, 24, 45, 145, 174];
+function folderIcon(f) {
+  if ((!f.icon || f.icon === 'folder') && f.color == null) return folderSVG();
+  return `<span class="wf-ficon" style="--fh:${f.color ?? 'var(--bh)'}">${svg(f.icon || 'folder')}</span>`;
+}
+function freeOf(f, roots) {
+  const r = roots.find((x) => x.id === f.root);
+  return r && r.total > 0 ? { free: r.free, pct: clamp(((r.total - r.free) / r.total) * 100, 0, 100) } : null;
+}
 function shortcutsHTML(item, ctx) {
-  const per = { s: 4, w: 8, t: 8, l: 16, f: 12 }[item.size];
-  const fav = ctx.favorites().slice(0, per);
-  const cols = { s: 2, w: 4, t: 2, l: 4, f: 6 }[item.size];
-  return `${item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : ''}<span class="w-files wf-files" style="--cols:${cols}">${fav.length ? fav.map((f) => `<button class="cell cell-btn" data-fav-root="${esc(f.root)}" data-fav-path="${esc(f.path)}" title="${esc(f.name)}">${folderSVG()}<span>${esc(f.name)}</span></button>`).join('') : '<span class="w-empty">Nenhuma pasta disponível</span>'}</span>`;
+  const list = item.files?.layout === 'list';
+  const roots = ctx.roots?.() || [];
+  const chosen = (item.folders || []).filter((f) => roots.some((r) => r.id === f.root));
+  const all = chosen.length ? chosen.map((f) => ({ ...f, name: f.name || f.path.split('/').pop() || roots.find((r) => r.id === f.root)?.name || f.root })) : ctx.favorites();
+  const cols = list ? { s: 1, w: 2, t: 1, l: 2, f: 4 }[item.size] : { s: 2, w: 4, t: 2, l: 4, f: 6 }[item.size];
+  const rows = list ? { s: 3, w: 3, t: 7, l: 7, f: 3 }[item.size] : { s: 2, w: 2, t: 4, l: 4, f: 2 }[item.size];
+  const fav = all.slice(0, cols * rows);
+  const showFree = item.files?.showFree;
+  const cell = (f) => {
+    const fr = showFree ? freeOf(f, roots) : null;
+    const free = fr ? `<small class="wf-free">${esc(fmtBytes(fr.free))} livres</small>` : '';
+    const bar = fr && list ? `<span class="wf-fbar"><i style="width:${fr.pct.toFixed(1)}%"></i></span>` : '';
+    return `<button class="cell cell-btn ${list ? 'wf-frow' : ''}" data-fav-root="${esc(f.root)}" data-fav-path="${esc(f.path)}" title="${esc(f.name)}">${folderIcon(f)}<span class="wf-fname"><span>${esc(f.name)}</span>${free}</span>${bar}</button>`;
+  };
+  return `${item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : ''}<span class="w-files wf-files ${list ? 'list' : ''} ${showFree ? 'free' : ''}" style="--cols:${cols};--rows:${rows}">${fav.length ? fav.map(cell).join('') : '<span class="w-empty">Nenhuma pasta disponível</span>'}</span>`;
 }
 
 const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, shortcuts: shortcutsHTML };
@@ -342,17 +366,31 @@ export function lookStyle(item) {
   return s;
 }
 
-/** O widget inteiro (moldura + rótulo). Formato Atalhos não é botão (as pastas são). */
-export function widgetHTML(item, ctx, { id = '', i = 0, editing = false } = {}) {
-  const sz = SIZES[item.size] || SIZES.s;
+/** Posição na grade: largura em colunas (limitada às colunas da Área) e altura em linhas. */
+export function spanStyle(size, cols = 6) {
+  const sz = SIZES[size] || SIZES.s;
+  return `${sz.c ? `grid-column:span ${Math.min(sz.c, cols)};` : 'grid-column:1 / -1;'}${sz.r > 1 ? `grid-row:span ${sz.r};` : ''}`;
+}
+
+/**
+ * O widget inteiro (moldura + rótulo). Formato Atalhos não é botão (as pastas são).
+ * Arrastável sempre que tiver id (como os ícones); a alça de tamanho e o "−" só no modo Organizar.
+ */
+export function widgetHTML(item, ctx, { id = '', i = 0, editing = false, cols = 6 } = {}) {
   const tag = item.format === 'shortcuts' ? 'div' : 'button';
   const own = item.look?.follow === false;
   const hideLabel = own && item.look?.hideLabel;
-  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" style="--i:${i};${sz.c ? `grid-column:span ${sz.c};` : 'grid-column:1 / -1;'}${sz.r > 1 ? `grid-row:span ${sz.r};` : ''}" ${editing ? 'draggable="true"' : ''}>
-    <${tag} class="widget wf wfm-${item.format}${own ? 'w-own' : ''} ${own && item.look?.hue != null ? 'w-hue' : ''}" style="${lookStyle(item)}" ${tag === 'button' ? `type="button" aria-label="${esc(item.title || FORMATS[item.format].label)}"` : ''}>${innerHTML(item, ctx)}</${tag}>
+  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" style="--i:${i};${spanStyle(item.size, cols)}" ${id ? 'draggable="true"' : ''}>
+    <${tag} class="widget wf wfm-${item.format} ${own ? 'w-own' : ''} ${own && item.look?.hue != null ? 'w-hue' : ''}" style="${lookStyle(item)}" ${tag === 'button' ? `type="button" aria-label="${esc(item.title || FORMATS[item.format].label)}"` : ''}>${innerHTML(item, ctx)}</${tag}>
     <div class="widget-label ${hideLabel ? 'is-hidden' : ''}">${esc(item.title || '')}</div>
-    ${editing ? `<button class="w-remove" data-wremove="${esc(id)}" aria-label="Remover widget">${svg('minus')}</button>` : ''}
+    ${editing ? `<button class="w-remove" data-wremove="${esc(id)}" aria-label="Remover widget">${svg('minus')}</button><span class="w-resize" data-wresize="${esc(id)}" title="Arraste para mudar o tamanho" aria-hidden="true"></span>` : ''}
   </div>`;
+}
+
+/** Tamanho mais próximo para uma largura (colunas) e altura (linhas) pedidas pela alça. */
+export function sizeFor(c, r) {
+  if (r >= 2) return c >= 2 ? 'l' : 't';
+  return c >= 3 ? 'f' : c === 2 ? 'w' : 's';
 }
 
 /** Para onde o clique vai quando o Bruno deixou "automático". */

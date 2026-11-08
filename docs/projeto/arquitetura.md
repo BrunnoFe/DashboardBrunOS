@@ -278,6 +278,13 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
     pontos), Área de widgets no topo de cada página (`pagePer` mede quantos ícones cabem embaixo),
     `paintWidgets()` a cada amostra/valor novo (nada com a aba escondida), menu rápido (botão direito ou
     segurar), modo "Organizar widgets" (arrastar entre Áreas, `−` remove, `+` adiciona).
+  - 0.9.1 (`app.js`): Páginas reais montadas por `renderApps` a partir de `appPagesPlan(itens)` (apps
+    colocados + soltos) e `widgetsOn(página)`; páginas de continuação (`data-cont`) quando os apps não
+    cabem (`pagePer` mede); `data-real` em cada `.app-page` (`realOf`, `currentReal`, `goReal`);
+    `fixLoosePlaces` antes de mover, `compactPages` depois. Arrastar widget vale sempre (alvo = Área ou
+    página); alça `[data-wresize]` com `pointer*` + `sizeFor(colunas, linhas)`; barra `.w-area-bar`
+    (− N colunas + / Automático) no modo Organizar, que também desenha uma página nova vazia no fim.
+    `widgets.js`: `spanStyle(tamanho, colunas)` limita a largura às colunas da Área.
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
@@ -292,7 +299,10 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 items:{id:{model?, format, size, title, caption, slots:[{metric, label?, unit?, decimals?, compact?, icon?,
 spark?, max?, colors?:{warn,crit}|null}], layout, list:{max,bars}, chart:{type,range,stats}, bar,
 click:{kind:auto|app|window|url|none, target}, look:{follow, opacity?, hue?, hideLabel?}}}}`; a antiga
-`widgets` fica só para voltar de versão). **Nunca** guardar senhas aqui.
+`widgets` fica só para voltar de versão). 0.9.1: `widgets2.cols` (`{"<página>": 1–6}`, ausente =
+automático), no formato Atalhos `folders:[{root, path, name?, icon?, color?(matiz)}]` (vazio = favoritas)
+e `files:{layout: grid|list, showFree}`; `appPlace` (`{"<id do app ou folder:id>": página}`; sem entrada =
+solto, vai para a última página com apps). **Nunca** guardar senhas aqui.
 
 ## Testes
 

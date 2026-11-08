@@ -31,8 +31,25 @@ A unidade de Tamanho (o tamanho de um Widget Pequeno).
 _Evite_: célula, unidade de grade
 
 **Área de widgets**:
-O espaço de Widgets no topo de uma página da tela inicial, separado dos ícones dos apps.
+O espaço de Widgets no topo de uma Página, separado dos ícones dos apps; tem um número de colunas
+(em Quadros) escolhido para a Página ou automático.
 _Evite_: fileira de widgets, board, painel
+
+## Tela inicial
+
+**Página**:
+Uma tela da tela inicial, montada pelo Bruno, com a sua Área de widgets e os apps colocados nela; pode
+ser só de widgets, só de apps ou mista.
+_Evite_: aba, tela, desktop
+
+**Página de continuação**:
+Página criada sozinha logo depois de uma Página cujos apps não cabem na tela; conta como a mesma Página.
+_Evite_: página extra, página automática
+
+**App solto**:
+App sem Página escolhida (por exemplo, recém-instalado no Runtipi); fica na última Página que tem algum
+app colocado.
+_Evite_: app sem lugar, app órfão
 
 ## Dados
 

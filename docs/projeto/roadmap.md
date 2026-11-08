@@ -124,8 +124,9 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 5 | 0.7.0 | E1 · E2 · E3 · E4 · E5 · A4 (+ desinstalar pelo Runtipi) — **feito, aguardando teste no servidor** |
 | 6 | 0.8.0 | G1 · G2 · G3 (sem Speedtest) — **feito, aguardando teste no servidor** |
 | 7a | 0.9.0 | **Widgets personalizáveis** (motor: Área de widgets por página, Tamanhos, Formatos, gráficos, janela Widgets, fonte BrunOS, conversão dos widgets atuais, credenciais cifradas) + AdGuard (A2/I3) + Speedtest Tracker (G3) — **feito (0.9.0), aguardando teste no servidor** (Mídia entra junto com Immich/Plex na 0.9.1) |
-| 7b | 0.9.1 | Plex e Immich (A2, Immich só em Widget) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) |
-| 7c | 0.9.2 | Transmission · Syncthing · Nextcloud · Vaultwarden (pedidos do Bruno em 08/11/2026) |
+| 7a+ | 0.9.1 | **Melhorias dos widgets** pedidas depois de usar a 0.9.0: colunas por página com encaixe, arrastar widgets sempre, alça de tamanho (5 tamanhos), Páginas montadas pelo Bruno (apps na página 1 ou 2, continuação automática), Arquivos personalizável (pastas, grade/lista, ícone, cor, espaço livre), correções do Destaque/Armazenamento e da aparência própria — **feito (0.9.1), aguardando teste no servidor** |
+| 7b | 0.9.2 | Plex e Immich (A2, Immich só em Widget, formato Mídia) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) |
+| 7c | 0.9.3 | Transmission · Syncthing · Nextcloud · Vaultwarden (pedidos do Bruno em 08/11/2026) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
 | 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
@@ -156,6 +157,12 @@ fontes, posição, formato, gráficos e textos, **sem pesar** no servidor. Escol
   rápido e modo edição na tela inicial.
 - Integração em qualquer endereço, várias do mesmo tipo, endereço sugerido pelo Runtipi; frequência
   por tipo ajustável de 10 s a 1 h; coleta híbrida; Avisos prontos (sem regras livres).
+
+Depois de usar a 0.9.0 (mesmo dia), o Bruno pediu e escolheu (decisão 35): colunas fixas por página com
+encaixe ("um widget largo e ao lado direito dele outros widgets nas duas linhas"), arrastar sempre como
+os ícones, redimensionar só entre os 5 tamanhos, páginas montadas por ele ("uma pagina 1 com widgets de
+monitoramento e uma página 2 só com os ícones dos app"), Arquivos com pastas escolhidas, grade ou lista,
+ícone e cor e espaço livre, e **melhorias primeiro** (integrações andam uma versão: 0.9.2 e 0.9.3).
 
 ### Etapa 1 (0.4.0) em detalhe
 

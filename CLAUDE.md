@@ -120,7 +120,12 @@ cd web/static && python3 -m http.server 8765                  # interface em mod
 docker build -t brunos:teste . && FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste
 ```
 
-No Windows, use o Git Bash ou o WSL para os scripts `.sh`; os comandos Go funcionam no PowerShell.
+Na máquina do Bruno (Windows) tudo roda pelo **WSL** (Ubuntu-24.04, Go 1.24, gcc, Python 3), chamado do
+PowerShell (o Git Bash quebra lá): `wsl -d Ubuntu-24.04 -e bash -lc "cd /mnt/c/Users/shaulimdoplim/Documents/GitHub/DashboardBrunOS && go test -race -count=1 ./..."`.
+O mesmo vale para o build, `tests/fixture.sh` + servidor + `tests/apitest.py`. O `tests/smoke.sh` precisa
+da integração do Docker Desktop com o Ubuntu-24.04 ligada (Settings → Resources → WSL integration).
+Screenshots: `playwright-core` com `channel: 'chrome'` num script (a ferramenta de navegador do Claude
+Code pede uma extensão de ponte que não está instalada). Loja: `bun test` funciona no Windows.
 Lembre: o frontend é embutido no binário (`go:embed`); depois de mudar JS/CSS, **recompile** antes de
 testar contra o backend.
 

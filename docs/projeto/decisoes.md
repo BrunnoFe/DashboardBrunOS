@@ -124,3 +124,12 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     saiu do plano; fica o formato Mídia (tamanho "prévia", foto atual guardada em `/data`). O papel de
     parede por horário (J2) continua. O Tailscale entra por SSH restrito (`tailscale status --json` no
     `brunos-host`), sem token da nuvem.
+35. **Grade com colunas fixas + encaixe, Páginas montadas pelo Bruno** (0.9.1, escolhas do Bruno). A
+    Área de widgets tem N colunas por Página (ou automático) e os widgets seguem a ordem, fechando os
+    buracos (`grid-auto-flow: dense`): um Grande com Pequenos empilhados ao lado funciona sem guardar
+    posição exata, e no celular cai para 2 colunas sem quebrar. Recusado: posição exata (linha/coluna),
+    que exigiria regras para reorganizar em telas menores. Redimensionar na tela pula só entre os 5
+    Tamanhos (cada Formato foi desenhado para eles). Apps ganham Página própria (`appPlace`); os soltos
+    vão para a última Página com apps e, antes de mover algo, os soltos são "fixados" onde estão (senão
+    colocar um app na Página 2 levaria todos). A numeração se compacta quando uma Página fica vazia.
+    Arrastar widgets vale sempre, como os ícones; alça de tamanho e "−" só no modo Organizar.

@@ -287,6 +287,7 @@ function makeDemo() {
     return { snapshot: sn, point: p };
   };
   for (let i = 0; i < 90; i++) tick();
+  history.forEach((p, i) => { p.t -= (history.length - 1 - i) * 2; }); // um ponto a cada 2 s, como no servidor
 
   const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', ...extra });
   const apps = [
