@@ -63,18 +63,25 @@ func TestDriveTemps(t *testing.T) {
 		t.Fatalf("NVMe deveria ter sido lido de novo: %v", *d[1].Temp)
 	}
 
-	// HD com atividade, mas antes de 1 minuto: ainda não
+	// o disco trabalhou: lê
 	write(t, filepath.Join(sys, "block/sda/stat"), "120 0 0 0 50 0 0 0 0 0 0")
-	d = disks()
-	c.fillTemps(d, t0.Add(10*time.Minute+30*time.Second))
-	if *d[0].Temp != 38 {
-		t.Fatalf("leu antes da hora")
-	}
-	// passou o minuto e o disco trabalhou: lê
 	d = disks()
 	c.fillTemps(d, t0.Add(12*time.Minute))
 	if *d[0].Temp != 41 {
 		t.Fatalf("HD ativo não foi lido: %v", *d[0].Temp)
+	}
+	// trabalhou de novo, mas menos de 1 minuto depois da última medida: ainda não
+	write(t, filepath.Join(sys, "block/sda/stat"), "140 0 0 0 50 0 0 0 0 0 0")
+	write(t, filepath.Join(sys, "class/hwmon/hwmon0/temp1_input"), "43000")
+	d = disks()
+	c.fillTemps(d, t0.Add(12*time.Minute+30*time.Second))
+	if *d[0].Temp != 41 {
+		t.Fatalf("leu antes da hora: %v", *d[0].Temp)
+	}
+	d = disks()
+	c.fillTemps(d, t0.Add(13*time.Minute+10*time.Second))
+	if *d[0].Temp != 43 {
+		t.Fatalf("passado 1 minuto deveria ler: %v", *d[0].Temp)
 	}
 }
 
