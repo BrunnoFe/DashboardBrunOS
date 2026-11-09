@@ -2,7 +2,7 @@
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
 import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp } from './ui.js';
-import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
+import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
 const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
@@ -180,6 +180,11 @@ function drawEditor() {
       ${d.format === 'grid' ? `<div class="wed-sec"><span class="wed-lbl">Disposição</span><div class="seg">${[['auto', 'Automática'], ['cols', 'Em colunas'], ['rows', 'Em linhas']].map(([k, l]) => `<button type="button" class="${d.layout === k ? 'on' : ''}" data-layout="${k}">${l}</button>`).join('')}</div></div>` : ''}
       ${d.format === 'list' ? `<div class="wed-sec"><label>Itens no máximo<select class="text-input" data-f="listmax"><option value="0">conforme o tamanho</option>${[3, 5, 8].map((n) => `<option value="${n}" ${d.list.max === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label class="wsw">Barrinhas proporcionais${sw(d.list.bars !== false, 'data-f="listbars"')}</label></div>` : ''}
       ${d.format === 'stat' ? `<div class="wed-sec"><label class="wsw">Barra de progresso (quando há máximo)${sw(d.bar !== false, 'data-f="bar"')}</label></div>` : ''}
+      ${d.format === 'media' ? `<div class="wed-sec"><span class="wed-lbl">Mídia</span>
+        ${st.ctx.defs().get(d.slots[0]?.metric)?.look === 'poster' ? '<small class="hint">Mostra a capa do que está tocando; com mais de uma sessão, a primeira e um “+N”.</small>'
+          : `<label>Trocar a foto a cada<select class="text-input" data-f="rotate">${ROTATE.map(([m, l]) => `<option value="${m}" ${d.media.rotate === m ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <small class="hint">A troca é feita no navegador, percorrendo as fotos do dia; cada foto nova baixa uma imagem pequena (prévia) uma vez.</small></label>`}
+        <label class="wsw">Mostrar a legenda (data e lugar)${sw(d.media.caption !== false, 'data-f="mcaption"')}</label></div>` : ''}
       ${d.format === 'chart' ? `<div class="wed-sec"><span class="wed-lbl">Gráfico</span><div class="seg">${Object.entries(CHART_TYPES).map(([k, l]) => `<button type="button" class="${d.chart.type === k ? 'on' : ''}" data-ctype="${k}">${l}</button>`).join('')}</div>
         ${d.chart.type !== 'donut' ? `<span class="wed-lbl">Período</span><div class="seg">${Object.entries(RANGES).map(([k, l]) => `<button type="button" class="${d.chart.range === k ? 'on' : ''}" data-range="${k}">${l}</button>`).join('')}</div>
         <small class="hint">Métricas do servidor usam o histórico do BrunOS; as dos apps usam o histórico do próprio app (ex.: AdGuard 24 h, Speedtest 7 dias) ou, se ele não tiver, o BrunOS passa a guardar um ponto a cada 5 minutos.</small>
@@ -303,7 +308,7 @@ async function drawIntegrations() {
 
 function openIntegration(id, preset) {
   const it = id ? st.ctx.integrations.find((x) => x.id === id) : null;
-  st.integ = it ? { ...structuredClone(it), secret: '' } : { kind: preset?.kind || '', name: preset?.name || '', url: preset?.url || '', user: '', secret: '', interval: 0, alerts: {}, hasSecret: false };
+  st.integ = it ? { ...structuredClone(it), secret: '', options: { ...(it.options || {}) } } : { kind: preset?.kind || '', name: preset?.name || '', url: preset?.url || '', user: '', secret: '', interval: 0, alerts: {}, options: {}, hasSecret: false };
   if (!it && st.integ.kind) applyKindDefaults();
   st.testResult = null;
   show('integration');
@@ -319,10 +324,13 @@ function drawIntegration() {
   if (!k) {
     main().innerHTML = `<div class="wapp-head"><div><h3>Nova integração</h3><p>Qual app?</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
       <div class="winteg-list">${kinds.map((x) => `<button class="winteg" data-kind="${esc(x.id)}"><span class="winteg-ico">${kindIcon(x.id)}</span><span class="winteg-txt"><b>${esc(x.name)}</b><small>${esc(x.desc)}</small></span><span class="chev">${svg('chevR')}</span></button>`).join('')}</div>
-      <p class="hint">Plex, Immich, WatchYourLAN e Tailscale chegam na 0.9.1; Transmission, Syncthing, Nextcloud e Vaultwarden na 0.9.2.</p>`;
+      <p class="hint">Transmission, Syncthing, Nextcloud e Vaultwarden chegam na 0.9.3.</p>`;
     return;
   }
   const field = (f) => {
+    if (f.id !== 'url' && f.id !== 'user' && f.id !== 'secret') { // campo extra (ex.: álbum do Immich)
+      return `<label>${esc(f.label)}<input class="text-input" data-gopt="${esc(f.id)}" value="${esc(g.options?.[f.id] || '')}" placeholder="${esc(f.placeholder || '')}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
+    }
     if (f.id === 'secret') return `<label>${esc(f.label)}${f.required ? '' : ' <small>(opcional)</small>'}<input class="text-input" type="password" autocomplete="new-password" data-g="secret" value="${esc(g.secret)}" placeholder="${g.hasSecret ? '•••••••• guardado (deixe vazio para manter)' : ''}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     return `<label>${esc(f.label)}<input class="text-input" data-g="${f.id}" value="${esc(g[f.id] || '')}" placeholder="${esc(f.placeholder || '')}" ${f.id === 'url' ? 'inputmode="url"' : ''}>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
   };
@@ -331,6 +339,8 @@ function drawIntegration() {
   main().innerHTML = `<div class="wapp-head"><span class="winteg-ico big">${kindIcon(k.id)}</span><div><h3>${g.id ? esc(g.name) : `Nova integração: ${esc(k.name)}`}</h3><p>${esc(k.desc)}</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
     <form class="form-grid winteg-form" onsubmit="return false">
       <label>Nome<input class="text-input" data-g="name" value="${esc(g.name)}" maxlength="60"><small class="hint">Aparece nas métricas, ex.: “${esc(g.name || k.name)} › ${esc(k.metrics[0]?.name || '')}”.</small></label>
+      ${k.note ? `<div class="wapp-note">${svg('info')}<span>${esc(k.note)}</span></div>` : ''}
+      ${k.id === 'tailscale' ? `<div class="wts-cmds"><button type="button" class="pill-btn" data-act="ts-cmds">${svg('terminal')}Mostrar os comandos de atualização</button><pre class="pw-cmds" hidden tabindex="0"></pre></div>` : ''}
       ${k.fields.map(field).join('')}
       <label>Buscar a cada<select class="text-input" data-g="interval">${INTERVALS.map(([s, l]) => `<option value="${s}" ${g.interval === s ? 'selected' : ''}>${l}${s === k.interval ? ' (recomendado)' : ''}</option>`).join('')}</select>
         <small class="hint">Só enquanto alguém está com o BrunOS aberto e algum widget usa esta integração. Avisos ligados fazem uma busca a cada 5 minutos mesmo com a tela fechada.</small></label>
@@ -344,7 +354,7 @@ function drawIntegration() {
 }
 function integBody() {
   const g = st.integ;
-  const b = { kind: g.kind, name: g.name, url: g.url, user: g.user, interval: +g.interval, alerts: g.alerts };
+  const b = { kind: g.kind, name: g.name, url: g.url, user: g.user, interval: +g.interval, alerts: g.alerts, options: g.options || {} };
   if (g.secret) b.secret = g.secret;
   return b;
 }
@@ -417,6 +427,7 @@ async function onClick(e) {
       else if (k === 'ownhue') { d.look.hue = d.look.hue == null ? 200 : null; redrawEditor(); return; }
       else if (k === 'hidelabel') d.look.hideLabel = !d.look.hideLabel;
       else if (k === 'showfree') d.files.showFree = !d.files.showFree;
+      else if (k === 'mcaption') d.media.caption = d.media.caption === false;
       el.classList.toggle('on'); redrawPreview(); return;
     }
   }
@@ -430,6 +441,11 @@ async function onClick(e) {
     else if (a === 'save') saveDraft();
     else if (a === 'remove') { if (await confirmDialog('Remover este widget?', 'Ele sai da tela inicial.', 'Remover', { danger: true })) { st.ctx.remove(st.editId); st.editId = null; show('mine'); } }
     else if (a === 'new-integ') openIntegration(null);
+    else if (a === 'ts-cmds') {
+      const pre = el.parentElement.querySelector('pre');
+      try { pre.textContent = (await api.power.setup()).updateCommands; pre.hidden = false; el.hidden = true; }
+      catch (e) { toastError(e, 'Não deu para gerar os comandos'); }
+    }
     else if (a === 'test-integ') testInteg(el);
     else if (a === 'save-integ') saveInteg(el);
     else if (a === 'del-integ') deleteInteg();
@@ -441,6 +457,7 @@ function onInput(e) {
   const t = e.target;
   if (st.view === 'integration' && st.integ) {
     if (t.dataset.g) { st.integ[t.dataset.g] = t.dataset.g === 'interval' ? +t.value : t.value; st.testResult = null; }
+    if (t.dataset.gopt) { st.integ.options = { ...(st.integ.options || {}), [t.dataset.gopt]: t.value }; st.testResult = null; }
     if (t.dataset.alertVal) { const a = st.integ.alerts[t.dataset.alertVal] ||= { on: false }; a.value = parseFloat(t.value) || 0; }
     return;
   }
@@ -458,6 +475,7 @@ function onInput(e) {
     if (k === 'title') d.title = t.value;
     else if (k === 'page') st.page = +t.value;
     else if (k === 'listmax') d.list.max = +t.value;
+    else if (k === 'rotate') d.media.rotate = +t.value;
     else if (k === 'click') { d.click = { kind: t.value }; if (t.value === 'window') d.click.target = 'live'; if (t.value === 'app') d.click.target = st.ctx.integrations[0]?.id; if (e.type === 'change') redrawEditor(); return; }
     else if (k === 'clicktarget') d.click.target = t.value;
     else if (k === 'opacity') { d.look.opacity = +t.value; t.style.setProperty('--p', `${t.value}%`); }

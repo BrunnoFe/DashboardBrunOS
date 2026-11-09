@@ -139,6 +139,19 @@ type Monitor struct {
 	execMu     sync.Mutex // um desligamento por vez
 }
 
+// ErrHostNotReady: a conexão SSH com o servidor ainda não foi configurada e testada.
+var ErrHostNotReady = errors.New("configure e teste a conexão com o servidor em Configurações → Energia (o Tailscale usa a mesma conexão)")
+
+// HostOutput faz um pedido de leitura ao script do servidor (ex.: hostcmd.CmdTailscale), pela mesma
+// conexão do desligamento seguro. Só com a configuração nova (chave atual) já testada.
+func (m *Monitor) HostOutput(ctx context.Context, cmd string) ([]byte, error) {
+	c := m.Config()
+	if m.runner == nil || c.Host == "" || c.TestedAt == 0 || c.HostSetup < hostcmd.SetupVersion {
+		return nil, ErrHostNotReady
+	}
+	return m.runner.Output(ctx, c.Target(), cmd)
+}
+
 // New lê a configuração e o histórico. Arquivos vazios = só em memória (testes).
 func New(configFile, stateFile string, ev *events.Store, runner *hostcmd.Runner) *Monitor {
 	m := &Monitor{ConfigFile: configFile, StateFile: stateFile, Events: ev, Now: time.Now, cfg: DefaultConfig(), runner: runner, SysDir: "/sys"}

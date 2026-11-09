@@ -49,17 +49,23 @@ const (
 	DefaultUser = "brunos-power"
 	// ScriptPath é onde os comandos de configuração instalam o script no servidor.
 	ScriptPath = "/usr/local/sbin/brunos-host"
-	// SetupVersion sobe quando o que se cola no servidor muda.
+	// SetupVersion sobe quando a CHAVE ou a linha do authorized_keys muda (decide qual chave usar).
 	// 1 = shutdown -h +1 com a chave antiga (até a 0.8.0); 2 = script brunos-host com a chave nova.
+	// Script novo com pedidos a mais (ScriptVersion) NÃO sobe isto: um servidor com o script 2 continua
+	// desligando com a chave nova e só recusa os pedidos que não conhece.
 	SetupVersion = 2
-	dialTimeout  = 10 * time.Second
-	keyComment   = "brunos-power"
+	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2).
+	ScriptVersion = 3
+	maxOutput     = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
+	dialTimeout   = 10 * time.Second
+	keyComment    = "brunos-power"
 )
 
 // Pedidos aceitos pelo script do servidor.
 const (
-	CmdShutdown = "desligar"
-	CmdVersion  = "versao"
+	CmdShutdown  = "desligar"
+	CmdVersion   = "versao"
+	CmdTailscale = "tailscale" // só lê: tailscale status --json (script 3)
 )
 
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
@@ -74,8 +80,8 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 2: o único programa que a chave do BrunOS pode rodar neste servidor.
-# Aceita só: desligar | limite <50-100> | protecao <on|off> | versao. Recusa todo o resto.
+# brunos-host 3: o único programa que a chave do BrunOS pode rodar neste servidor.
+# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | versao. Recusa todo o resto.
 # Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -91,8 +97,9 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
 case "$acao" in
-  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 2"; exit 0 ;;
+  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 3"; exit 0 ;;
   desligar) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  tailscale) [ $# -eq 1 ] || falha "pedido inválido" ;;
   limite) case "$valor" in [5-9][0-9]|100) ;; *) falha "limite inválido (use de 50 a 100)" ;; esac ;;
   protecao) case "$valor" in on|off) ;; *) falha "valor inválido (use on ou off)" ;; esac ;;
   *) falha "pedido inválido" ;;
@@ -111,6 +118,9 @@ feito=0
 case "$acao" in
   desligar)
     exec systemctl poweroff --check-inhibitors=no --when=+1min ;;
+  tailscale)
+    command -v tailscale >/dev/null 2>&1 || falha "o Tailscale não está instalado neste servidor" 3
+    exec tailscale status --json ;;
   limite)
     for b in $(baterias); do
       fim=$b/charge_control_end_threshold
@@ -315,40 +325,8 @@ func (r *Runner) Test(ctx context.Context, t Target, trust string) error {
 // Só aceita servidor já confirmado. legacy = servidor ainda com a configuração antiga: usa a
 // chave antiga e só aceita CmdShutdown (lá, qualquer sessão desliga).
 func (r *Runner) Run(ctx context.Context, t Target, cmd string, legacy bool) (string, error) {
-	var signer ssh.Signer
-	var err error
-	if legacy {
-		if cmd != CmdShutdown {
-			return "", errors.New("atualize a configuração do servidor em Configurações → Energia")
-		}
-		signer, err = r.legacyKey()
-	} else {
-		signer, err = r.key()
-	}
-	if err != nil {
-		return "", err
-	}
-	c, err := r.dial(ctx, t, "", signer)
-	if err != nil {
-		return "", err
-	}
-	defer c.Close()
-	sess, err := c.NewSession()
-	if err != nil {
-		return "", fmt.Errorf("o servidor recusou abrir a sessão: %w", err)
-	}
-	defer sess.Close()
-	// buffers separados: as duas cópias rodam ao mesmo tempo
-	var stdout, stderr bytes.Buffer
-	sess.Stdout, sess.Stderr = &stdout, &stderr
-	done := make(chan error, 1)
-	go func() { done <- sess.Run(cmd) }() // vira o SSH_ORIGINAL_COMMAND que o script confere
-	select {
-	case err = <-done:
-	case <-ctx.Done():
-		err = ctx.Err()
-	}
-	text := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
+	out, errOut, err := r.exec(ctx, t, cmd, legacy)
+	text := strings.TrimSpace(string(out) + "\n" + errOut)
 	if len(text) > 2000 {
 		text = text[:2000]
 	}
@@ -360,4 +338,85 @@ func (r *Runner) Run(ctx context.Context, t Target, cmd string, legacy bool) (st
 		return text, err
 	}
 	return text, nil
+}
+
+// ErrOldScript indica que o servidor tem um brunos-host antigo, que não conhece o pedido.
+var ErrOldScript = errors.New("o script do servidor é antigo: em Configurações → Energia, copie os comandos de atualização e cole no servidor")
+
+// Output faz um pedido de leitura (ex.: CmdTailscale) e devolve a saída inteira (até 1 MB), sem
+// misturar com os erros. Usa sempre a chave atual.
+func (r *Runner) Output(ctx context.Context, t Target, cmd string) ([]byte, error) {
+	out, errOut, err := r.exec(ctx, t, cmd, false)
+	if err != nil {
+		var exit *ssh.ExitError
+		if errors.As(err, &exit) {
+			msg := strings.TrimSpace(errOut)
+			if exit.ExitStatus() == 2 && strings.Contains(msg, "pedido inválido") {
+				return nil, ErrOldScript
+			}
+			if msg == "" {
+				msg = fmt.Sprintf("o comando saiu com código %d", exit.ExitStatus())
+			}
+			return nil, errors.New(msg)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+// limitedBuffer guarda até max bytes e descarta o resto.
+type limitedBuffer struct {
+	bytes.Buffer
+	max int
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.Len(); room > 0 {
+		if len(p) > room {
+			b.Buffer.Write(p[:room])
+		} else {
+			b.Buffer.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (r *Runner) exec(ctx context.Context, t Target, cmd string, legacy bool) ([]byte, string, error) {
+	var signer ssh.Signer
+	var err error
+	if legacy {
+		if cmd != CmdShutdown {
+			return nil, "", errors.New("atualize a configuração do servidor em Configurações → Energia")
+		}
+		signer, err = r.legacyKey()
+	} else {
+		signer, err = r.key()
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	c, err := r.dial(ctx, t, "", signer)
+	if err != nil {
+		return nil, "", err
+	}
+	defer c.Close()
+	sess, err := c.NewSession()
+	if err != nil {
+		return nil, "", fmt.Errorf("o servidor recusou abrir a sessão: %w", err)
+	}
+	defer sess.Close()
+	// buffers separados: as duas cópias rodam ao mesmo tempo
+	stdout, stderr := &limitedBuffer{max: maxOutput}, &limitedBuffer{max: 8 << 10}
+	sess.Stdout, sess.Stderr = stdout, stderr
+	done := make(chan error, 1)
+	go func() { done <- sess.Run(cmd) }() // vira o SSH_ORIGINAL_COMMAND que o script confere
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		_ = sess.Close()
+		_ = c.Close()
+		<-done // espera a sessão soltar os buffers
+		err = ctx.Err()
+	}
+	return stdout.Bytes(), stderr.String(), err
 }

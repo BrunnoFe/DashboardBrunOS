@@ -1,13 +1,22 @@
 package integrations
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"brunos/internal/store"
 )
 
 // AppRef é um app instalado no Runtipi (para sugerir integrações já preenchidas).
@@ -63,7 +72,90 @@ func (h *Hub) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.Hand
 	mux.HandleFunc("PUT /api/integrations/{id}", wrap(h.hUpdate))
 	mux.HandleFunc("DELETE /api/integrations/{id}", wrap(h.hDelete))
 	mux.HandleFunc("POST /api/integrations/test", wrap(h.hTest))
+	mux.HandleFunc("GET /api/integrations/{id}/image", wrap(h.hImage))
 	mux.HandleFunc("GET /api/metrics/series", wrap(h.hSeries))
+}
+
+const (
+	maxImage    = 8 << 20 // uma foto "prévia" do Immich tem uns 300 KB
+	imageCached = 60      // quantas imagens ficam no cache
+)
+
+// hImage serve uma imagem de um app (foto do Immich, capa do Plex) sem expor o token: o BrunOS busca
+// com a credencial guardada, confere que é imagem e guarda no cache (o widget troca de foto sem
+// baixar de novo o que já mostrou).
+func (h *Hub) hImage(w http.ResponseWriter, r *http.Request) {
+	it, ok := h.Store.Get(r.PathValue("id"))
+	if !ok {
+		writeErr(w, ErrNotFound)
+		return
+	}
+	k, ok := KindByID(it.Kind).(ImageKind)
+	ref := r.URL.Query().Get("ref")
+	if !ok || ref == "" || len(ref) > 500 {
+		writeJSON(w, 400, map[string]string{"error": "imagem inválida"})
+		return
+	}
+	sum := sha256.Sum256([]byte(it.ID + "\x00" + ref))
+	name := hex.EncodeToString(sum[:20])
+	send := func(data []byte) {
+		w.Header().Set("Content-Type", http.DetectContentType(data))
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(data)
+	}
+	if h.ImageDir != "" {
+		if data, err := os.ReadFile(filepath.Join(h.ImageDir, name)); err == nil {
+			send(data)
+			return
+		}
+	}
+	cfg, err := h.Store.Config(it)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	rc, err := k.Image(ctx, h.Client, cfg, ref)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxImage+1))
+	if err != nil || len(data) > maxImage || !strings.HasPrefix(http.DetectContentType(data), "image/") {
+		writeErr(w, ferr("o app não devolveu uma imagem válida"))
+		return
+	}
+	if h.ImageDir != "" {
+		if err := store.WriteFile(filepath.Join(h.ImageDir, name), data, 0o600); err == nil {
+			pruneImages(h.ImageDir)
+		}
+	}
+	send(data)
+}
+
+// pruneImages apaga as imagens mais antigas além do limite do cache.
+func pruneImages(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) <= imageCached {
+		return
+	}
+	type f struct {
+		name string
+		at   time.Time
+	}
+	files := make([]f, 0, len(entries))
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && e.Type().IsRegular() {
+			files = append(files, f{e.Name(), info.ModTime()})
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].at.After(files[j].at) })
+	for _, x := range files[min(len(files), imageCached):] {
+		_ = os.Remove(filepath.Join(dir, x.name))
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

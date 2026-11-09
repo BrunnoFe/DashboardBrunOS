@@ -15,7 +15,7 @@ import {
 const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '6', '13', '10'];
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
-  wallpaper: 'builtin:24', accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
+  wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
   widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
 };
@@ -126,6 +126,31 @@ function setWallpaper(id, { instant = false, pub = false } = {}) {
   };
   img.onerror = () => { if (id !== DEFAULTS.wallpaper) setWallpaper(DEFAULTS.wallpaper, { instant }); else document.body.classList.remove('is-booting'); };
   img.src = url;
+}
+/* Papel de parede por horário (J2, lista livre): cada um vale da hora marcada até a próxima */
+let wpsPick = null; // linha da lista escolhendo papel de parede
+const toMin = (hhmm) => { const [h, m] = String(hhmm || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+function scheduledWallpaper() {
+  const st = set(), list = (st.wallpaperSchedule || []).filter((e) => e && e.wp);
+  if (st.wallpaperMode !== 'schedule' || !list.length) return null;
+  const sorted = [...list].sort((a, b) => toMin(a.at) - toMin(b.at));
+  const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+  return (sorted.filter((e) => toMin(e.at) <= now).pop() || sorted[sorted.length - 1]).wp; // antes do 1º: o último de ontem
+}
+function applySchedule() {
+  const id = scheduledWallpaper();
+  if (!id || id === set().wallpaper) return;
+  set().wallpaper = id; save(); // a tela de login também passa a mostrar este
+  setWallpaper(id);
+}
+function scheduleHTML(wps) {
+  const list = set().wallpaperSchedule || [];
+  const thumb = (id) => esc(wallpaperUrl(id, { thumb: true }) || '');
+  return `<div class="wps">${list.map((e, i) => `<div class="wps-row ${wpsPick === i ? 'picking' : ''}"><input type="time" class="text-input sm" data-wps-at="${i}" value="${esc(e.at)}" aria-label="Horário">
+      <button class="wp-thumb sm ${wpsPick === i ? 'on' : ''}" data-wps-pick="${i}" style="background-image:url('${thumb(e.wp)}')" aria-label="Trocar o papel de parede deste horário"></button>
+      <button class="icon-btn danger" data-wps-del="${i}" aria-label="Tirar horário">${svg('x')}</button></div>`).join('')}
+    <button class="pill-btn sm" data-wps-add>${svg('plus')}Adicionar horário</button>
+    ${wpsPick != null && list[wpsPick] ? `<div class="wp-thumbs wps-pick"><small class="hint">Escolha o papel de parede das ${esc(list[wpsPick].at)}:</small>${wps.map((id) => `<button class="wp-thumb ${list[wpsPick].wp === id ? 'on' : ''}" data-wps-set="${esc(id)}" style="background-image:url('${thumb(id)}')" aria-label="Papel de parede"></button>`).join('')}</div>` : ''}</div>`;
 }
 async function uploadWallpaper(file) {
   if (!file || !file.type.startsWith('image/')) return;
@@ -296,6 +321,7 @@ function widgetCtx() {
     err: (id) => (id.startsWith('brunos.') ? '' : S.metrics[id.split('.')[0]]?.err || ''),
     favorites,
     roots: () => S.roots,
+    imageUrl: (iid, ref) => api.integrationImage(iid, ref),
     maxGap: (id) => (id === 'brunos.net_latency' ? 180 : undefined),
     spark(id) {
       const d = defs.get(id); if (!d) return null;
@@ -457,7 +483,7 @@ function widgetClick(id) {
   const it = widgetById(id); if (!it) return;
   const c = !it.click?.kind || it.click.kind === 'auto' ? autoClick(it) : it.click;
   if (c.kind === 'window') openWindow(c.target);
-  else if (c.kind === 'app') { const ig = (S.integrations || []).find((x) => x.id === c.target); if (ig) openUrl(ig.url); }
+  else if (c.kind === 'app') { const ig = (S.integrations || []).find((x) => x.id === c.target); if (ig?.url) openUrl(ig.url); }
   else if (c.kind === 'url' && c.target) openUrl(normalizeUrl(c.target));
 }
 function widgetMenu(id, x, y) {
@@ -1077,7 +1103,8 @@ function settingsRows() {
   const hidden = allApps().filter((a) => a.o.hidden);
   const info = S.system?.info || {};
   return [
-    { group: 'Aparência', cat: 'look', icon: 'image', title: 'Papel de parede', desc: 'Escolha uma imagem ou envie a sua. Também dá para soltar o arquivo em qualquer lugar da tela inicial', ctrl: `<div class="wp-thumbs">${wps.map((id) => `<span class="wp-thumb-wrap"><button class="wp-thumb ${st.wallpaper === id ? 'on' : ''}" data-wp="${esc(id)}" style="background-image:url('${esc(wallpaperUrl(id, { thumb: true }))}')" aria-label="Papel de parede"></button>${id.startsWith('upload:') ? `<button class="wp-del" data-wp-del="${esc(id.slice(7))}" aria-label="Apagar">${svg('x')}</button>` : ''}</span>`).join('')}<button class="wp-thumb add" data-wp-add aria-label="Enviar imagem">${svg('plus')}</button></div>` },
+    { group: 'Aparência', cat: 'look', icon: 'image', title: 'Papel de parede', desc: st.wallpaperMode === 'schedule' ? 'Por horário: cada papel de parede vale a partir da hora marcada, até a próxima (troca sozinho, com a cor de destaque junto)' : 'Escolha uma imagem ou envie a sua. Também dá para soltar o arquivo em qualquer lugar da tela inicial',
+      ctrl: `<div class="wp-ctrl"><div class="seg wp-mode"><button class="${st.wallpaperMode !== 'schedule' ? 'on' : ''}" data-wpmode="single">Um só</button><button class="${st.wallpaperMode === 'schedule' ? 'on' : ''}" data-wpmode="schedule">Por horário</button></div>${st.wallpaperMode === 'schedule' ? scheduleHTML(wps) : `<div class="wp-thumbs">${wps.map((id) => `<span class="wp-thumb-wrap"><button class="wp-thumb ${st.wallpaper === id ? 'on' : ''}" data-wp="${esc(id)}" style="background-image:url('${esc(wallpaperUrl(id, { thumb: true }))}')" aria-label="Papel de parede"></button>${id.startsWith('upload:') ? `<button class="wp-del" data-wp-del="${esc(id.slice(7))}" aria-label="Apagar">${svg('x')}</button>` : ''}</span>`).join('')}<button class="wp-thumb add" data-wp-add aria-label="Enviar imagem">${svg('plus')}</button></div>`}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip" title="Cor atual"><i></i></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'Ícones da tela inicial', ctrl: range('iconSize', 48, 88, 'px') },
@@ -1169,6 +1196,18 @@ function wireSettings(body) {
     const q = (sel) => e.target.closest(sel);
     let el;
     if ((el = q('[data-tab]'))) { settingsTab = el.dataset.tab; $$('[data-tab]', body).forEach((b) => b.classList.toggle('on', b === el)); redraw(); }
+    else if ((el = q('[data-wpmode]'))) {
+      st.wallpaperMode = el.dataset.wpmode;
+      if (st.wallpaperMode === 'schedule' && !(st.wallpaperSchedule || []).length) {
+        const other = `builtin:${BUILTIN_WALLPAPERS.find((x) => `builtin:${x}` !== st.wallpaper) || '2'}`;
+        st.wallpaperSchedule = [{ at: '06:00', wp: st.wallpaper }, { at: '18:00', wp: other }];
+      }
+      wpsPick = null; save(); applySchedule(); redraw();
+    }
+    else if ((el = q('[data-wps-pick]'))) { const i = +el.dataset.wpsPick; wpsPick = wpsPick === i ? null : i; redraw(); }
+    else if ((el = q('[data-wps-set]'))) { if (st.wallpaperSchedule[wpsPick]) st.wallpaperSchedule[wpsPick].wp = el.dataset.wpsSet; wpsPick = null; save(); applySchedule(); redraw(); }
+    else if ((el = q('[data-wps-del]'))) { st.wallpaperSchedule.splice(+el.dataset.wpsDel, 1); wpsPick = null; save(); applySchedule(); redraw(); }
+    else if (q('[data-wps-add]')) { (st.wallpaperSchedule ||= []).push({ at: '12:00', wp: st.wallpaper }); wpsPick = st.wallpaperSchedule.length - 1; save(); redraw(); }
     else if ((el = q('[data-wp-del]'))) {
       const name = el.dataset.wpDel;
       if (!(await confirmDialog('Apagar este papel de parede?', 'A imagem enviada será removida do servidor.', 'Apagar', { danger: true }))) return;
@@ -1210,7 +1249,10 @@ function wireSettings(body) {
   };
   body.oninput = debounce(async (e) => {
     const t = e.target;
-    if (t.matches('[data-range]')) {
+    if (t.matches('[data-wps-at]')) {
+      const e = set().wallpaperSchedule?.[+t.dataset.wpsAt];
+      if (e && /^\d{2}:\d{2}$/.test(t.value)) { e.at = t.value; save(); applySchedule(); }
+    } else if (t.matches('[data-range]')) {
       const k = t.dataset.range; set()[k] = +t.value; save();
       t.style.setProperty('--p', ((t.value - t.min) / (t.max - t.min)) * 100 + '%');
       t.nextElementSibling.textContent = t.value + (t.dataset.unit || '');
@@ -1618,6 +1660,8 @@ async function enterDesktop(animate) {
   if (system) { S.tipi = system.runtipi || {}; S.docker = system.docker; S.dockerActions = system.dockerActions; S.terminal = system.terminal !== false; }
   W2(); // converte os widgets da 0.8.x, se for a primeira vez
   await loadIntegrations();
+  const sched = scheduledWallpaper(); // papel de parede por horário: já entra com o da hora certa
+  if (sched) set().wallpaper = sched;
   applyPrefs();
   setWallpaper(set().wallpaper, { instant: !animate });
   renderDock();
@@ -1801,7 +1845,7 @@ addEventListener('drop', (e) => {
 });
 let rsz;
 addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => { renderApps(); sizeDock(); }, 120); });
-setInterval(renderGreeting, 60_000);
+setInterval(() => { renderGreeting(); if (!document.body.classList.contains('is-locked')) applySchedule(); }, 60_000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.body.classList.contains('is-locked')) loadApps(); });
 
 /* ── Início ────────────────────────────────────────────────────── */

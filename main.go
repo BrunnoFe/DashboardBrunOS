@@ -200,6 +200,14 @@ func main() {
 	s.integ = integrations.NewHub(integrations.NewStore(filepath.Join(cfg.DataDir, "integrations.json"), box),
 		integrations.NewSeriesStore(filepath.Join(cfg.DataDir, "metric-history.json")), s.events)
 	s.integ.SetUsage(s.readSettings())
+	s.integ.ImageDir = filepath.Join(cfg.DataDir, "img-cache") // fotos do Immich e capas do Plex já mostradas
+	// Tailscale: lê pelo script do servidor, pela conexão SSH do desligamento seguro (só este pedido)
+	integrations.HostQuery = func(ctx context.Context, cmd string) ([]byte, error) {
+		if cmd != hostcmd.CmdTailscale {
+			return nil, errors.New("pedido não permitido")
+		}
+		return s.power.HostOutput(ctx, cmd)
+	}
 	power.HostOK = terminal.HostRe.MatchString
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
 		// chave nova (script brunos-host) e a da configuração antiga, só para desligar até atualizar

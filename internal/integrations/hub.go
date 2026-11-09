@@ -45,11 +45,12 @@ type View struct {
 
 // Hub agenda as buscas, guarda o último valor e avisa as abas abertas.
 type Hub struct {
-	Store  *Store
-	Series *SeriesStore
-	Events *events.Store
-	Client *http.Client
-	Now    func() time.Time
+	Store    *Store
+	Series   *SeriesStore
+	Events   *events.Store
+	Client   *http.Client
+	Now      func() time.Time
+	ImageDir string // cache das imagens (fotos, capas); vazio = sem cache
 
 	mu    sync.Mutex
 	cache map[string]*entry
@@ -146,7 +147,15 @@ func (h *Hub) fetch(ctx context.Context, it Integration) {
 	defer func() { <-h.sem }()
 	k := KindByID(it.Kind)
 	h.mu.Lock()
-	prev := h.cache[it.ID].values
+	var prev map[string]Value
+	if e := h.cache[it.ID]; e != nil {
+		prev = e.values
+	} else if _, ok := h.Store.Get(it.ID); ok {
+		h.cache[it.ID] = &entry{busy: true, tried: h.Now()}
+	} else { // apagada enquanto esperava a vez
+		h.mu.Unlock()
+		return
+	}
 	h.mu.Unlock()
 	var vals map[string]Value
 	cfg, err := h.Store.Config(it)
@@ -191,7 +200,7 @@ func (h *Hub) fetch(ctx context.Context, it Integration) {
 	} else {
 		slog.Debug("integração sem resposta", "nome", it.Name, "erro", err)
 	}
-	h.checkAlerts(it, vals, err, downSince, now)
+	h.checkAlerts(it, prev, vals, err, downSince, now)
 	h.publish(view)
 }
 
@@ -217,7 +226,7 @@ func (h *Hub) viewLocked(id string, e *entry) View {
 
 func alertKey(id, alert string) string { return "integ:" + id + ":" + alert }
 
-func (h *Hub) checkAlerts(it Integration, vals map[string]Value, ferr error, downSince, now time.Time) {
+func (h *Hub) checkAlerts(it Integration, prev, vals map[string]Value, ferr error, downSince, now time.Time) {
 	if h.Events == nil {
 		return
 	}
@@ -250,6 +259,24 @@ func (h *Hub) checkAlerts(it Integration, vals map[string]Value, ferr error, dow
 		}
 		if ferr != nil {
 			continue // sem dado novo: mantém o estado
+		}
+		if def.Op == "new" { // um aviso por item novo na lista (ex.: aparelho desconhecido na rede)
+			seen := map[string]bool{}
+			for _, item := range vals[def.Metric].List {
+				if item.ID == "" {
+					continue
+				}
+				seen[item.ID] = true
+				body := strings.TrimSpace(strings.Trim(item.Text+" · "+def.Hint, " ·"))
+				h.Events.Emit(events.Event{Kind: "integration-new", Level: def.Level, Key: key + ":" + item.ID,
+					Title: def.Name + ": " + item.Label, Body: body})
+			}
+			for _, item := range prev[def.Metric].List {
+				if item.ID != "" && !seen[item.ID] {
+					h.Events.Resolve(key+":"+item.ID, nil) // saiu da lista (ficou conhecido ou foi apagado)
+				}
+			}
+			continue
 		}
 		v, ok := vals[def.Metric]
 		if !ok || v.Num == nil {

@@ -166,6 +166,15 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   - `series.go`: histórico próprio das métricas coletadas em segundo plano, `/data/metric-history.json`
     (24 h a cada 5 min + 7 dias por hora; métrica sem amostra há 7 dias é descartada).
   - `handlers.go`: rotas abaixo e `Suggest` (apps do Runtipi de tipo conhecido → `http://IP:porta`).
+    0.9.2: `GET /api/integrations/{id}/image?ref=` (o Tipo confere a referência via `ImageKind`; só
+    imagens até 8 MB; cache de 60 em `/data/img-cache`, nome = sha256 de id+ref).
+  - 0.9.2: `immich.go` (`/api/assets/statistics`, `/api/server/statistics` se admin, `/api/memories`,
+    `/api/search/random`, foto `size=preview`; listas de fotos uma vez por dia), `plex.go`
+    (`/status/sessions`, `/library/sections` uma vez por hora, capa por `/photo/:/transcode`),
+    `watchyourlan.go` (`/api/all`; aviso `Op: "new"` por item com `Item.ID` = MAC), `tailscale.go`
+    (`NoURL`; `HostQuery("tailscale")` → `power.Monitor.HostOutput` → `hostcmd.Runner.Output`). Métricas
+    do tipo `media` (lista de `Item{img}`, `MetricDef.Look` = photo | poster). Campos extras do
+    formulário (ex.: álbum) ficam em `Integration.Options`.
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 
 ### API
@@ -302,7 +311,9 @@ click:{kind:auto|app|window|url|none, target}, look:{follow, opacity?, hue?, hid
 `widgets` fica só para voltar de versão). 0.9.1: `widgets2.cols` (`{"<página>": 1–6}`, ausente =
 automático), no formato Atalhos `folders:[{root, path, name?, icon?, color?(matiz)}]` (vazio = favoritas)
 e `files:{layout: grid|list, showFree}`; `appPlace` (`{"<id do app ou folder:id>": página}`; sem entrada =
-solto, vai para a última página com apps). **Nunca** guardar senhas aqui.
+solto, vai para a última página com apps). 0.9.2: no formato Mídia `media:{rotate (min), caption}`;
+`wallpaperMode` (`single` | `schedule`) e `wallpaperSchedule` (`[{at:"HH:MM", wp}]`). **Nunca** guardar
+senhas aqui.
 
 ## Testes
 

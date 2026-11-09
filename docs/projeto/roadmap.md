@@ -98,7 +98,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
 | J1 | Tela de bloqueio com relógio grande | B | a fazer | Estilo umbrelOS; bloqueio por inatividade opcional (só visual ou exigindo senha? decidir). |
-| J2 | Papel de parede por horário | B | a fazer (0.9.1) | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
+| J2 | Papel de parede por horário | B | feito (0.9.2), lista livre de horários | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
 | J3 | Widgets de relógio, clima e bloco de notas | B | a fazer | Clima: Open-Meteo (sem chave) chamado pelo backend; notas salvas em `/data`. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
@@ -125,7 +125,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 6 | 0.8.0 | G1 · G2 · G3 (sem Speedtest) — **feito, aguardando teste no servidor** |
 | 7a | 0.9.0 | **Widgets personalizáveis** (motor: Área de widgets por página, Tamanhos, Formatos, gráficos, janela Widgets, fonte BrunOS, conversão dos widgets atuais, credenciais cifradas) + AdGuard (A2/I3) + Speedtest Tracker (G3) — **feito (0.9.0), aguardando teste no servidor** (Mídia entra junto com Immich/Plex na 0.9.1) |
 | 7a+ | 0.9.1 | **Melhorias dos widgets** pedidas depois de usar a 0.9.0: colunas por página com encaixe, arrastar widgets sempre, alça de tamanho (5 tamanhos), Páginas montadas pelo Bruno (apps na página 1 ou 2, continuação automática), Arquivos personalizável (pastas, grade/lista, ícone, cor, espaço livre), correções do Destaque/Armazenamento e da aparência própria — **feito (0.9.1), aguardando teste no servidor** |
-| 7b | 0.9.2 | Plex e Immich (A2, Immich só em Widget, formato Mídia) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) |
+| 7b | 0.9.2 | Plex e Immich (A2, Immich só em Widget, formato Mídia) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) — **feito (0.9.2), aguardando teste no servidor** (o Tailscale pede colar os comandos de atualização do script) |
 | 7c | 0.9.3 | Transmission · Syncthing · Nextcloud · Vaultwarden (pedidos do Bruno em 08/11/2026) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
 | 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |

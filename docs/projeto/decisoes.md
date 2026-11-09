@@ -133,3 +133,15 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     vão para a última Página com apps e, antes de mover algo, os soltos são "fixados" onde estão (senão
     colocar um app na Página 2 levaria todos). A numeração se compacta quando uma Página fica vazia.
     Arrastar widgets vale sempre, como os ícones; alça de tamanho e "−" só no modo Organizar.
+36. **Script do servidor ganha versão própria** (0.9.2). O pedido `tailscale` (que roda
+    `tailscale status --json`) entrou no `brunos-host` como versão 3 (`ScriptVersion`), **sem** subir o
+    `SetupVersion`: este decide qual chave usar, e subi-lo faria os servidores já configurados tentarem
+    desligar com a chave antiga, que eles recusam. Servidor com o script 2 continua desligando e só
+    responde "pedido inválido" ao Tailscale, que vira a mensagem "copie os comandos de atualização". A
+    leitura usa `Runner.Output` (saída inteira até 1 MB) e o main só deixa passar esse pedido.
+37. **Mídia e avisos sem estado no BrunOS** (0.9.2, escolhas do Bruno). As fotos do Immich vêm numa
+    lista do dia (até 24) e a troca acontece no navegador pelo relógio (padrão 30 min, ajustável): todas
+    as abas mostram a mesma foto e o servidor só baixa cada imagem uma vez (tamanho "prévia", cache de
+    60 imagens em `/data/img-cache`). A capa do Plex vem já reduzida pelo próprio Plex. O aviso de
+    aparelho novo usa o "conhecido" do WatchYourLAN (um aviso por MAC; marcar como conhecido lá fecha o
+    aviso), sem lista própria. O papel de parede por horário é uma lista livre de horários.

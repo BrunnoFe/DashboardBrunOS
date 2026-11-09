@@ -25,6 +25,7 @@ const (
 	Text   = "text"   // texto curto
 	List   = "list"   // lista de itens (rótulo + valor)
 	Series = "series" // série no tempo
+	Media  = "media"  // lista de itens com imagem (fotos do Immich, capa do Plex) para o formato Mídia
 )
 
 // Range é uma faixa de cor padrão: até Max (inclusive) usa Level (ok | aviso | critico).
@@ -44,6 +45,8 @@ type MetricDef struct {
 	Ranges []Range `json:"ranges,omitempty"`
 	// Série com o histórico deste número que o próprio app guarda (para gráficos e mini-gráficos).
 	History string `json:"history,omitempty"`
+	// Mídia: "photo" (foto cobrindo o widget) ou "poster" (capa em pé ao lado do texto).
+	Look string `json:"look,omitempty"`
 }
 
 // Field é um campo do formulário da integração.
@@ -68,6 +71,8 @@ type AlertDef struct {
 	Unit    string  `json:"unit,omitempty"`
 	Level   string  `json:"level"`           // info | aviso | critico
 	Fixed   bool    `json:"fixed,omitempty"` // sem número ajustável (só liga/desliga)
+	// Op "new": avisa uma vez por item (Item.ID) que aparece na lista Metric; Hint vai no aviso.
+	Hint string `json:"-"`
 }
 
 // KindInfo é o que a interface precisa saber de um Tipo.
@@ -80,13 +85,19 @@ type KindInfo struct {
 	Metrics  []MetricDef `json:"metrics"`
 	Alerts   []AlertDef  `json:"alerts"`
 	Runtipi  []string    `json:"-"` // ids de app no Runtipi que são deste tipo (sugestão)
+	// NoURL: o tipo não fala com o app por HTTP (Tailscale vai pelo SSH do servidor).
+	NoURL bool   `json:"noUrl,omitempty"`
+	Note  string `json:"note,omitempty"` // explicação extra no formulário
 }
 
-// Item de uma lista.
+// Item de uma lista. ID identifica o item entre buscas (ex.: MAC de um aparelho, para o aviso de
+// aparelho novo); Img é a referência de uma imagem servida por /api/integrations/{id}/image.
 type Item struct {
 	Label string   `json:"k"`
 	Text  string   `json:"v,omitempty"`
 	Num   *float64 `json:"n,omitempty"`
+	ID    string   `json:"id,omitempty"`
+	Img   string   `json:"img,omitempty"`
 }
 
 // SeriesData é uma série com passo fixo; Points usa NaN para "sem dado" (vira null no JSON).
@@ -158,7 +169,18 @@ type Config struct {
 	// Prev são os valores da busca anterior (para não baixar de novo o que não mudou).
 	// Métricas que começam com "_" são internas: ficam no cache, mas não vão para a interface.
 	Prev map[string]Value
+	// Options são os campos extras do formulário (ex.: álbum do Immich).
+	Options map[string]string
 }
+
+// ImageKind é um Tipo que serve imagens (fotos, capas). ref vem de Item.Img e é conferido pelo Tipo.
+type ImageKind interface {
+	Image(ctx context.Context, c *http.Client, cfg Config, ref string) (io.ReadCloser, error)
+}
+
+// HostQuery faz um pedido de leitura ao script do servidor (pela conexão SSH do desligamento
+// seguro). Definido pelo main; nil = indisponível.
+var HostQuery func(ctx context.Context, cmd string) ([]byte, error)
 
 // Kind é um Tipo de integração.
 type Kind interface {

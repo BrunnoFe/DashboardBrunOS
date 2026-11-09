@@ -172,5 +172,17 @@ Pedidos (com prints):
 - Correções: Destaque/Armazenamento com 3 a 5 informações (fileira sem buraco, nada passa da altura);
   "Aparência própria" da 0.9.0 não aplicava a transparência/cor (faltava um espaço na classe).
 
+## 0.9.2 (08/11/2026): Plex, Immich, WatchYourLAN, Tailscale e papel de parede por horário (etapa 7b)
+- **Formato Mídia**: fotos do Immich (neste dia, aleatórias, favoritas ou de um álbum) trocando a cada
+  5 min a 1 dia, com legenda de data e lugar; capa do que está tocando no Plex, com quem assiste e o
+  progresso. Imagens passam pelo BrunOS (rota `/api/integrations/{id}/image`, cache em `/data/img-cache`).
+- **Integrações novas**: Immich (totais e fotos), Plex (sessões, conversões, bibliotecas), WatchYourLAN
+  (online, desconhecidos, listas e **aviso de aparelho novo**), Tailscale (situação, aparelhos, IP) pela
+  conexão SSH do desligamento seguro, com o script `brunos-host` 3 (decisão 36).
+- **Papel de parede por horário** (Configurações → Papel de parede → Por horário), lista livre; troca
+  sozinho a cada minuto conferido e a tela de login acompanha.
+- Listas com nome e detalhe em duas linhas; widgets sempre do tamanho exato da grade.
+- Correção: apagar uma integração durante uma busca dela podia derrubar o BrunOS (nil pointer).
+
 ## Próximas
 Veja `roadmap.md`.

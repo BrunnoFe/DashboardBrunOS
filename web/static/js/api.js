@@ -124,6 +124,7 @@ const real = {
   statsHistory: (range) => call('GET', `/api/stats/history?${q({ range })}`),
   internet: () => call('GET', '/api/internet'),
   metricSeries: (id, range) => call('GET', `/api/metrics/series?${q({ id, range })}`),
+  integrationImage: (id, ref) => `/api/integrations/${encodeURIComponent(id)}/image?${q({ ref })}`,
   integrations: {
     kinds: () => call('GET', '/api/integrations/kinds'),
     list: () => call('GET', '/api/integrations'),
@@ -403,7 +404,49 @@ function makeDemo() {
     download: { n: 287.4 }, upload: { n: 94.1 }, ping: { n: 9.8 }, jitter: { n: 1.2 }, last_test: { n: now - 1800 }, isp: { t: 'Vivo Fibra' }, server: { t: 'Claro · São Paulo' },
     download_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: dlS } }, upload_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: ulS } }, ping_series: { s: { step: 3600, start: hourStart - 167 * 3600, points: pgS } },
   });
-  const demoValues = (it) => (it.kind === 'adguard' ? agValues() : stValues());
+  // 0.9.2: Immich, Plex, WatchYourLAN e Tailscale (fotos e capas = papéis de parede que vêm no BrunOS)
+  const M = (id, name, kind, extra = {}) => ({ id, name, kind, ...extra });
+  demoKinds.push(
+    { id: 'immich', name: 'Immich', desc: 'Fotos e vídeos: totais e fotos no formato Mídia (neste dia, aleatórias, favoritas ou de um álbum)', interval: 600,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:2283', required: true }, { id: 'secret', label: 'Chave de API', type: 'secret', required: true, help: 'No Immich: foto do perfil → Configurações da conta → Chaves de API → Nova chave.' }, { id: 'album', label: 'Álbum (opcional)', type: 'text', placeholder: 'ex.: Viagens', help: 'Nome do álbum usado na métrica “Fotos do álbum”' }],
+      metrics: [M('photos', 'Fotos', 'num', { icon: 'image' }), M('videos', 'Vídeos', 'num', { icon: 'film' }), M('total', 'Fotos e vídeos', 'num', { icon: 'image' }), M('usage', 'Espaço usado (chave de administrador)', 'num', { unit: 'B', icon: 'disks' }), M('version', 'Versão', 'text', { icon: 'info' }),
+        M('photo_today', 'Fotos: neste dia', 'media', { icon: 'image', look: 'photo' }), M('photo_random', 'Fotos: aleatórias', 'media', { icon: 'image', look: 'photo' }), M('photo_favorite', 'Fotos: favoritas', 'media', { icon: 'star', look: 'photo' }), M('photo_album', 'Fotos: do álbum escolhido', 'media', { icon: 'image', look: 'photo' })],
+      alerts: [{ id: 'down', name: 'Immich sem responder', op: 'down', level: 'aviso', fixed: true }] },
+    { id: 'plex', name: 'Plex', desc: 'O que está tocando agora, com a capa, e o tamanho das bibliotecas', interval: 15,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:32400', required: true }, { id: 'secret', label: 'Token do Plex', type: 'secret', required: true, help: 'No Plex pelo navegador: abra qualquer filme → ⋯ → Obter informações → Ver XML. O token é o texto depois de “X-Plex-Token=”.' }],
+      metrics: [M('sessions', 'Assistindo agora', 'num', { icon: 'film' }), M('transcodes', 'Convertendo agora (transcode)', 'num', { icon: 'cpu' }), M('now_playing', 'O que está tocando', 'list', { icon: 'film' }), M('now_media', 'Capa do que está tocando', 'media', { icon: 'film', look: 'poster' }), M('movies', 'Filmes', 'num', { icon: 'film' }), M('shows', 'Séries', 'num', { icon: 'monitor' }), M('artists', 'Artistas (música)', 'num', { icon: 'music' }), M('version', 'Versão', 'text', { icon: 'info' })],
+      alerts: [{ id: 'down', name: 'Plex sem responder', op: 'down', level: 'aviso', fixed: true }] },
+    { id: 'watchyourlan', name: 'WatchYourLAN', desc: 'Quem está na rede de casa e aviso de aparelho desconhecido', interval: 120,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8840', required: true }],
+      metrics: [M('online', 'Aparelhos online', 'num', { icon: 'wifi' }), M('offline', 'Aparelhos desligados', 'num', { icon: 'wifi' }), M('total', 'Aparelhos no total', 'num', { icon: 'network' }), M('known', 'Aparelhos conhecidos', 'num', { icon: 'check' }), M('unknown', 'Aparelhos desconhecidos', 'num', { icon: 'alert' }), M('online_list', 'Lista: online agora', 'list', { icon: 'wifi' }), M('unknown_list', 'Lista: desconhecidos', 'list', { icon: 'alert' })],
+      alerts: [{ id: 'new_device', name: 'Aparelho novo na rede', desc: 'Avisa quando aparece um aparelho que o WatchYourLAN marca como desconhecido', metric: 'unknown_list', op: 'new', level: 'aviso', fixed: true }, { id: 'down', name: 'WatchYourLAN sem responder', op: 'down', level: 'info', fixed: true }] },
+    { id: 'tailscale', name: 'Tailscale', desc: 'Aparelhos da sua rede Tailscale: quem está online e o IP deste servidor', interval: 60, noUrl: true, fields: [],
+      note: 'Usa a mesma conexão SSH do desligamento seguro (Configurações → Energia) e precisa do script do servidor na versão 3: copie os comandos de atualização abaixo e cole no servidor uma vez.',
+      metrics: [M('state', 'Situação', 'text', { icon: 'shield' }), M('state_ok', 'Conectado (1 = sim)', 'num', { icon: 'shield' }), M('online', 'Aparelhos online', 'num', { icon: 'network' }), M('total', 'Aparelhos na rede', 'num', { icon: 'network' }), M('peers', 'Lista de aparelhos', 'list', { icon: 'network' }), M('self_ip', 'IP deste servidor', 'text', { icon: 'server' }), M('exit_node', 'Saída para a internet', 'text', { icon: 'globe' }), M('health', 'Avisos do Tailscale', 'text', { icon: 'alert' })],
+      alerts: [{ id: 'disconnected', name: 'Tailscale desconectado', metric: 'state_ok', op: '<', default: 1, level: 'aviso', fixed: true }] },
+  );
+  demoInteg.push(
+    { id: 'im1', kind: 'immich', name: 'Immich', url: 'http://192.168.1.50:2283', hasSecret: true, interval: 600, alerts: {}, options: { album: 'Viagens' } },
+    { id: 'px1', kind: 'plex', name: 'Plex', url: 'http://192.168.1.50:32400', hasSecret: true, interval: 15, alerts: {}, options: {} },
+    { id: 'wy1', kind: 'watchyourlan', name: 'WatchYourLAN', url: 'http://192.168.1.50:8840', hasSecret: false, interval: 120, alerts: { new_device: { on: true } }, options: {} },
+    { id: 'ts1', kind: 'tailscale', name: 'Tailscale', url: '', hasSecret: false, interval: 60, alerts: {}, options: {} },
+  );
+  const photo = (ref, k, v) => ({ k, v, id: ref, img: ref });
+  const imValues = () => ({ photos: { n: 18342 }, videos: { n: 612 }, total: { n: 18954 }, version: { t: 'v2.1.0' },
+    photo_today: { l: [photo('14', '8 de nov. de 2019', 'há 7 anos · Ouro Preto, Brasil'), photo('19', '8 de nov. de 2021', 'há 5 anos · Florianópolis, Brasil'), photo('6', '8 de nov. de 2023', 'há 3 anos')] },
+    photo_random: { l: ['2', '23', '16', '4', '1', '12', '13', '10'].map((r, i) => photo(r, `${3 + i} de mar. de 20${18 + (i % 6)}`, ['Serra da Mantiqueira', 'Chapada Diamantina', 'Lençóis', 'Bonito'][i % 4])) },
+    photo_favorite: { l: [photo('24', '1 de jan. de 2024', 'Praia do Rosa'), photo('12', '15 de jul. de 2022', 'Campos do Jordão')] },
+    photo_album: { l: [photo('16', '20 de abr. de 2025', 'Viagens · Patagônia'), photo('4', '22 de abr. de 2025', 'Viagens · Patagônia')] } });
+  const pxValues = () => ({ sessions: { n: 2 }, transcodes: { n: 1 }, movies: { n: 412 }, shows: { n: 37 }, artists: { n: 128 }, version: { t: '1.41.2' },
+    now_playing: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38 }, { k: 'Um Filme', v: 'Bruno · Celular · pausado', n: 72 }] },
+    now_media: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38, img: '13' }, { k: 'Um Filme', v: 'Bruno · Celular · pausado', n: 72, img: '10' }] } });
+  const dev = (k, v, id) => ({ k, v, id });
+  const wyValues = () => ({ online: { n: 14 }, offline: { n: 9 }, total: { n: 23 }, known: { n: 21 }, unknown: { n: 2 },
+    online_list: { l: [dev('Notebook do Bruno', '192.168.1.20 · Dell'), dev('TV da sala', '192.168.1.31 · LG'), dev('iPhone', '192.168.1.40 · Apple'), dev('homeio (servidor)', '192.168.1.50 · Dell'), dev('Chromecast', '192.168.1.61 · Google'), dev('Impressora', '192.168.1.70 · HP')] },
+    unknown_list: { l: [dev('galaxy-a54', '192.168.1.88 · Samsung', 'bb:bb'), dev('192.168.1.93', 'Espressif (ESP32)', 'cc:cc')] } });
+  const tsValues = () => ({ state: { t: 'Conectado' }, state_ok: { n: 1 }, online: { n: 3 }, total: { n: 5 }, self_ip: { t: '100.64.0.1' }, exit_node: { t: 'direto (sem saída por outro aparelho)' }, health: { t: 'nenhum' },
+    peers: { l: [dev('iphone-bruno', 'online · 100.64.0.2 · iOS'), dev('notebook', 'online · 100.64.0.3 · windows'), dev('tablet', 'online · 100.64.0.4 · android'), dev('pc-trabalho', 'há 3 h · 100.64.0.5 · windows'), dev('raspberry', 'há 12 dias · 100.64.0.6 · linux')] } });
+  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues }[it.kind] || (() => ({})))();
   const demoViews = () => demoInteg.map((it) => ({ id: it.id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }));
   const nodeAt = (root, path) => {
     let n = tree[root];
@@ -470,6 +513,7 @@ function makeDemo() {
       const m = setInterval(() => { const ag = demoViews().find((v) => v.id === 'ag1'); if (ag) onMetrics?.(ag); }, 15000);
       return () => { clearInterval(t); clearInterval(m); };
     },
+    integrationImage: (id, ref) => `assets/thumbs/${encodeURIComponent(ref)}.avif`,
     metricSeries: (id, range) => {
       const step = range === '7d' ? 3600 : 300, n = range === '7d' ? 168 : range === '1h' ? 12 : 288;
       const t0 = Math.floor(Date.now() / 1000 / step) * step - (n - 1) * step;
@@ -482,19 +526,19 @@ function makeDemo() {
       add: (b) => {
         const k = demoKinds.find((x) => x.id === b.kind);
         if (!k) return Promise.reject(new Error('tipo de integração desconhecido'));
-        if (!/^https?:\/\/[^/@]+/.test(b.url || '')) return Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'));
-        const it = { id: Math.random().toString(16).slice(2, 14), kind: b.kind, name: b.name || k.name, url: b.url.replace(/\/+$/, ''), user: b.user || '', hasSecret: !!b.secret, interval: b.interval || k.interval, alerts: b.alerts || {} };
+        if (!k.noUrl && !/^https?:\/\/[^/@]+/.test(b.url || '')) return Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'));
+        const it = { id: Math.random().toString(16).slice(2, 14), kind: b.kind, name: b.name || k.name, url: k.noUrl ? '' : b.url.replace(/\/+$/, ''), user: b.user || '', hasSecret: !!b.secret, interval: b.interval || k.interval, alerts: b.alerts || {}, options: b.options || {} };
         demoInteg.push(it);
         return wait(it, 200);
       },
       update: (id, b) => {
         const it = demoInteg.find((x) => x.id === id);
         if (!it) return Promise.reject(new Error('integração não encontrada'));
-        Object.assign(it, { name: b.name || it.name, url: (b.url || it.url).replace(/\/+$/, ''), user: b.user ?? it.user, interval: b.interval || it.interval, alerts: b.alerts || it.alerts, hasSecret: b.secret != null ? !!b.secret : it.hasSecret });
+        Object.assign(it, { name: b.name || it.name, url: (b.url || it.url || '').replace(/\/+$/, ''), user: b.user ?? it.user, interval: b.interval || it.interval, alerts: b.alerts || it.alerts, options: b.options || it.options || {}, hasSecret: b.secret != null ? !!b.secret : it.hasSecret });
         return wait(it, 200);
       },
       del: (id) => { demoInteg = demoInteg.filter((x) => x.id !== id); return wait({ ok: true }, 120); },
-      test: (b) => (/^https?:\/\//.test(b.url || '') ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
+      test: (b) => (/^https?:\/\//.test(b.url || '') || (b.kind || demoInteg.find((x) => x.id === b.id)?.kind) === 'tailscale' ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
         : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
     },
     statsHistory: (range) => {

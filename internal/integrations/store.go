@@ -37,6 +37,7 @@ type Integration struct {
 	Secret   string                  `json:"secret,omitempty"`
 	Interval int                     `json:"interval"`
 	Alerts   map[string]AlertSetting `json:"alerts,omitempty"`
+	Options  map[string]string       `json:"options,omitempty"` // campos extras (não secretos)
 }
 
 // Public é o que vai para o navegador: nunca o segredo.
@@ -49,6 +50,7 @@ type Public struct {
 	HasSecret bool                    `json:"hasSecret"`
 	Interval  int                     `json:"interval"`
 	Alerts    map[string]AlertSetting `json:"alerts"`
+	Options   map[string]string       `json:"options"`
 }
 
 func (i Integration) Public() Public {
@@ -56,7 +58,11 @@ func (i Integration) Public() Public {
 	if a == nil {
 		a = map[string]AlertSetting{}
 	}
-	return Public{ID: i.ID, Kind: i.Kind, Name: i.Name, URL: i.URL, User: i.User, HasSecret: i.Secret != "", Interval: i.Interval, Alerts: a}
+	o := i.Options
+	if o == nil {
+		o = map[string]string{}
+	}
+	return Public{ID: i.ID, Kind: i.Kind, Name: i.Name, URL: i.URL, User: i.User, HasSecret: i.Secret != "", Interval: i.Interval, Alerts: a, Options: o}
 }
 
 // Input é o que chega da interface ao criar/editar. Secret nil = manter o atual; "" = apagar.
@@ -68,6 +74,7 @@ type Input struct {
 	Secret   *string                 `json:"secret"`
 	Interval int                     `json:"interval"`
 	Alerts   map[string]AlertSetting `json:"alerts"`
+	Options  map[string]string       `json:"options"`
 }
 
 // ErrInput é um erro de validação com mensagem em pt-BR.
@@ -133,7 +140,7 @@ func (s *Store) Config(it Integration) (Config, error) {
 	if err != nil {
 		return Config{}, ferr("não foi possível ler a senha/token guardado (cadastre de novo)")
 	}
-	return Config{URL: it.URL, User: it.User, Secret: sec}, nil
+	return Config{URL: it.URL, User: it.User, Secret: sec, Options: it.Options}, nil
 }
 
 // Validate confere a entrada e devolve a integração pronta (sem id e com o segredo anterior).
@@ -151,8 +158,9 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 		return Integration{}, &ErrInput{"nome muito longo (máx. 60)"}
 	}
 	in.URL = strings.TrimRight(strings.TrimSpace(in.URL), "/")
-	u, err := url.Parse(in.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+	if info.NoURL {
+		in.URL = ""
+	} else if u, err := url.Parse(in.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 		return Integration{}, &ErrInput{"endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta"}
 	}
 	if len(in.User) > 200 {
@@ -181,6 +189,20 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 	for _, f := range info.Fields {
 		if f.Required && f.ID == "secret" && it.Secret == "" {
 			return Integration{}, &ErrInput{f.Label + " é obrigatório"}
+		}
+		if f.ID == "url" || f.ID == "user" || f.ID == "secret" {
+			continue
+		}
+		// campo extra (ex.: álbum): só os que o Tipo declara, texto curto
+		v := strings.TrimSpace(in.Options[f.ID])
+		if len(v) > 200 {
+			return Integration{}, &ErrInput{f.Label + " muito longo"}
+		}
+		if v != "" {
+			if it.Options == nil {
+				it.Options = map[string]string{}
+			}
+			it.Options[f.ID] = v
 		}
 	}
 	known := map[string]AlertDef{}

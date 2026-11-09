@@ -18,8 +18,10 @@ export const FORMATS = {
   grid: { label: 'Grade', icon: 'grid', desc: 'De 2 a 6 valores com ícone', max: 6, kinds: ['num', 'text'] },
   list: { label: 'Lista', icon: 'list', desc: 'Uma lista do app (ex.: domínios) ou valores um embaixo do outro', max: 6, kinds: ['list', 'num', 'text'] },
   chart: { label: 'Gráfico', icon: 'activity', desc: 'Linha, barras ou rosca, com até 3 séries', max: 3, kinds: ['series', 'num'] },
-  shortcuts: { label: 'Atalhos', icon: 'folder', desc: 'Atalhos para as pastas favoritas do Arquivos', max: 0, kinds: [] },
+  media: { label: 'Mídia', icon: 'image', desc: 'Foto ou capa de um app (Immich, Plex), com legenda', max: 1, kinds: ['media'] },
+  shortcuts: { label: 'Atalhos', icon: 'folder', desc: 'Atalhos para pastas do Arquivos, em grade ou lista', max: 0, kinds: [] },
 };
+export const ROTATE = [[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hora'], [360, '6 horas'], [1440, '1 por dia']];
 export const CHART_TYPES = { line: 'Linha', bar: 'Barras', donut: 'Rosca' };
 export const RANGES = { live: '5 min', '1h': '1 hora', '24h': '24 horas', '7d': '7 dias' };
 export const WINDOWS = { live: 'Uso ao vivo', battery: 'Bateria', internet: 'Internet', power: 'Energia', files: 'Arquivos', settings: 'Configurações', widgets: 'Widgets' };
@@ -157,6 +159,25 @@ const KIND_MODELS = {
     { id: 'top', name: `${it.name}: mais bloqueados`, desc: 'Lista dos domínios mais bloqueados', item: { format: 'list', size: 't', title: 'Mais bloqueados', slots: [S1(`${it.id}.top_blocked`)] } },
     { id: 'ring', name: `${it.name}: anel`, desc: '% bloqueado num anel', item: { format: 'chart', size: 's', title: it.name, slots: [S1(`${it.id}.blocked_pct`, { label: 'bloqueado' })], chart: { type: 'donut', range: '24h', stats: false } } },
   ],
+  immich: (it) => [
+    { id: 'today', name: `${it.name}: neste dia`, desc: 'Fotos deste dia em anos anteriores (ou aleatórias)', item: { format: 'media', size: 'l', title: 'Neste dia', slots: [S1(`${it.id}.photo_today`)], media: { rotate: 30 } } },
+    { id: 'random', name: `${it.name}: foto aleatória`, desc: 'Uma foto diferente a cada meia hora', item: { format: 'media', size: 'w', title: 'Fotos', slots: [S1(`${it.id}.photo_random`)], media: { rotate: 30 } } },
+    { id: 'totals', name: `${it.name}: totais`, desc: 'Fotos e vídeos guardados', item: { format: 'grid', title: it.name, caption: false, slots: [S1(`${it.id}.photos`, { label: 'Fotos', compact: true }), S1(`${it.id}.videos`, { label: 'Vídeos', compact: true })] } },
+  ],
+  plex: (it) => [
+    { id: 'now', name: `${it.name}: tocando agora`, desc: 'Capa, título, quem assiste e quanto já foi', item: { format: 'media', size: 'w', title: 'Tocando agora', slots: [S1(`${it.id}.now_media`)] } },
+    { id: 'libs', name: `${it.name}: bibliotecas`, desc: 'Filmes, séries e artistas', item: { format: 'grid', title: it.name, caption: false, slots: [S1(`${it.id}.movies`, { label: 'Filmes' }), S1(`${it.id}.shows`, { label: 'Séries' }), S1(`${it.id}.sessions`, { label: 'Agora' })] } },
+    { id: 'list', name: `${it.name}: sessões`, desc: 'Lista do que está tocando', item: { format: 'list', size: 't', title: 'No Plex agora', slots: [S1(`${it.id}.now_playing`)] } },
+  ],
+  watchyourlan: (it) => [
+    { id: 'home', name: `${it.name}: rede de casa`, desc: 'Online, desconhecidos e total', item: { format: 'grid', title: 'Rede de casa', caption: false, layout: 'rows', slots: [S1(`${it.id}.online`, { label: 'Online' }), S1(`${it.id}.unknown`, { label: 'Desconhecidos', colors: { warn: 0, crit: 99 } }), S1(`${it.id}.total`, { label: 'Total' })] } },
+    { id: 'online', name: `${it.name}: online agora`, desc: 'Lista dos aparelhos ligados', item: { format: 'list', size: 't', title: 'Online agora', slots: [S1(`${it.id}.online_list`)], list: { max: 0, bars: false } } },
+    { id: 'unknown', name: `${it.name}: desconhecidos`, desc: 'Aparelhos que o WatchYourLAN não conhece', item: { format: 'list', size: 's', title: 'Desconhecidos', slots: [S1(`${it.id}.unknown_list`)], list: { max: 0, bars: false } } },
+  ],
+  tailscale: (it) => [
+    { id: 'status', name: `${it.name}: situação`, desc: 'Conectado, aparelhos online e o IP deste servidor', item: { format: 'grid', title: 'Tailscale', caption: false, layout: 'rows', slots: [S1(`${it.id}.state`, { label: 'Situação' }), S1(`${it.id}.online`, { label: 'Online' }), S1(`${it.id}.self_ip`, { label: 'IP' })] } },
+    { id: 'peers', name: `${it.name}: aparelhos`, desc: 'Quem está na sua rede Tailscale', item: { format: 'list', size: 't', title: 'Tailscale', slots: [S1(`${it.id}.peers`)], list: { max: 0, bars: false } } },
+  ],
   speedtest: (it) => [
     { id: 'last', name: `${it.name}: último teste`, desc: 'Download, upload e ping', item: { format: 'grid', title: 'Velocidade', caption: false, slots: [S1(`${it.id}.download`, { label: 'Download' }), S1(`${it.id}.upload`, { label: 'Upload' }), S1(`${it.id}.ping`, { label: 'Ping' })] } },
     { id: 'chart', name: `${it.name}: 7 dias`, desc: 'Gráfico de download e upload', item: { format: 'chart', size: 'w', title: 'Velocidade da internet', slots: [S1(`${it.id}.download_series`, { label: 'Download' }), S1(`${it.id}.upload_series`, { label: 'Upload' })], chart: { type: 'line', range: '7d', stats: true } } },
@@ -183,6 +204,7 @@ export function normalize(item) {
   it.click = { ...BLANK.click, ...(item?.click || {}) };
   it.look = { ...BLANK.look, ...(item?.look || {}) };
   it.files = { layout: 'grid', showFree: false, ...(item?.files || {}) };
+  it.media = { rotate: 30, caption: true, ...(item?.media || {}) };
   it.folders = Array.isArray(item?.folders) ? item.folders.filter((f) => f && f.root).slice(0, 24) : [];
   if (!SIZES[it.size]) it.size = 's';
   if (!FORMATS[it.format]) it.format = 'stat';
@@ -283,7 +305,7 @@ function listHTML(item, ctx) {
     const max = item.list?.max > 0 ? Math.min(item.list.max, per) : per;
     const items = (ctx.value(first.metric)?.l || []).slice(0, max);
     const top = Math.max(1, ...items.map((x) => x.n || 0));
-    return `${cap}<span class="wf-list ${item.size === 'f' || item.size === 'w' ? 'cols' : ''}">${items.length ? items.map((x) => `<span class="wf-li"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><span class="wf-lv">${esc(x.n != null ? fmtText({ n: x.n }, { unit: first.unit ? '' : def0.unit }, first) : x.v || '')}</span>${item.list?.bars !== false && x.n != null ? `<span class="wf-lbar"><i style="width:${((x.n / top) * 100).toFixed(1)}%"></i></span>` : ''}</span>`).join('') : '<span class="w-empty">Sem itens ainda</span>'}</span>`;
+    return `${cap}<span class="wf-list ${item.size === 'f' || item.size === 'w' ? 'cols' : ''}">${items.length ? items.map((x) => x.n == null && x.v ? `<span class="wf-li stack"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><small class="wf-lsub" title="${esc(x.v)}">${esc(x.v)}</small></span>` : `<span class="wf-li"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><span class="wf-lv">${esc(x.n != null ? fmtText({ n: x.n }, { unit: first.unit ? '' : def0.unit }, first) : x.v || '')}</span>${item.list?.bars !== false && x.n != null ? `<span class="wf-lbar"><i style="width:${((x.n / top) * 100).toFixed(1)}%"></i></span>` : ''}</span>`).join('') : '<span class="w-empty">Sem itens ainda</span>'}</span>`;
   }
   return `${cap}<span class="wf-list">${item.slots.map((s) => {
     const def = ctx.def(s.metric), val = ctx.value(s.metric);
@@ -349,7 +371,32 @@ function shortcutsHTML(item, ctx) {
   return `${item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : ''}<span class="w-files wf-files ${list ? 'list' : ''} ${showFree ? 'free' : ''}" style="--cols:${cols};--rows:${rows}">${fav.length ? fav.map(cell).join('') : '<span class="w-empty">Nenhuma pasta disponível</span>'}</span>`;
 }
 
-const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, shortcuts: shortcutsHTML };
+// Mídia: foto cobrindo o widget (Immich) ou capa em pé ao lado do texto (Plex). A troca de foto é feita
+// aqui, pelo relógio: todas as abas mostram a mesma foto e nada é pedido ao servidor além da imagem.
+function mediaHTML(item, ctx) {
+  const slot = item.slots[0];
+  if (!slot) return `<span class="w-empty">Escolha a fonte das fotos</span>`;
+  const def = ctx.def(slot.metric), list = ctx.value(slot.metric)?.l || [];
+  const iid = slot.metric.split('.')[0];
+  const poster = def?.look === 'poster';
+  if (!list.length) {
+    return `<span class="wf-mempty">${svg(poster ? 'film' : 'image')}<span>${esc(poster ? 'Nada tocando agora' : ctx.value(slot.metric) ? 'Nenhuma foto encontrada' : 'carregando…')}</span></span>`;
+  }
+  const every = Math.max(1, item.media?.rotate || 30) * 60000;
+  const x = poster ? list[0] : list[Math.floor(Date.now() / every) % list.length];
+  const src = x.img ? ctx.imageUrl(iid, x.img) : '';
+  const cap = item.media?.caption !== false;
+  if (poster) {
+    const more = list.length > 1 ? `<span class="wf-more">+${list.length - 1}</span>` : '';
+    return `<span class="wf-poster">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : svg('film')}</span>
+      <span class="wf-ptext">${item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : ''}<b>${esc(x.k)}</b><small>${esc(x.v || '')}</small>
+      ${x.n != null ? `<span class="track wf-pbar"><i style="width:${clamp(x.n, 0, 100).toFixed(1)}%"></i></span>` : ''}${more}</span>`;
+  }
+  return `<span class="wf-photo">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : ''}</span>
+    ${cap ? `<span class="wf-pcap">${item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : ''}<b>${esc(x.k || '')}</b>${x.v ? `<small>${esc(x.v)}</small>` : ''}</span>` : ''}`;
+}
+
+const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, media: mediaHTML, shortcuts: shortcutsHTML };
 
 /** HTML de dentro do widget (o que muda quando chegam valores novos). */
 export function innerHTML(item, ctx) {
