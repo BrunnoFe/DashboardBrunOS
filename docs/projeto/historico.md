@@ -184,5 +184,14 @@ Pedidos (com prints):
 - Listas com nome e detalhe em duas linhas; widgets sempre do tamanho exato da grade.
 - Correção: apagar uma integração durante uma busca dela podia derrubar o BrunOS (nil pointer).
 
+## 0.9.3 (08/11/2026): Transmission, Syncthing e Nextcloud (etapa 7c, fim da etapa 7)
+- **Transmission**: download/upload agora, baixando, semeando, pausados, com erro, totais e a lista do
+  que está baixando (progresso, velocidade, quanto falta); aviso de torrent com erro.
+- **Syncthing**: pastas em dia, quanto falta, arquivos com erro, aparelhos conectados e listas de pastas
+  e aparelhos; aviso de erro de sincronização.
+- **Nextcloud** (app serverinfo, token só de leitura): usuários, ativos, arquivos, compartilhamentos,
+  espaço livre e banco de dados; aviso de pouco espaço.
+- Vaultwarden adiado a pedido do Bruno (decisão 38).
+
 ## Próximas
 Veja `roadmap.md`.

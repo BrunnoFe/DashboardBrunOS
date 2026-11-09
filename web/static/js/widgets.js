@@ -178,6 +178,18 @@ const KIND_MODELS = {
     { id: 'status', name: `${it.name}: situação`, desc: 'Conectado, aparelhos online e o IP deste servidor', item: { format: 'grid', title: 'Tailscale', caption: false, layout: 'rows', slots: [S1(`${it.id}.state`, { label: 'Situação' }), S1(`${it.id}.online`, { label: 'Online' }), S1(`${it.id}.self_ip`, { label: 'IP' })] } },
     { id: 'peers', name: `${it.name}: aparelhos`, desc: 'Quem está na sua rede Tailscale', item: { format: 'list', size: 't', title: 'Tailscale', slots: [S1(`${it.id}.peers`)], list: { max: 0, bars: false } } },
   ],
+  transmission: (it) => [
+    { id: 'speed', name: `${it.name}: velocidade`, desc: 'Download e upload agora, com mini-gráfico', item: { format: 'grid', title: it.name, caption: false, layout: 'rows', slots: [S1(`${it.id}.down`, { label: 'Download', spark: true }), S1(`${it.id}.up`, { label: 'Upload' }), S1(`${it.id}.downloading`, { label: 'Baixando' })] } },
+    { id: 'list', name: `${it.name}: baixando agora`, desc: 'Cada torrent com progresso, velocidade e quanto falta', item: { format: 'list', size: 't', title: 'Baixando', slots: [S1(`${it.id}.downloading_list`)], list: { max: 0, bars: false } } },
+  ],
+  syncthing: (it) => [
+    { id: 'status', name: `${it.name}: situação`, desc: 'Pastas em dia, quanto falta e aparelhos conectados', item: { format: 'grid', title: it.name, caption: false, layout: 'rows', slots: [S1(`${it.id}.synced`, { label: 'Pastas em dia' }), S1(`${it.id}.need`, { label: 'Falta' }), S1(`${it.id}.devices_online`, { label: 'Conectados' })] } },
+    { id: 'folders', name: `${it.name}: pastas`, desc: 'Cada pasta e como ela está', item: { format: 'list', size: 't', title: 'Syncthing', slots: [S1(`${it.id}.folders_list`)], list: { max: 0, bars: false } } },
+  ],
+  nextcloud: (it) => [
+    { id: 'summary', name: `${it.name}: resumo`, desc: 'Usuários, arquivos e espaço livre', item: { format: 'grid', title: it.name, caption: false, layout: 'rows', slots: [S1(`${it.id}.users`, { label: 'Usuários' }), S1(`${it.id}.files`, { label: 'Arquivos', compact: true }), S1(`${it.id}.free`, { label: 'Livre' })] } },
+    { id: 'active', name: `${it.name}: uso`, desc: 'Ativos agora, nas últimas 24 h e compartilhamentos', item: { format: 'list', size: 's', title: it.name, slots: [S1(`${it.id}.active_5m`, { label: 'Ativos agora' }), S1(`${it.id}.active_24h`, { label: 'Ativos em 24 h' }), S1(`${it.id}.shares`, { label: 'Compartilhamentos' })] } },
+  ],
   speedtest: (it) => [
     { id: 'last', name: `${it.name}: último teste`, desc: 'Download, upload e ping', item: { format: 'grid', title: 'Velocidade', caption: false, slots: [S1(`${it.id}.download`, { label: 'Download' }), S1(`${it.id}.upload`, { label: 'Upload' }), S1(`${it.id}.ping`, { label: 'Ping' })] } },
     { id: 'chart', name: `${it.name}: 7 dias`, desc: 'Gráfico de download e upload', item: { format: 'chart', size: 'w', title: 'Velocidade da internet', slots: [S1(`${it.id}.download_series`, { label: 'Download' }), S1(`${it.id}.upload_series`, { label: 'Upload' })], chart: { type: 'line', range: '7d', stats: true } } },

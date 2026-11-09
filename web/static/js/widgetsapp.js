@@ -324,7 +324,7 @@ function drawIntegration() {
   if (!k) {
     main().innerHTML = `<div class="wapp-head"><div><h3>Nova integração</h3><p>Qual app?</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
       <div class="winteg-list">${kinds.map((x) => `<button class="winteg" data-kind="${esc(x.id)}"><span class="winteg-ico">${kindIcon(x.id)}</span><span class="winteg-txt"><b>${esc(x.name)}</b><small>${esc(x.desc)}</small></span><span class="chev">${svg('chevR')}</span></button>`).join('')}</div>
-      <p class="hint">Transmission, Syncthing, Nextcloud e Vaultwarden chegam na 0.9.3.</p>`;
+      <p class="hint">Todos só leem dados: o BrunOS nunca muda nada nos seus apps.</p>`;
     return;
   }
   const field = (f) => {

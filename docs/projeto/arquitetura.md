@@ -175,6 +175,10 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     (`NoURL`; `HostQuery("tailscale")` → `power.Monitor.HostOutput` → `hostcmd.Runner.Output`). Métricas
     do tipo `media` (lista de `Item{img}`, `MetricDef.Look` = photo | poster). Campos extras do
     formulário (ex.: álbum) ficam em `Integration.Options`.
+  - 0.9.3: `transmission.go` (RPC `session-stats` + `torrent-get`; 409 → `X-Transmission-Session-Id`,
+    guardado em `_sid`), `syncthing.go` (`X-API-Key`; `/rest/system/*`, `/rest/config/*`, `/rest/db/status`
+    de até 20 pastas), `nextcloud.go` (`/ocs/v2.php/apps/serverinfo/api/v1/info?skipApps&skipUpdate`,
+    `NC-Token` sem usuário ou autenticação básica com usuário).
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 
 ### API

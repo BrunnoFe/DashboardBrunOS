@@ -145,3 +145,8 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     60 imagens em `/data/img-cache`). A capa do Plex vem já reduzida pelo próprio Plex. O aviso de
     aparelho novo usa o "conhecido" do WatchYourLAN (um aviso por MAC; marcar como conhecido lá fecha o
     aviso), sem lista própria. O papel de parede por horário é uma lista livre de horários.
+38. **Integrações só de leitura, com a credencial mais fraca que serve** (0.9.3). Transmission: usuário e
+    senha opcionais, só `session-stats` e `torrent-get` (o id de sessão do RPC fica no cache). Syncthing:
+    chave da API, só GETs em `/rest`. Nextcloud: preferimos o token do app serverinfo (`NC-Token`, só
+    leitura) a usuário administrador + senha de app. Vaultwarden ficou de fora (escolha do Bruno): o que
+    interessa exigiria o ADMIN_TOKEN, que administra o cofre de senhas.

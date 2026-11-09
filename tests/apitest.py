@@ -162,6 +162,12 @@ s,b,_=req('GET','/api/integrations/'+ts.get('id','x')+'/image?ref=abc'); check('
 s,b,_=req('POST','/api/integrations',{'kind':'immich','url':'http://127.0.0.1:1','secret':'k','options':{'album':'Viagens','inventado':'x'}}); im=json.loads(b); check('integrações: Immich guarda só o campo extra conhecido (álbum)', s==200 and im.get('options')=={'album':'Viagens'}, b)
 s,b,_=req('GET','/api/integrations/'+im.get('id','x')+'/image?ref=../../etc/passwd'); check('integrações: foto com referência inválida → 400', s==400, b)
 for x in (ts, im): req('DELETE','/api/integrations/'+x.get('id','x'))
+# 0.9.3: Transmission, Syncthing e Nextcloud
+check('integrações: tipos da 0.9.3', all(k in ks for k in ('transmission','syncthing','nextcloud')) and 'vaultwarden' not in ks, ks)
+s,b,_=req('POST','/api/integrations',{'kind':'transmission','url':'http://127.0.0.1:1'}); tr=json.loads(b); check('integrações: Transmission sem senha (opcional)', s==200 and tr.get('hasSecret') is False and tr.get('interval')==30, b)
+s,b,_=req('POST','/api/integrations/test',{'id':tr.get('id',''),'url':'http://127.0.0.1:1'}); check('integrações: Transmission fora do ar → erro amigável', s==502 and 'não consegui falar' in json.loads(b)['error'], b)
+s,b,_=req('POST','/api/integrations',{'kind':'syncthing','url':'http://127.0.0.1:1'}); check('integrações: Syncthing sem chave → 400', s==400 and 'obrigatório' in json.loads(b)['error'], b)
+req('DELETE','/api/integrations/'+tr.get('id','x'))
 s,b,_=req('PUT','/api/settings',{'wallpaper':'builtin:14','accentMode':'vibrant'}); s2,b2,_=req('GET','/api/settings'); check('preferências', json.loads(b2)['wallpaper']=='builtin:14')
 s,b,_=req('GET','/api/public'); check('public expõe só papel de parede/cor', json.loads(b).get('accentMode')=='vibrant' and 'apps' not in json.loads(b))
 buf=io.BytesIO(open(FIX+'/files/home/ptbruno/Fotos/foto.jpg','rb').read())

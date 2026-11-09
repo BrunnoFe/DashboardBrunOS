@@ -425,6 +425,25 @@ function makeDemo() {
       metrics: [M('state', 'Situação', 'text', { icon: 'shield' }), M('state_ok', 'Conectado (1 = sim)', 'num', { icon: 'shield' }), M('online', 'Aparelhos online', 'num', { icon: 'network' }), M('total', 'Aparelhos na rede', 'num', { icon: 'network' }), M('peers', 'Lista de aparelhos', 'list', { icon: 'network' }), M('self_ip', 'IP deste servidor', 'text', { icon: 'server' }), M('exit_node', 'Saída para a internet', 'text', { icon: 'globe' }), M('health', 'Avisos do Tailscale', 'text', { icon: 'alert' })],
       alerts: [{ id: 'disconnected', name: 'Tailscale desconectado', metric: 'state_ok', op: '<', default: 1, level: 'aviso', fixed: true }] },
   );
+  demoKinds.push(
+    { id: 'transmission', name: 'Transmission', desc: 'Velocidade, torrents ativos e o que está baixando agora', interval: 30,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:9091', required: true }, { id: 'user', label: 'Usuário (se tiver)', type: 'text' }, { id: 'secret', label: 'Senha (se tiver)', type: 'secret' }],
+      metrics: [M('down', 'Download agora', 'num', { unit: 'B/s', icon: 'download' }), M('up', 'Upload agora', 'num', { unit: 'B/s', icon: 'upload' }), M('downloading', 'Baixando', 'num', { icon: 'download' }), M('seeding', 'Semeando', 'num', { icon: 'upload' }), M('active', 'Ativos', 'num', { icon: 'activity' }), M('paused', 'Pausados', 'num', { icon: 'clock' }), M('total', 'Torrents no total', 'num', { icon: 'box' }), M('errors', 'Com erro', 'num', { icon: 'alert' }), M('downloaded', 'Baixado no total', 'num', { unit: 'B', icon: 'download' }), M('uploaded', 'Enviado no total', 'num', { unit: 'B', icon: 'upload' }), M('downloading_list', 'Lista: baixando agora', 'list', { icon: 'download' })],
+      alerts: [{ id: 'errors', name: 'Torrent com erro', desc: 'Avisa quando algum torrent fica com erro', metric: 'errors', op: '>', default: 0, level: 'info', fixed: true }, { id: 'down', name: 'Transmission sem responder', op: 'down', level: 'info', fixed: true }] },
+    { id: 'syncthing', name: 'Syncthing', desc: 'Pastas sincronizadas, quanto falta e aparelhos conectados', interval: 60,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8384', required: true }, { id: 'secret', label: 'Chave da API', type: 'secret', required: true, help: 'No Syncthing: Ações → Configurações → Geral → Chave da API' }],
+      metrics: [M('folders', 'Pastas', 'num', { icon: 'folder' }), M('synced', 'Pastas em dia', 'num', { icon: 'check' }), M('need', 'Falta sincronizar', 'num', { unit: 'B', icon: 'refresh' }), M('errors', 'Arquivos com erro', 'num', { icon: 'alert' }), M('devices_online', 'Aparelhos conectados', 'num', { icon: 'network' }), M('devices', 'Aparelhos no total', 'num', { icon: 'network' }), M('folders_list', 'Lista: pastas', 'list', { icon: 'folder' }), M('devices_list', 'Lista: aparelhos', 'list', { icon: 'network' }), M('version', 'Versão', 'text', { icon: 'info' }), M('uptime', 'Tempo ligado', 'num', { unit: 's', icon: 'clock' })],
+      alerts: [{ id: 'errors', name: 'Erro de sincronização', desc: 'Avisa quando alguma pasta tem arquivos que não conseguem sincronizar', metric: 'errors', op: '>', default: 0, level: 'aviso', fixed: true }, { id: 'down', name: 'Syncthing sem responder', op: 'down', level: 'info', fixed: true }] },
+    { id: 'nextcloud', name: 'Nextcloud', desc: 'Usuários, arquivos, compartilhamentos e espaço livre', interval: 300,
+      fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8083', required: true }, { id: 'user', label: 'Usuário administrador (deixe vazio para usar o token)', type: 'text' }, { id: 'secret', label: 'Token do serverinfo (ou senha de app)', type: 'secret', required: true, help: 'Recomendado: um token só de leitura do app serverinfo.' }],
+      metrics: [M('users', 'Usuários', 'num', { icon: 'user' }), M('active_5m', 'Ativos nos últimos 5 min', 'num', { icon: 'activity' }), M('active_24h', 'Ativos nas últimas 24 h', 'num', { icon: 'activity' }), M('files', 'Arquivos', 'num', { icon: 'doc' }), M('shares', 'Compartilhamentos', 'num', { icon: 'link' }), M('free', 'Espaço livre', 'num', { unit: 'B', icon: 'disks' }), M('free_gb', 'Espaço livre (GB)', 'num', { unit: 'GB', icon: 'disks' }), M('db_size', 'Tamanho do banco de dados', 'num', { unit: 'B', icon: 'box' }), M('version', 'Versão', 'text', { icon: 'info' })],
+      alerts: [{ id: 'low_space', name: 'Pouco espaço no Nextcloud', desc: 'Avisa quando o espaço livre fica abaixo disto', metric: 'free_gb', op: '<', default: 20, unit: 'GB', level: 'aviso' }, { id: 'down', name: 'Nextcloud sem responder', op: 'down', level: 'aviso', fixed: true }] },
+  );
+  demoInteg.push(
+    { id: 'tr1', kind: 'transmission', name: 'Transmission', url: 'http://192.168.1.50:9091', hasSecret: false, interval: 30, alerts: {}, options: {} },
+    { id: 'sy1', kind: 'syncthing', name: 'Syncthing', url: 'http://192.168.1.50:8384', hasSecret: true, interval: 60, alerts: { errors: { on: true } }, options: {} },
+    { id: 'nc1', kind: 'nextcloud', name: 'Nextcloud', url: 'http://192.168.1.50:8083', hasSecret: true, interval: 300, alerts: { low_space: { on: true, value: 20 } }, options: {} },
+  );
   demoInteg.push(
     { id: 'im1', kind: 'immich', name: 'Immich', url: 'http://192.168.1.50:2283', hasSecret: true, interval: 600, alerts: {}, options: { album: 'Viagens' } },
     { id: 'px1', kind: 'plex', name: 'Plex', url: 'http://192.168.1.50:32400', hasSecret: true, interval: 15, alerts: {}, options: {} },
@@ -446,7 +465,13 @@ function makeDemo() {
     unknown_list: { l: [dev('galaxy-a54', '192.168.1.88 · Samsung', 'bb:bb'), dev('192.168.1.93', 'Espressif (ESP32)', 'cc:cc')] } });
   const tsValues = () => ({ state: { t: 'Conectado' }, state_ok: { n: 1 }, online: { n: 3 }, total: { n: 5 }, self_ip: { t: '100.64.0.1' }, exit_node: { t: 'direto (sem saída por outro aparelho)' }, health: { t: 'nenhum' },
     peers: { l: [dev('iphone-bruno', 'online · 100.64.0.2 · iOS'), dev('notebook', 'online · 100.64.0.3 · windows'), dev('tablet', 'online · 100.64.0.4 · android'), dev('pc-trabalho', 'há 3 h · 100.64.0.5 · windows'), dev('raspberry', 'há 12 dias · 100.64.0.6 · linux')] } });
-  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues }[it.kind] || (() => ({})))();
+  const trValues = () => ({ down: { n: 2.1e6 + Math.random() * 4e5 }, up: { n: 48e3 }, downloading: { n: 2 }, seeding: { n: 7 }, active: { n: 9 }, paused: { n: 1 }, total: { n: 12 }, errors: { n: 0 }, downloaded: { n: 5.2e11 }, uploaded: { n: 1.9e11 },
+    downloading_list: { l: [{ k: 'ubuntu-26.04-live-server-amd64.iso', v: '82% · 1,8 MB/s · falta 2 min' }, { k: 'Documentário (2024) 1080p', v: '38% · 340 KB/s · falta 41 min' }] } });
+  const syValues = () => ({ folders: { n: 4 }, synced: { n: 3 }, need: { n: 2.5e9 }, errors: { n: 0 }, devices_online: { n: 2 }, devices: { n: 3 }, version: { t: 'v1.29.0' }, uptime: { n: 3 * 86400 },
+    folders_list: { l: [dev('Fotos do celular', 'em dia'), dev('Documentos', 'em dia'), dev('Música', 'sincronizando · falta 2,5 GB'), dev('Backups', 'em dia')] },
+    devices_list: { l: [dev('Celular do Bruno', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
+  const ncValues = () => ({ users: { n: 4 }, active_5m: { n: 1 }, active_24h: { n: 3 }, files: { n: 120345 }, shares: { n: 17 }, free: { n: 1.5e11 }, free_gb: { n: 150 }, db_size: { n: 5.4e8 }, version: { t: '30.0.2' } });
+  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues, transmission: trValues, syncthing: syValues, nextcloud: ncValues }[it.kind] || (() => ({})))();
   const demoViews = () => demoInteg.map((it) => ({ id: it.id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }));
   const nodeAt = (root, path) => {
     let n = tree[root];

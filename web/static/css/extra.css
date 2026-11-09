@@ -901,7 +901,7 @@ body.reduce-motion .pb-ico, body.reduce-motion .bell-btn.ring .svg { animation: 
 .wts-cmds .pw-cmds { margin-top: 8px; max-width: 100%; }
 .winteg-form { grid-template-columns: minmax(0, 1fr); }
 .winteg-form > * { min-width: 0; }
-.wf-li .wf-lv { max-width: 62%; overflow: hidden; text-overflow: ellipsis; }
+.wf-li:not(.rowv) .wf-lv { max-width: 62%; overflow: hidden; text-overflow: ellipsis; }
 .wf-li.stack { display: flex; flex-direction: column; gap: 0; align-items: stretch; }
 .wf-li.stack .wf-lk { display: block; }
 .wf-lsub { font-size: 10.5px; font-weight: 600; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
