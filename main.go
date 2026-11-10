@@ -25,6 +25,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"brunos/internal/appmon"
 	"brunos/internal/auth"
 	"brunos/internal/diskhist"
@@ -36,6 +38,7 @@ import (
 	"brunos/internal/integrations"
 	"brunos/internal/logins"
 	"brunos/internal/netmon"
+	"brunos/internal/notes"
 	"brunos/internal/power"
 	"brunos/internal/procs"
 	"brunos/internal/runtipi"
@@ -44,6 +47,7 @@ import (
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
 	"brunos/internal/terminal"
+	"brunos/internal/termkey"
 	"brunos/web"
 )
 
@@ -112,6 +116,8 @@ type server struct {
 	procs     *procs.Reader
 	netmon    *netmon.Monitor
 	integ     *integrations.Hub
+	tkey      *termkey.Vault
+	notes     *notes.Store
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -169,8 +175,24 @@ func main() {
 		slog.Warn("pasta ignorada", "erro", e)
 	}
 	known := sshknown.New(filepath.Join(cfg.DataDir, "known_hosts.json")) // terminal e desligamento usam o mesmo arquivo
+	s.tkey = termkey.New(filepath.Join(cfg.DataDir, "terminal_key.json"))
+	s.notes = notes.New(filepath.Join(cfg.DataDir, "notes.json"))
 	if cfg.Terminal {
 		s.term = terminal.NewManagerWith(known)
+		s.term.OwnerOf = func(r *http.Request) string { return session(r).ID }
+		s.term.KeyFor = func(r *http.Request) (ssh.Signer, error) {
+			if k := s.tkey.Signer(session(r).ID); k != nil {
+				return k, nil
+			}
+			if s.tkey.Exists() {
+				return nil, terminal.ErrKeyLocked
+			}
+			return nil, terminal.ErrNoKey
+		}
+		s.term.Paused = am.SessionLocked
+		s.term.Locked = func(r *http.Request) bool { return am.IsLocked(session(r).ID) }
+		s.term.IdleTimeout = s.termIdle
+		s.term.OnDone = s.termDone
 	}
 	s.events = events.New(filepath.Join(cfg.DataDir, "events.json"))
 	s.logins = logins.New(filepath.Join(cfg.DataDir, "logins.json"))
@@ -288,6 +310,16 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/auth/me", a(s.hMe))
 	mux.HandleFunc("PUT /api/auth/me", a(s.hMeUpdate))
 	mux.HandleFunc("POST /api/auth/password", a(s.hPassword))
+	mux.HandleFunc("GET /api/auth/lock", a(s.hLockState))
+	mux.HandleFunc("POST /api/auth/lock", a(s.hLock))
+	mux.HandleFunc("POST /api/auth/unlock", a(s.hUnlock))
+	s.notes.Register(mux, a)
+	if s.term != nil {
+		mux.HandleFunc("GET /api/terminal/key", a(s.hTermKey))
+		mux.HandleFunc("POST /api/terminal/key", a(s.hTermKeyCreate))
+		mux.HandleFunc("POST /api/terminal/key/unlock", a(s.hTermKeyUnlock))
+		mux.HandleFunc("DELETE /api/terminal/key", a(s.hTermKeyDelete))
+	}
 
 	mux.HandleFunc("GET /api/settings", a(s.hSettingsGet))
 	mux.HandleFunc("PUT /api/settings", a(s.hSettingsPut))
@@ -442,11 +474,173 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, 401, map[string]string{"error": "sessão expirada"})
 			return
 		}
+		// Bloqueio com senha (decisão 39): só dá para ver o estado, desbloquear ou sair
+		if sess.Locked && !lockAllowed[r.Method+" "+r.URL.Path] {
+			writeJSON(w, 423, map[string]any{"error": "a tela está bloqueada: digite a senha", "locked": true})
+			return
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, reqSession{sess, c.Value})))
 	})
 }
 
 func session(r *http.Request) reqSession { return r.Context().Value(ctxKey{}).(reqSession) }
+
+// lockAllowed: rotas que funcionam com a Sessão bloqueada.
+var lockAllowed = map[string]bool{
+	"GET /api/auth/lock": true, "POST /api/auth/lock": true, "POST /api/auth/unlock": true, "POST /api/auth/logout": true,
+}
+
+// ── Bloqueio (J1) e Chave do Terminal (K3) ────────────────────────
+
+func (s *server) hLockState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]bool{"locked": session(r).Locked})
+}
+
+// hLock bloqueia a Sessão (modo com senha). A Chave do Terminal fica trancada até desbloquear.
+func (s *server) hLock(w http.ResponseWriter, r *http.Request) {
+	sess := session(r)
+	if err := s.auth.Lock(sess.ID); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "não foi possível bloquear"})
+		return
+	}
+	s.tkey.Forget(sess.ID)
+	writeJSON(w, 200, map[string]bool{"locked": true})
+}
+
+func (s *server) hUnlock(w http.ResponseWriter, r *http.Request) {
+	var req credReq
+	if err := decode(r, &req, 8<<10); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	sess, ip := session(r), clientIP(r)
+	if err := s.auth.Unlock(sess.ID, req.Password, ip); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrSessionEnded):
+			if s.term != nil {
+				s.term.CloseOwner(sess.ID)
+			}
+			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			writeJSON(w, 401, map[string]string{"error": err.Error()})
+		case errors.Is(err, auth.ErrRateLimited):
+			writeJSON(w, 429, map[string]string{"error": err.Error()})
+		default:
+			slog.Warn("desbloqueio recusado", "ip", ip)
+			writeJSON(w, 403, map[string]string{"error": "senha incorreta"})
+		}
+		return
+	}
+	s.openTermKey(sess.ID, req.Password)
+	writeJSON(w, 200, map[string]bool{"locked": false})
+}
+
+// openTermKey abre a Chave do Terminal para a Sessão com a senha que acabou de ser digitada.
+func (s *server) openTermKey(sessionID, password string) {
+	if s.term == nil || !s.tkey.Exists() {
+		return
+	}
+	if err := s.tkey.Unlock(sessionID, password); err != nil {
+		slog.Warn("Chave do Terminal não abriu com a senha do BrunOS", "erro", err)
+	}
+}
+
+// termIdle: tempo para encerrar uma Aba sem ninguém olhando (Configurações → Terminal).
+func (s *server) termIdle() time.Duration {
+	v, ok := s.readSettings()["termIdleMin"].(float64)
+	if !ok {
+		return 15 * time.Minute
+	}
+	if v <= 0 {
+		return 0 // nunca
+	}
+	return time.Duration(min(v, 24*60)) * time.Minute
+}
+
+// termDone avisa no sino que um comando terminou numa Aba minimizada.
+func (s *server) termDone(addr, user string, tab int, names []string) {
+	what := strings.Join(names, ", ")
+	where := strings.TrimSuffix(addr, ":22")
+	title := fmt.Sprintf("%s terminou", what)
+	if tab > 0 {
+		title = fmt.Sprintf("%s terminou na aba %d", what, tab)
+	}
+	s.events.Emit(events.Event{Kind: "terminal-done", Level: "info", Title: title, Body: fmt.Sprintf("Terminal: %s@%s", user, where)})
+}
+
+func (s *server) hTermKey(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.tkey.Info(session(r).ID))
+}
+
+// hTermKeyCreate cria a Chave do Terminal. Pede a senha do BrunOS: é ela que tranca a chave.
+func (s *server) hTermKeyCreate(w http.ResponseWriter, r *http.Request) {
+	var req credReq
+	if err := decode(r, &req, 8<<10); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	sess := session(r)
+	if !s.verifyPassword(w, r, req.Password) {
+		return
+	}
+	info, err := s.tkey.Create(sess.ID, req.Password)
+	if err != nil {
+		code := 500
+		if errors.Is(err, termkey.ErrExists) {
+			code = 409
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	slog.Info("Chave do Terminal criada", "impressao", info.Fingerprint)
+	writeJSON(w, 200, info)
+}
+
+func (s *server) hTermKeyUnlock(w http.ResponseWriter, r *http.Request) {
+	var req credReq
+	if err := decode(r, &req, 8<<10); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	if !s.verifyPassword(w, r, req.Password) {
+		return
+	}
+	if err := s.tkey.Unlock(session(r).ID, req.Password); err != nil {
+		code := 500
+		if errors.Is(err, termkey.ErrNoKey) {
+			code = 404
+		} else if errors.Is(err, termkey.ErrWrongPassword) {
+			// a senha do BrunOS confere, mas não abre a chave: ela foi trancada com outra senha
+			err = errors.New("a Chave do Terminal foi trancada com outra senha; apague e crie outra")
+			code = 409
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, s.tkey.Info(session(r).ID))
+}
+
+func (s *server) hTermKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.tkey.Delete(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "não foi possível apagar a chave"})
+		return
+	}
+	slog.Info("Chave do Terminal apagada")
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// verifyPassword confere a senha do BrunOS (com o limite de tentativas) e responde o erro.
+func (s *server) verifyPassword(w http.ResponseWriter, r *http.Request, password string) bool {
+	err := s.auth.Verify(session(r).Username, password, clientIP(r))
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, auth.ErrRateLimited):
+		writeJSON(w, 429, map[string]string{"error": err.Error()})
+	default:
+		writeJSON(w, 403, map[string]string{"error": "senha do BrunOS incorreta"})
+	}
+	return false
+}
 
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
@@ -542,14 +736,17 @@ func (s *server) hLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.loginSeen(ip, r.UserAgent())
+	s.openTermKey(auth.SessionID(token), req.Password)
 	setSessionCookie(w, r, token)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (s *server) hLogout(w http.ResponseWriter, r *http.Request) {
-	s.auth.Logout(session(r).token)
+	sess := session(r)
+	s.auth.Logout(sess.token)
+	s.tkey.Forget(sess.ID)
 	if s.term != nil {
-		s.term.CloseAll()
+		s.term.CloseOwner(sess.ID)
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -588,6 +785,11 @@ func (s *server) hPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
+	// a Chave do Terminal passa a abrir com a senha nova; as outras Sessões acabaram
+	if err := s.tkey.Rekey(req.Current, req.Next); err != nil {
+		slog.Warn("não deu para trancar a Chave do Terminal com a senha nova", "erro", err)
+	}
+	s.tkey.Keep(sess.ID)
 	if s.term != nil {
 		s.term.CloseAll()
 	}
@@ -771,6 +973,9 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 	defer unsubEv()
 	mets, unsubMet := s.integ.Subscribe() // valores das integrações (event: metrics); aba aberta = buscar
 	defer unsubMet()
+	nts, unsubNotes := s.notes.Subscribe() // nota mudou em outro aparelho (event: note)
+	defer unsubNotes()
+	sid := session(r).ID
 	first, _ := json.Marshal(map[string]any{"snapshot": s.stats.Latest(), "history": s.stats.History(), "metrics": s.integ.Snapshot()})
 	fmt.Fprintf(w, "retry: 3000\nevent: init\ndata: %s\n\n", first)
 	flusher.Flush()
@@ -781,7 +986,16 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case msg := <-ch:
+			if s.auth.IsLocked(sid) { // bloqueou (ou saiu) com a conexão aberta: para de enviar
+				fmt.Fprint(w, "event: locked\ndata: {}\n\n")
+				flusher.Flush()
+				return
+			}
 			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case n := <-nts:
+			b, _ := json.Marshal(n)
+			fmt.Fprintf(w, "event: note\ndata: %s\n\n", b)
 			flusher.Flush()
 		case e := <-evs:
 			b, _ := json.Marshal(e)

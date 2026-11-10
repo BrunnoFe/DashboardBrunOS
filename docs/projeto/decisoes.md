@@ -150,3 +150,20 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     chave da API, só GETs em `/rest`. Nextcloud: preferimos o token do app serverinfo (`NC-Token`, só
     leitura) a usuário administrador + senha de app. Vaultwarden ficou de fora (escolha do Bruno): o que
     interessa exigiria o ADMIN_TOKEN, que administra o cofre de senhas.
+39. **Bloqueio vale no servidor, por Sessão** (0.10.0, escolhas do Bruno). No modo com senha, a
+    Sessão ganha a marca "bloqueada" e o middleware recusa toda rota autenticada (423) menos o
+    desbloqueio, o logout e o estado da sessão: só esconder a tela seria burlável pelo console do
+    navegador, e o painel tem Terminal e Arquivos. Cada Sessão bloqueia sozinha (a inatividade é de um
+    aparelho); o modo só visual existe porque sai quase de graça. A Tela de bloqueio com senha não
+    mostra nada que venha da API (clima, avisos) para não abrir exceções.
+40. **Chave do Terminal própria, trancada pela senha do BrunOS** (0.10.0). Recusados: guardar a chave
+    pessoal do Bruno (ela sairia do computador dele) e cifrar com o `secret.key` (quem copiar o `/data`
+    entra no servidor). A chave AES vem da senha (PBKDF2, sal próprio) e só existe na memória da
+    Sessão desbloqueada; reiniciar o container ou bloquear com senha a apaga. Esquecer a senha do BrunOS
+    perde a chave (basta criar outra). Conexões salvas são lista desde já, mas a interface mostra só a
+    principal enquanto houver uma.
+41. **"Ainda está rodando?" por um canal SSH extra** (0.10.0). Na mesma conexão, um canal `exec` roda
+    um `ps` curto: o pai desse comando é o mesmo processo do sshd da Aba, então o shell interativo é o
+    irmão com terminal, e o grupo em primeiro plano do terminal diz se há algo rodando. Roda só ao
+    fechar, no fim do tempo sem ninguém olhando e a cada 1 min com Aba minimizada rodando algo — nada
+    contínuo, nada instalado no servidor. Falhou (não é Linux, sem `ps`) → "não sei" → pergunta.

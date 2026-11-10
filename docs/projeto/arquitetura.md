@@ -93,8 +93,18 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `duplicates.go` (tamanho → SHA-256 de começo+fim → SHA-256 inteiro; 300 mil arquivos, 90 s, 50 GB
   lidos no máximo); `usage.go` (soma por pasta numa varredura só, cache de 10 min por raiz, 30 s / 1
   milhão de itens, uma varredura por vez).
-- **`internal/terminal`**: `Manager` (até 4 sessões, 12 aberturas/min, ociosa fecha em 3 min, buffer
-  de 512 KB enquanto ninguém lê). TOFU em `/data/known_hosts.json`
+- **`internal/terminal`**: `Manager` (até 4 Abas, 12 aberturas/min, buffer de 256 KB enquanto ninguém lê
+  e mais 256 KB do fim da tela para reabrir uma Aba minimizada com `replay=1`). Desde a 0.10.0: cada Aba
+  sabe a Sessão do BrunOS que a abriu (`Owner`; sair fecha só as dela); sem leitor, a varredura confere
+  por um canal `exec` com `ps` se algo roda (decisão 41) e só fecha depois de `termIdleMin` (preferência,
+  padrão 15, 0 = nunca) se nada roda; Sessão bloqueada não fecha Abas; aviso `terminal-done` no sino
+  quando um comando de uma Aba sem leitor termina. `resize` vale como sinal de vida.
+- **`internal/termkey`** (0.10.0): `/data/terminal_key.json` (`{v,salt,iter,nonce,box,pub,createdAt}`,
+  0600); `box` = chave privada PEM cifrada com AES-256-GCM, chave do AES = PBKDF2-SHA256(senha do
+  BrunOS, sal próprio, 600 000). Aberta por Sessão só na memória (login, desbloqueio, criação); some no
+  Bloqueio, no logout e no reinício. `Rekey` ao trocar a senha.
+- **`internal/notes`** (0.10.0): `/data/notes.json` (`{"<id do widget>": {text, at (unix ms)}}`), até
+  20 mil caracteres e 200 notas; `Subscribe` manda `{id, at}` para o SSE (`event: note`). TOFU em `/data/known_hosts.json`
   (`{"version":1,"hosts":{"host:porta":{type,fingerprint,key,addedAt}}}`). Prefere chave ED25519 como
   o OpenSSH. Erro depois da chave aceita = recusa de login (403 com `sshAuth`).
 - **`internal/sshknown`** (0.4.0): TOFU compartilhado (`Store.Callback`, `Forget`, `Algorithms`,
@@ -201,8 +211,12 @@ GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,user,state,thr
 GET  /api/internet                    ({up,checked,ms,avg,uptime?,points:[{t,ms}],outages:[{start,end}],enabled})
 GET  /api/files/roots · disks · list · raw · zip · search · trash
 PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty
-GET  /api/terminal/sessions · stream?id= (SSE base64; eventos ready/exit/replaced)
-POST /api/terminal/open · input · resize · close · forget
+GET  /api/terminal/sessions · stream?id=[&replay=1] (SSE base64; eventos ready/exit/replaced/locked)
+POST /api/terminal/open (useKey: Chave do Terminal) · input · resize · close · forget · busy ({known,names})
+GET/POST/DELETE /api/terminal/key · POST /api/terminal/key/unlock   (Chave do Terminal, 0.10.0)
+GET/POST /api/auth/lock · POST /api/auth/unlock     (Bloqueio com senha: o resto responde 423)
+GET/PUT/DELETE /api/notes/{id}                      (texto dos widgets de Notas)
+GET  /api/integrations/geocode?q=                   (cidade para o Clima, via Open-Meteo)
 GET  /api/events                      POST /api/events/read {ids:[]} (vazio = todos) · /api/events/clear
 GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
 PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}

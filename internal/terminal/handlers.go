@@ -23,6 +23,7 @@ func (m *Manager) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("POST /api/terminal/resize", wrap(m.hResize))
 	mux.HandleFunc("POST /api/terminal/close", wrap(m.hClose))
 	mux.HandleFunc("POST /api/terminal/forget", wrap(m.hForget))
+	mux.HandleFunc("POST /api/terminal/busy", wrap(m.hBusy))
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -47,6 +48,10 @@ func writeErr(w http.ResponseWriter, err error) {
 		writeJSON(w, 404, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrBadRequest), errors.Is(err, ErrBadKey):
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrKeyLocked):
+		writeJSON(w, 403, map[string]any{"error": err.Error(), "keyLocked": true})
+	case errors.Is(err, ErrNoKey):
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "noKey": true})
 	case errors.Is(err, ErrAuth):
 		// 403 e não 401: 401 faria a interface achar que a sessão do BrunOS expirou
 		writeJSON(w, 403, map[string]string{"error": err.Error(), "sshAuth": "1"})
@@ -65,8 +70,23 @@ func (m *Manager) hOpen(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, ErrBadRequest)
 		return
 	}
+	if m.OwnerOf != nil {
+		req.Owner = m.OwnerOf(r)
+	}
+	if req.UseKey {
+		if m.KeyFor == nil {
+			writeErr(w, ErrNoKey)
+			return
+		}
+		signer, err := m.KeyFor(r)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		req.Signer = signer
+	}
 	s, err := m.Open(req)
-	req.Password, req.Passphrase, req.Key = "", "", ""
+	req.Password, req.Passphrase, req.Key, req.Signer = "", "", "", nil
 	if err != nil {
 		slog.Info("terminal: conexão recusada", "destino", req.Host, "usuario", req.User, "erro", err)
 		writeErr(w, err)
@@ -91,12 +111,17 @@ func (m *Manager) hStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no")
-	gen, detach := s.Attach()
+	gen, hist, detach := s.Attach(r.URL.Query().Get("replay") == "1")
 	defer detach()
 	fmt.Fprint(w, "retry: 2000\nevent: ready\ndata: {}\n\n")
+	if len(hist) > 0 {
+		fmt.Fprintf(w, "data: %s\n\n", base64.StdEncoding.EncodeToString(hist))
+	}
 	flusher.Flush()
 	keep := time.NewTicker(20 * time.Second)
 	defer keep.Stop()
+	lockCheck := time.NewTicker(2 * time.Second)
+	defer lockCheck.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
@@ -104,6 +129,14 @@ func (m *Manager) hStream(w http.ResponseWriter, r *http.Request) {
 		case <-keep.C:
 			fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
+			continue
+		case <-lockCheck.C:
+			// Bloqueio com senha: para de mostrar a tela (a Aba continua viva no servidor)
+			if m.Locked != nil && m.Locked(r) {
+				fmt.Fprint(w, "event: locked\ndata: {}\n\n")
+				flusher.Flush()
+				return
+			}
 			continue
 		case <-s.Notify():
 		}
@@ -178,6 +211,23 @@ func (m *Manager) hClose(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Close(body.ID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hBusy: "ainda tem algo rodando nesta Aba?" (antes de fechar com o "×").
+func (m *Manager) hBusy(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := decode(r, &body, 4<<10); err != nil {
+		writeErr(w, ErrBadRequest)
+		return
+	}
+	b, err := m.CheckBusy(body.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, b)
 }
 
 func (m *Manager) hForget(w http.ResponseWriter, r *http.Request) {

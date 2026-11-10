@@ -97,18 +97,18 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| J1 | Tela de bloqueio com relógio grande | B | a fazer | Estilo umbrelOS; bloqueio por inatividade opcional (só visual ou exigindo senha? decidir). |
+| J1 | Tela de bloqueio com relógio grande | B | **feito (0.10.0)** | Com senha (padrão, vale no servidor: 423) ou só visual; Ctrl+Shift+L, busca, botão direito e inatividade (5/15/30/60 min ou nunca). Decisão 39. |
 | J2 | Papel de parede por horário | B | feito (0.9.2), lista livre de horários | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
-| J3 | Widgets de relógio, clima e bloco de notas | B | a fazer | Clima: Open-Meteo (sem chave) chamado pelo backend; notas salvas em `/data`. |
+| J3 | Widgets de relógio, clima e bloco de notas | B | **feito (0.10.0)** | Clima = Tipo de integração (Open-Meteo, ícones próprios); Relógio e Notas = Formatos novos; notas em `/data/notes.json` com aviso pelo SSE. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
 ## K. Terminal
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| K1 | Comandos salvos (botões) | B | a fazer | Preferência `termSnippets`; botão digita o texto (não executa sem Enter, ou opção). |
-| K2 | Abas | M | a fazer | Várias sessões (limite já é 4 no backend). |
-| K3 | Lembrar a chave SSH (criptografada) | M | a fazer | Cifrar com chave derivada da senha do BrunOS (PBKDF2 → AES-GCM); só decifra com a senha digitada na sessão. Avaliar riscos. |
+| K1 | Comandos salvos (botões) | B | **feito (0.10.0)** | `termSnippets`; "executar direto" por comando (desligado = só digita); também na busca. |
+| K2 | Abas | M | **feito (0.10.0)** | Até 4; minimizar mantém rodando (ícone na dock); "ainda está rodando?" por `ps` num canal SSH extra (decisão 41); tempo sem uso configurável; aviso no sino ao terminar. |
+| K3 | Lembrar a chave SSH (criptografada) | M | **feito (0.10.0)** | Chave do Terminal própria (ED25519), cifrada com chave derivada da senha do BrunOS, aberta só na memória (decisão 40); Conexões salvas. |
 
 ## Plano de implementação (combinado em 07/11/2026)
 
@@ -127,7 +127,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 7a+ | 0.9.1 | **Melhorias dos widgets** pedidas depois de usar a 0.9.0: colunas por página com encaixe, arrastar widgets sempre, alça de tamanho (5 tamanhos), Páginas montadas pelo Bruno (apps na página 1 ou 2, continuação automática), Arquivos personalizável (pastas, grade/lista, ícone, cor, espaço livre), correções do Destaque/Armazenamento e da aparência própria — **feito (0.9.1), aguardando teste no servidor** |
 | 7b | 0.9.2 | Plex e Immich (A2, Immich só em Widget, formato Mídia) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) — **feito (0.9.2), aguardando teste no servidor** (o Tailscale pede colar os comandos de atualização do script) |
 | 7c | 0.9.3 | Transmission · Syncthing · Nextcloud (pedidos do Bruno em 08/11/2026) — **feito (0.9.3), aguardando teste no servidor**. Vaultwarden **adiado** ("Vamos sem integração com Vaultwarden nesse momento. Deixe para o futuro."): sem token só daria no ar, versão e cadastro aberto; com o ADMIN_TOKEN, usuários (decidir no futuro) |
-| 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 |
+| 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 — **feito (0.10.0), aguardando teste no servidor** |
 | 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) |
@@ -139,6 +139,37 @@ mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob deman
 tokens~~ (decidido em 08/11/2026: cifrados com chave em arquivo, decisão 33); ~~F2 qual editor~~; J1
 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais permissões; A1 como saber a
 versão instalada sem tocar no Postgres.
+
+### Etapa 8 (0.10.0) combinada em 10/11/2026
+
+Tudo numa versão só (pedido do Bruno: "Pode trazer tudo junto no mesmo release"). Termos em
+`CONTEXT.md` (Sessão, Bloqueio, Tela de bloqueio, Chave do Terminal, Conexão salva, Aba, Comando
+salvo); porquês nas decisões 39–41.
+
+- **J1 Bloqueio**: modo "com senha" (padrão) ou "só visual" nas Configurações. Com senha, o servidor
+  marca a Sessão como bloqueada e recusa toda a API (inclusive Arquivos e Terminal) até a senha; o
+  desbloqueio usa o limitador do login (errou demais → a Sessão é encerrada). Bloqueia pelo botão, pela
+  busca `Ctrl+K`, por atalho e por inatividade (5/15/30/60 min ou nunca, padrão 15; só mouse e teclado
+  contam). Cada Sessão bloqueia sozinha. Tela: relógio grande, data, saudação; no modo só visual também
+  clima e número de avisos. As Abas do Terminal não são encerradas durante o Bloqueio.
+- **K3 Chave do Terminal**: ED25519 gerada pelo BrunOS, cifrada com chave derivada da senha do BrunOS
+  (PBKDF2 → AES-GCM). A chave derivada fica só na memória enquanto a Sessão está desbloqueada (some no
+  Bloqueio com senha, no logout e no reinício; aí o Terminal pede a senha do BrunOS). Recifrada ao
+  trocar a senha; botão para apagar; linha `authorized_keys` pronta para copiar. **Conexões salvas**
+  (lista, uma principal; começa com uma); abrir o Terminal conecta direto na principal.
+- **K2 Abas**: até 4 no total; "–" minimiza (Abas seguem vivas, pontinho na dock), "×" fecha. Tempo
+  para encerrar Aba sem ninguém olhando: 3/5/10/15/20/30 min ou nunca (padrão 15). Antes de fechar
+  (pelo "×" ou pelo tempo) um `ps` num canal SSH extra confere se há algo rodando: no "×" pergunta, no
+  tempo adia. Guarda ~2.000 linhas de tela por Aba; Aba minimizada com algo rodando é conferida a cada
+  1 min e avisa no sino quando o comando termina.
+- **K1 Comandos salvos**: lista única, faixa de botões que dá para esconder e também na busca
+  `Ctrl+K`; cada um com "executar direto" (desligado por padrão).
+- **J3**: **Clima** é Tipo de integração sem credencial (Open-Meteo, cidade por nome, a cada 15 min só
+  se usado), com Métricas, ícones próprios de tempo e Modelo pronto. **Relógio** é Formato novo
+  (digital/analógico, segundos, data, fuso; sempre 24 h). **Notas** é Formato novo (texto livre ou
+  lista de tarefas, editado no widget, salvo em `/data`, aviso de mudança pelo SSE que já existe, vale
+  a última gravação, até 20 mil caracteres).
+- Depois dos testes: publicar e abrir o PR na loja sem perguntar.
 
 ### Etapa 7 (0.9.0 → 0.9.2) combinada em 08/11/2026
 

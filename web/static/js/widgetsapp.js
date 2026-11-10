@@ -2,15 +2,35 @@
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
 import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp } from './ui.js';
-import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
+import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
+const KIND_GLYPH = { weather: 'wx-partly' }; // tipos sem ícone de app: um desenho próprio
+
+// Clima: procura a cidade pelo nome (o servidor pergunta ao Open-Meteo) e mostra a lista para escolher
+let cityTimer = 0, citySeq = 0;
+function searchCity(input) {
+  clearTimeout(cityTimer);
+  const box = input.closest('label').querySelector('.wcity-list');
+  const q = input.value.trim();
+  if (q.length < 2) { box.hidden = true; return; }
+  cityTimer = setTimeout(async () => {
+    const seq = ++citySeq;
+    box.hidden = false; box.innerHTML = '<span class="hint">procurando…</span>';
+    try {
+      const list = await api.geocode(q);
+      if (seq !== citySeq || !st) return;
+      st.places = list;
+      box.innerHTML = list.length ? list.map((p, i) => `<button type="button" class="wcity-opt" data-place="${i}">${svg('home')}<b>${esc(p.name)}</b><small>${esc([p.region, p.country].filter(Boolean).join(' · '))}</small></button>`).join('') : '<span class="hint">Nenhuma cidade com esse nome.</span>';
+    } catch (e) { if (seq === citySeq) box.innerHTML = `<span class="hint">${esc(e.message)}</span>`; }
+  }, 350);
+}
 const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
 const PREVIEW = { s: [240, 148], w: [508, 148], t: [240, 322], l: [508, 322], f: [508, 148] };
 
 let st = null; // { body, ctx, view, page, draft, editId, integ }
 
-const kindIcon = (k) => (KIND_ICON[k] ? `<img src="assets/icons/${KIND_ICON[k]}.webp" alt="">` : svg('link'));
+const kindIcon = (k) => (KIND_ICON[k] ? `<img src="assets/icons/${KIND_ICON[k]}.webp" alt="">` : svg(KIND_GLYPH[k] || 'link', KIND_GLYPH[k] ? 'wx' : ''));
 const sw = (on_, attrs = '') => `<button type="button" class="switch ${on_ ? 'on' : ''}" role="switch" aria-checked="${!!on_}" ${attrs}></button>`;
 
 export function mountWidgets(body, { ctx, edit, add }) {
@@ -172,7 +192,7 @@ function drawEditor() {
       <div class="wed-sec"><span class="wed-lbl">Formato</span><div class="wed-chips">${Object.entries(FORMATS).map(([k, x]) => `<button type="button" class="wchip ${d.format === k ? 'on' : ''}" data-format="${k}" title="${esc(x.desc)}">${svg(x.icon)}${x.label}</button>`).join('')}</div><small class="hint">${esc(f.desc)}</small></div>
       <div class="wed-sec"><span class="wed-lbl">Tamanho</span><div class="wed-chips">${Object.entries(SIZES).map(([k, x]) => `<button type="button" class="wchip ${d.size === k ? 'on' : ''}" data-size="${k}"><i class="wsz-ico z-${k}"></i>${x.label}</button>`).join('')}</div></div>
       <div class="wed-sec"><label>Página<select class="text-input" data-f="page">${Array.from({ length: total + (st.editId ? 0 : 1) }, (_, i) => `<option value="${i}" ${i === st.page ? 'selected' : ''}>${i < total ? `Página ${i + 1}` : 'Página nova'}</option>`).join('')}${st.editId ? `<option value="${total}">Página nova</option>` : ''}</select></label></div>
-      ${d.format === 'shortcuts' ? foldersHTML() : `
+      ${d.format === 'clock' ? clockOptsHTML() : d.format === 'notes' ? notesOptsHTML() : d.format === 'shortcuts' ? foldersHTML() : `
       <div class="wed-sec"><span class="wed-lbl">Métricas <small>${d.slots.length}/${f.max}</small></span>
         <div class="wslots">${d.slots.map(slotHTML).join('') || '<small class="hint">Nenhuma métrica ainda.</small>'}</div>
         ${d.slots.length < f.max ? `<button type="button" class="pill-btn" data-act="add-slot">${svg('plus')}Adicionar métrica</button>` : ''}
@@ -203,6 +223,24 @@ function drawEditor() {
       <div class="wed-actions">${st.editId ? `<button class="pill-btn danger" data-act="remove">${svg('trash')}Remover</button>` : ''}<span class="f-spacer"></span><button class="pill-btn" data-act="cancel">Cancelar</button><button class="pill-btn primary" data-act="save">${svg('check')}Salvar</button></div></aside>
   </div>`;
 }
+/* Formato Relógio: digital ou de ponteiros, segundos, data e fuso (sempre 24 h) */
+function clockOptsHTML() {
+  const c = st.draft.clock;
+  return `<div class="wed-sec"><span class="wed-lbl">Relógio</span>
+    <div class="seg">${[['digital', 'Digital'], ['analog', 'Ponteiros']].map(([k, l]) => `<button type="button" class="${c.style === k ? 'on' : ''}" data-ckstyle="${k}">${l}</button>`).join('')}</div>
+    <label class="wsw">Mostrar os segundos${sw(c.seconds, 'data-f="cksec"')}</label>
+    <label class="wsw">Mostrar a data${sw(c.date !== false, 'data-f="ckdate"')}</label>
+    <label>Fuso horário<select class="text-input" data-f="cktz">${TIMEZONES.map(([z, l]) => `<option value="${esc(z)}" ${c.tz === z ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+    <small class="hint">A hora vem do próprio aparelho, sempre em 24 horas. Para ter a hora de outro lugar, crie um segundo relógio com outro fuso.</small></div>`;
+}
+/* Formato Notas: texto livre ou lista de tarefas */
+function notesOptsHTML() {
+  const n = st.draft.notes;
+  return `<div class="wed-sec"><span class="wed-lbl">Notas</span>
+    <div class="seg">${[['text', 'Texto livre'], ['list', 'Lista de tarefas']].map(([k, l]) => `<button type="button" class="${n.mode === k ? 'on' : ''}" data-nmode="${k}">${l}</button>`).join('')}</div>
+    <small class="hint">Você escreve direto no widget, na tela inicial. Salva sozinho no servidor e aparece igual nos outros aparelhos. Até 20 mil caracteres. Trocar de modo mantém o texto.</small></div>`;
+}
+
 /* Formato Atalhos: pastas escolhidas, grade ou lista, ícone, cor e espaço livre */
 function foldersHTML() {
   const d = st.draft, roots = st.ctx.roots();
@@ -294,7 +332,7 @@ async function drawIntegrations() {
     <div class="winteg-list">${list.length ? list.map((it) => {
       const v = metrics[it.id];
       const status = v?.err ? `<span class="wst bad">${svg('alert')}${esc(v.err)}</span>` : v?.at ? `<span class="wst ok">atualizado ${esc(timeAgo(v.at))}</span>` : '<span class="wst">só busca quando algum widget usa e a tela está aberta</span>';
-      return `<button class="winteg" data-integ="${esc(it.id)}"><span class="winteg-ico">${kindIcon(it.kind)}</span><span class="winteg-txt"><b>${esc(it.name)}</b><small>${esc(it.url)}</small>${status}</span><span class="chev">${svg('chevR')}</span></button>`;
+      return `<button class="winteg" data-integ="${esc(it.id)}"><span class="winteg-ico">${kindIcon(it.kind)}</span><span class="winteg-txt"><b>${esc(it.name)}</b><small>${esc(it.url || it.options?.city || '')}</small>${status}</span><span class="chev">${svg('chevR')}</span></button>`;
     }).join('') : `<div class="wapp-empty">${svg('link')}<p>Nenhuma integração ainda.</p></div>`}</div>`;
   try {
     const sugg = (await api.integrations.suggest()).filter((s) => !list.some((it) => it.kind === s.kind && it.url === s.url));
@@ -328,6 +366,12 @@ function drawIntegration() {
     return;
   }
   const field = (f) => {
+    if (f.type === 'hidden') return '';
+    if (f.type === 'city') { // Clima: procura a cidade pelo nome e guarda nome + coordenadas
+      const has = g.options?.lat && g.options?.lon;
+      return `<label>${esc(f.label)}<span class="wcity"><input class="text-input" data-city value="${esc(g.options?.city || '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off">${has ? `<small class="wcity-ok">${svg('check')}${esc((+g.options.lat).toFixed(2))}, ${esc((+g.options.lon).toFixed(2))}</small>` : ''}</span>
+        <span class="wcity-list" hidden></span>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
+    }
     if (f.id !== 'url' && f.id !== 'user' && f.id !== 'secret') { // campo extra (ex.: álbum do Immich)
       return `<label>${esc(f.label)}<input class="text-input" data-gopt="${esc(f.id)}" value="${esc(g.options?.[f.id] || '')}" placeholder="${esc(f.placeholder || '')}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     }
@@ -394,6 +438,13 @@ async function onClick(e) {
   if ((el = q('[data-integ]'))) { openIntegration(el.dataset.integ); return; }
   if ((el = q('[data-kind]'))) { st.integ.kind = el.dataset.kind; applyKindDefaults(); drawIntegration(); return; }
   if ((el = q('[data-sugg]'))) { openIntegration(null, st.sugg[+el.dataset.sugg]); return; }
+  if ((el = q('[data-place]'))) {
+    const p = st.places?.[+el.dataset.place]; if (!p) return;
+    const name = [p.name, p.region].filter(Boolean).join(', ');
+    st.integ.options = { ...(st.integ.options || {}), city: name, lat: String(p.lat), lon: String(p.lon) };
+    if (!st.integ.id && (!st.integ.name || st.integ.name === 'Clima')) st.integ.name = `Clima de ${p.name}`;
+    drawIntegration(); return;
+  }
   if ((el = q('[data-alert]'))) { const id = el.dataset.alert; const a = st.integ.alerts[id] ||= { on: false }; a.on = !a.on; el.classList.toggle('on', a.on); el.setAttribute('aria-checked', a.on); return; }
   const d = st.draft;
   if (st.view === 'edit' && d) {
@@ -405,6 +456,8 @@ async function onClick(e) {
     }
     if ((el = q('[data-fohue]'))) { const f = d.folders[+el.closest('[data-fold]').dataset.fold]; f.color = el.dataset.fohue === '' ? undefined : +el.dataset.fohue; redrawEditor(); return; }
     if ((el = q('[data-flayout]'))) { d.files.layout = el.dataset.flayout; redrawEditor(); return; }
+    if ((el = q('[data-ckstyle]'))) { d.clock.style = el.dataset.ckstyle; redrawEditor(); return; }
+    if ((el = q('[data-nmode]'))) { d.notes.mode = el.dataset.nmode; redrawEditor(); return; }
     if ((el = q('[data-format]'))) { setFormat(el.dataset.format); redrawEditor(); return; }
     if ((el = q('[data-size]'))) { d.size = el.dataset.size; $$('[data-size]', st.body).forEach((b) => b.classList.toggle('on', b === el)); redrawPreview(); return; }
     if ((el = q('[data-layout]'))) { d.layout = el.dataset.layout; redrawEditor(); return; }
@@ -428,6 +481,8 @@ async function onClick(e) {
       else if (k === 'hidelabel') d.look.hideLabel = !d.look.hideLabel;
       else if (k === 'showfree') d.files.showFree = !d.files.showFree;
       else if (k === 'mcaption') d.media.caption = d.media.caption === false;
+      else if (k === 'cksec') d.clock.seconds = !d.clock.seconds;
+      else if (k === 'ckdate') d.clock.date = d.clock.date === false;
       el.classList.toggle('on'); redrawPreview(); return;
     }
   }
@@ -456,6 +511,12 @@ function onInput(e) {
   if (!st) return;
   const t = e.target;
   if (st.view === 'integration' && st.integ) {
+    if (t.dataset.city != null && e.type === 'input') { // digitou outra cidade: precisa escolher na lista de novo
+      st.integ.options = { ...(st.integ.options || {}), city: t.value, lat: '', lon: '' };
+      t.parentElement.querySelector('.wcity-ok')?.remove();
+      st.testResult = null; searchCity(t);
+      return;
+    }
     if (t.dataset.g) { st.integ[t.dataset.g] = t.dataset.g === 'interval' ? +t.value : t.value; st.testResult = null; }
     if (t.dataset.gopt) { st.integ.options = { ...(st.integ.options || {}), [t.dataset.gopt]: t.value }; st.testResult = null; }
     if (t.dataset.alertVal) { const a = st.integ.alerts[t.dataset.alertVal] ||= { on: false }; a.value = parseFloat(t.value) || 0; }
@@ -476,6 +537,7 @@ function onInput(e) {
     else if (k === 'page') st.page = +t.value;
     else if (k === 'listmax') d.list.max = +t.value;
     else if (k === 'rotate') d.media.rotate = +t.value;
+    else if (k === 'cktz') d.clock.tz = t.value;
     else if (k === 'click') { d.click = { kind: t.value }; if (t.value === 'window') d.click.target = 'live'; if (t.value === 'app') d.click.target = st.ctx.integrations[0]?.id; if (e.type === 'change') redrawEditor(); return; }
     else if (k === 'clicktarget') d.click.target = t.value;
     else if (k === 'opacity') { d.look.opacity = +t.value; t.style.setProperty('--p', `${t.value}%`); }

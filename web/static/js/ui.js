@@ -118,6 +118,23 @@ const P = {
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
   doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   code: '<path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 5l-4 14"/>',
+  // Tempo (Clima): sol e raio em amarelo, chuva em azul, neve em azul-claro (classes wx-*)
+  'wx-sun': '<g class="wx-y"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.4 5.4l1.5 1.5M17.1 17.1l1.5 1.5M5.4 18.6l1.5-1.5M17.1 6.9l1.5-1.5"/></g>',
+  'wx-moon': '<path class="wx-m" d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.2 6.2 0 0 0 10.1 10.1z"/>',
+  'wx-partly': '<g class="wx-y"><circle cx="8.6" cy="8.6" r="3.1"/><path d="M8.6 2.6v1.3M2.6 8.6h1.3M4.4 4.4l.9.9M12.8 4.4l-.9.9M4.4 12.8l.9-.9"/></g><path d="M9.6 20.2h7.9a3.6 3.6 0 0 0 .3-7.2 4.9 4.9 0 0 0-9.3 1.4 2.9 2.9 0 0 0 1.1 5.8z"/>',
+  'wx-partly-night': '<path class="wx-m" d="M12.6 7.9A5 5 0 1 1 6.1 2.9a4 4 0 0 0 6.5 5z"/><path d="M9.6 20.2h7.9a3.6 3.6 0 0 0 .3-7.2 4.9 4.9 0 0 0-9.3 1.4 2.9 2.9 0 0 0 1.1 5.8z"/>',
+  'wx-cloud': '<path d="M7.4 18.6h9.9a4.2 4.2 0 0 0 .4-8.4 5.7 5.7 0 0 0-10.9 1.7 3.4 3.4 0 0 0 .6 6.7z"/>',
+  'wx-fog': '<path d="M7.4 13.6h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path d="M4 17h16M6.5 20.4h11"/>',
+  'wx-drizzle': '<path d="M7.4 14h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path class="wx-b" d="M8.6 17.4v.9M12.4 17.4v.9M16.2 17.4v.9M10.5 20.4v.9M14.3 20.4v.9"/>',
+  'wx-rain': '<path d="M7.4 14h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path class="wx-b" d="M9 16.8l-1 3M13 16.8l-1 3M17 16.8l-1 3"/>',
+  'wx-heavy': '<path d="M7.4 13.4h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path class="wx-b" d="M8.4 16l-1.6 5M12.2 16l-1.6 5M16 16l-1.6 5M18.6 16.4l-.9 2.8"/>',
+  'wx-storm': '<path d="M7.4 13.6h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path class="wx-y" d="M12.8 14.6l-2.6 4h3.2l-2 4"/>',
+  'wx-snow': '<path d="M7.4 13.6h9.9a3.9 3.9 0 0 0 .4-7.8 5.4 5.4 0 0 0-10.3 1.6 3.1 3.1 0 0 0 0 6.2z"/><path class="wx-s" d="M8.5 16.4v3M7.2 17.9h2.6M15.5 16.4v3M14.2 17.9h2.6M12 19.2v3M10.7 20.7h2.6"/>',
+  'wx-drop': '<path class="wx-b" d="M12 3.6s5.8 6.2 5.8 10.2a5.8 5.8 0 0 1-11.6 0C6.2 9.8 12 3.6 12 3.6z"/>',
+  'wx-wind': '<path d="M3 9h10.5a2.8 2.8 0 1 0-2.8-2.8M3 13h15a2.8 2.8 0 1 1-2.8 2.8M3 17h6.5"/>',
+  note: '<path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4M8.5 12h7M8.5 15.5h5"/>',
+  checklist: '<path d="M4 6.5l1.6 1.6L8.5 5M4 12.5l1.6 1.6 2.9-3.1M4 18.5l1.6 1.6 2.9-3.1M11.5 7h8.5M11.5 13h8.5M11.5 19h8.5"/>',
+  tab: '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9.5h18M8 5v4.5"/>',
 };
 export const svg = (name, cls = '') => `<svg class="svg ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`;
 
@@ -158,7 +175,8 @@ export function toast(title, sub = '', action, { error = false, ms } = {}) {
   $('#toast-host').append(t);
   setTimeout(kill, ms || (action ? 9000 : error ? 6000 : 4200));
 }
-export const toastError = (err, title = 'Algo deu errado') => toast(title, err?.message || String(err), null, { error: true });
+// Tela bloqueada (423): o erro é esperado, a Tela de bloqueio já está à vista
+export const toastError = (err, title = 'Algo deu errado') => { if (err?.status === 423) return; toast(title, err?.message || String(err), null, { error: true }); };
 
 /* ── Menu de contexto ──────────────────────────────────────────── */
 let menuCloser = null;

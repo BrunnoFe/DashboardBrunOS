@@ -25,7 +25,9 @@ internal/power           quedas de energia e desligamento seguro pela bateria
 internal/diskhist        uso diário dos discos e previsão de disco cheio
 internal/logins          aparelhos que já entraram (aviso de acesso novo)
 internal/hostcmd         comandos no servidor por SSH (usado pelo desligamento seguro)
-internal/terminal        terminal SSH embutido
+internal/terminal        terminal SSH embutido (abas, "ainda está rodando?")
+internal/termkey         Chave do Terminal
+internal/notes           texto dos widgets de Notas
 web/static               interface (HTML/CSS/JS puros, sem build), embutida no binário
 runtipi-app/brunos       pacote para a app store (config.json + docker-compose.json)
 tools/codemirror         receita do pacote do CodeMirror usado pelo editor (só para atualizá-lo)
@@ -96,15 +98,24 @@ Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com
 - **Ícones dos apps** em `web/static/assets/icons`: projeto [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). As marcas pertencem aos respectivos donos.
 - **Fonte Inter**: SIL Open Font License 1.1 (`web/static/assets/fonts/LICENSE-Inter.txt`).
 - **Editor de texto**: [CodeMirror 6](https://codemirror.net) (MIT), empacotado em `web/static/vendor/codemirror` pela receita de `tools/codemirror`.
+- **Clima**: dados do [Open-Meteo](https://open-meteo.com) (CC BY 4.0), consultados pelo servidor só quando há um widget de clima.
 - Inspiração visual: umbrelOS. A interface foi escrita do zero; os valores das sombras de vidro, da curva de ampliação do dock e da animação de abertura das janelas foram adaptados do `tailwind.config.ts` e do `index.css` do Umbrel.
 
 ## Terminal
 
 Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor por SSH, com o seu usuário e senha (ou chave privada). Na primeira conexão ele mostra a impressão digital da chave do servidor para você conferir com `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
 
+O terminal tem até 4 abas, botão de minimizar (as abas continuam rodando e o ícone aparece na dock), comandos salvos em botões e conexões salvas. Com a *Chave do Terminal* (no ⚙ da janela), ele entra direto no servidor sem pedir a senha do SSH: basta colar uma vez no servidor o comando que a janela mostra. Antes de fechar uma aba, o BrunOS confere se ainda tem algo rodando nela e pergunta; o tempo para fechar abas esquecidas fica em *Configurações → Sistema*.
+
 Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`). Para desligar o recurso, use `BRUNOS_TERMINAL=false`.
 
 O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `golang.org/x/crypto/ssh` (BSD), ambos distribuídos junto com o código.
+
+## Tela de bloqueio, relógio, clima e notas
+
+`Ctrl+Shift+L` (ou a busca, ou o botão direito na tela inicial) bloqueia a tela, que mostra um relógio grande sobre o papel de parede. Em *Configurações → Conta* você escolhe se ela pede a senha do BrunOS para voltar e depois de quanto tempo sem uso ela bloqueia sozinha.
+
+Na janela *Widgets* há os modelos Relógio (digital ou de ponteiros, com fuso horário), Bloco de notas e Lista de tarefas (escritos direto na tela inicial e iguais em todos os aparelhos) e, cadastrando a integração *Clima* com o nome da sua cidade, temperatura, ícone do tempo e previsão dos próximos dias.
 
 ## Energia e notificações
 

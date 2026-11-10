@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.8.0 em 08/11/2026)
+- Versão atual: veja `VERSION` (0.10.0 em 10/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -67,7 +67,10 @@ apps.go                     rotas de apps (ações, containers, logs, histórico
 internal/runtipi/           descobre apps instalados no Runtipi (config.json, app.env com lista permitida)
 internal/files/             gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca, discos
                             mapeados, editor de texto, extrair, duplicados, mapa do espaço)
-internal/terminal/          terminal SSH (x/crypto/ssh, sessões, SSE)
+internal/terminal/          terminal SSH (x/crypto/ssh, Abas, SSE, fim da tela para reabrir, "ainda está rodando?"
+                            por canal exec com ps, tempo sem ninguém olhando configurável)
+internal/termkey/           Chave do Terminal: ED25519 cifrada com chave derivada da senha do BrunOS (só na memória)
+internal/notes/             texto dos widgets de Notas (/data/notes.json) + aviso "nota mudou" pelo SSE
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
 internal/events/            central de notificações (sino), /data/events.json
 internal/hostcmd/           chave SSH própria + comando forçado no servidor (desligamento)
@@ -85,7 +88,9 @@ web/static/js/api.js        cliente da API + modo demonstração (sem backend)
 web/static/js/ui.js         utilitários, ícones SVG, menus, diálogos, toasts
 web/static/js/files.js      janela Arquivos
 web/static/js/battery.js    widget e janela da bateria
-web/static/js/terminal.js   janela Terminal (xterm.js)
+web/static/js/terminal.js   janela Terminal (xterm.js): Abas, minimizar, Conexões salvas, Comandos salvos, ⚙ da chave
+web/static/js/lockscreen.js Tela de bloqueio (com senha no servidor ou só visual) e bloqueio por inatividade
+web/static/js/notes.js      widget de Notas (texto livre ou lista de tarefas, salvo no servidor)
 web/static/js/notifications.js  sino e painel de avisos
 web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
 web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)

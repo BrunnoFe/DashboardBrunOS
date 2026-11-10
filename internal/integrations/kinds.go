@@ -98,6 +98,7 @@ type Item struct {
 	Num   *float64 `json:"n,omitempty"`
 	ID    string   `json:"id,omitempty"`
 	Img   string   `json:"img,omitempty"`
+	Icon  string   `json:"i,omitempty"` // ícone que muda com o valor (ex.: tempo do Clima)
 }
 
 // SeriesData é uma série com passo fixo; Points usa NaN para "sem dado" (vira null no JSON).
@@ -148,6 +149,7 @@ type Value struct {
 	Text   *string     `json:"t,omitempty"`
 	List   []Item      `json:"l,omitempty"`
 	Series *SeriesData `json:"s,omitempty"`
+	Icon   string      `json:"i,omitempty"` // ícone que muda com o valor (ex.: "wx-rain")
 }
 
 func N(v float64) Value {

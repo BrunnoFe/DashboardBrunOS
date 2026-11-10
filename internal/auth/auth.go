@@ -59,6 +59,11 @@ type Session struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 	IP        string    `json:"ip"`
 	UserAgent string    `json:"userAgent"`
+	// Locked: Bloqueio com senha (CONTEXT.md). Gravado em disco: recarregar a página ou reiniciar o
+	// BrunOS não desbloqueia.
+	Locked bool `json:"locked,omitempty"`
+	// ID identifica a Sessão sem revelar o token (é o SHA-256 dele, a mesma chave do sessions.json).
+	ID string `json:"-"`
 }
 
 type authFile struct {
@@ -274,7 +279,96 @@ func (m *Manager) Validate(token string) (*Session, bool) {
 		_ = m.saveSessionsLocked()
 	}
 	cp := *s
+	cp.ID = key
 	return &cp, true
+}
+
+// SessionID devolve o ID da Sessão de um token (sem conferir validade).
+func SessionID(token string) string { return hashToken(token) }
+
+// Lock bloqueia a Sessão (modo com senha): até Unlock, o servidor só aceita desbloquear ou sair.
+func (m *Manager) Lock(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	if s.Locked {
+		return nil
+	}
+	s.Locked = true
+	return m.saveSessionsLocked()
+}
+
+// IsLocked diz se a Sessão está bloqueada (sessão que não existe conta como bloqueada).
+func (m *Manager) IsLocked(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	return !ok || s.Locked
+}
+
+// SessionLocked diz se a Sessão existe E está bloqueada (para não encerrar as Abas dela).
+func (m *Manager) SessionLocked(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	return ok && s.Locked
+}
+
+// ErrSessionEnded: errou a senha do desbloqueio vezes demais; a Sessão foi encerrada.
+var ErrSessionEnded = errors.New("muitas tentativas erradas: entre de novo com usuário e senha")
+
+// Verify confere a senha do usuário com o mesmo limite de tentativas do login.
+func (m *Manager) Verify(username, password, ip string) error {
+	if m.limiter.blocked(ip) > 0 {
+		return ErrRateLimited
+	}
+	u, ok := m.User(username)
+	if !ok || !u.check(password) {
+		if lock := m.limiter.fail(ip); lock > 0 {
+			if m.OnBlock != nil {
+				m.OnBlock(ip, lock)
+			}
+			return ErrRateLimited
+		}
+		return ErrInvalidCredentials
+	}
+	m.limiter.success(ip)
+	return nil
+}
+
+// Unlock confere a senha e desbloqueia a Sessão. Se o IP ficar bloqueado por errar demais, a
+// Sessão é encerrada (quem estiver tentando adivinhar perde o acesso de vez).
+func (m *Manager) Unlock(id, password, ip string) error {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	var user string
+	if ok {
+		user = s.Username
+	}
+	m.mu.Unlock()
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	if err := m.Verify(user, password, ip); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			m.mu.Lock()
+			delete(m.sessions, id)
+			_ = m.saveSessionsLocked()
+			m.mu.Unlock()
+			return ErrSessionEnded
+		}
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sessions[id]; ok && s.Locked {
+		s.Locked = false
+		return m.saveSessionsLocked()
+	}
+	return nil
 }
 
 func (m *Manager) Logout(token string) {

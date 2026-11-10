@@ -20,7 +20,12 @@ export const FORMATS = {
   chart: { label: 'Gráfico', icon: 'activity', desc: 'Linha, barras ou rosca, com até 3 séries', max: 3, kinds: ['series', 'num'] },
   media: { label: 'Mídia', icon: 'image', desc: 'Foto ou capa de um app (Immich, Plex), com legenda', max: 1, kinds: ['media'] },
   shortcuts: { label: 'Atalhos', icon: 'folder', desc: 'Atalhos para pastas do Arquivos, em grade ou lista', max: 0, kinds: [] },
+  clock: { label: 'Relógio', icon: 'clock', desc: 'Hora digital ou de ponteiros, com data e fuso horário à escolha', max: 0, kinds: [] },
+  notes: { label: 'Notas', icon: 'note', desc: 'Texto livre ou lista de tarefas, escrito no próprio widget e salvo no servidor', max: 0, kinds: [] },
 };
+// Fusos para o Relógio ('' = o do aparelho)
+export const TIMEZONES = [['', 'Do aparelho'], ['America/Sao_Paulo', 'Brasília'], ['America/Manaus', 'Manaus'], ['America/Noronha', 'Fernando de Noronha'], ['America/Rio_Branco', 'Rio Branco'],
+  ['Europe/Lisbon', 'Lisboa'], ['Europe/London', 'Londres'], ['Europe/Paris', 'Paris'], ['America/New_York', 'Nova York'], ['America/Los_Angeles', 'Los Angeles'], ['Asia/Tokyo', 'Tóquio'], ['UTC', 'UTC']];
 export const ROTATE = [[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hora'], [360, '6 horas'], [1440, '1 por dia']];
 export const CHART_TYPES = { line: 'Linha', bar: 'Barras', donut: 'Rosca' };
 export const RANGES = { live: '5 min', '1h': '1 hora', '24h': '24 horas', '7d': '7 dias' };
@@ -149,6 +154,10 @@ function brunosModels() {
     { id: 'files', name: 'Arquivos', desc: 'Atalhos para as pastas favoritas', item: { format: 'shortcuts', title: 'Arquivos', caption: false } },
     { id: 'cpu-chart', name: 'CPU e temperatura', desc: 'Gráfico das últimas 24 horas', item: { format: 'chart', size: 'w', title: 'CPU e temperatura', slots: [S1('brunos.cpu'), S1('brunos.temp')], chart: { type: 'line', range: '24h', stats: true }, click: { kind: 'window', target: 'live' } } },
     { id: 'net-chart', name: 'Tráfego de rede', desc: 'Download e upload nas últimas 24 horas', item: { format: 'chart', size: 'w', title: 'Rede', slots: [S1('brunos.rx', { label: 'Download' }), S1('brunos.tx', { label: 'Upload' })], chart: { type: 'line', range: '24h', stats: false }, click: { kind: 'window', target: 'live' } } },
+    { id: 'clock', name: 'Relógio', desc: 'Hora grande com a data', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'digital', seconds: false, date: true, tz: '' } } },
+    { id: 'clock-analog', name: 'Relógio de ponteiros', desc: 'Relógio analógico', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'analog', seconds: true, date: false, tz: '' } } },
+    { id: 'notes', name: 'Bloco de notas', desc: 'Texto livre, salvo sozinho no servidor', item: { format: 'notes', size: 't', title: 'Notas', notes: { mode: 'text' } } },
+    { id: 'todo', name: 'Lista de tarefas', desc: 'Itens com caixinha para marcar', item: { format: 'notes', size: 't', title: 'Tarefas', notes: { mode: 'list' } } },
   ];
 }
 // Modelos de cada Tipo de integração (preenchidos com a integração escolhida)
@@ -195,6 +204,12 @@ const KIND_MODELS = {
     { id: 'chart', name: `${it.name}: 7 dias`, desc: 'Gráfico de download e upload', item: { format: 'chart', size: 'w', title: 'Velocidade da internet', slots: [S1(`${it.id}.download_series`, { label: 'Download' }), S1(`${it.id}.upload_series`, { label: 'Upload' })], chart: { type: 'line', range: '7d', stats: true } } },
     { id: 'big', name: `${it.name}: destaque`, desc: 'Download grande com o histórico', item: { format: 'stat', title: 'Download', slots: [S1(`${it.id}.download`, { spark: true }), S1(`${it.id}.last_test`, { label: '' }), S1(`${it.id}.upload`, { label: 'Upload' }), S1(`${it.id}.ping`, { label: 'Ping' })] } },
   ],
+  weather: (it) => [
+    { id: 'now', name: `${it.name}: agora`, desc: 'Temperatura, ícone do tempo, máxima, mínima e chuva', item: { format: 'stat', title: it.options?.city?.split(',')[0] || 'Clima', bar: false, slots: [S1(`${it.id}.temp`), S1(`${it.id}.cond`, { label: '' }), S1(`${it.id}.max`, { label: 'Máx.' }), S1(`${it.id}.min`, { label: 'Mín.' }), S1(`${it.id}.rain`, { label: 'Chuva' })] } },
+    { id: 'week', name: `${it.name}: próximos dias`, desc: 'Previsão com ícone, máxima e mínima de cada dia', item: { format: 'list', size: 't', title: 'Previsão', slots: [S1(`${it.id}.forecast`)], list: { max: 0, bars: false } } },
+    { id: 'wide', name: `${it.name}: semana na faixa`, desc: 'A previsão dos 7 dias lado a lado', item: { format: 'list', size: 'f', title: 'Previsão', caption: false, slots: [S1(`${it.id}.forecast`)], list: { max: 7, bars: false } } },
+    { id: 'details', name: `${it.name}: detalhes`, desc: 'Sensação, umidade, vento e chuva', item: { format: 'grid', title: 'Clima', caption: false, slots: [S1(`${it.id}.feels`, { label: 'Sensação' }), S1(`${it.id}.humidity`, { label: 'Umidade' }), S1(`${it.id}.wind`, { label: 'Vento' }), S1(`${it.id}.rain`, { label: 'Chuva' })] } },
+  ],
 };
 
 /** Modelos agrupados: [{ group, models: [{ id, name, desc, item }] }]. */
@@ -218,6 +233,8 @@ export function normalize(item) {
   it.files = { layout: 'grid', showFree: false, ...(item?.files || {}) };
   it.media = { rotate: 30, caption: true, ...(item?.media || {}) };
   it.folders = Array.isArray(item?.folders) ? item.folders.filter((f) => f && f.root).slice(0, 24) : [];
+  it.clock = { style: 'digital', seconds: false, date: true, tz: '', ...(item?.clock || {}) };
+  it.notes = { mode: 'text', ...(item?.notes || {}) };
   if (!SIZES[it.size]) it.size = 's';
   if (!FORMATS[it.format]) it.format = 'stat';
   it.slots = (it.slots || []).filter((s) => s && typeof s.metric === 'string').slice(0, FORMATS[it.format].max || 0);
@@ -258,7 +275,8 @@ function cellsOf(n, size, layout) {
   return { cols, rows, row: (w / cols) / (h / rows) > 1.9 };
 }
 
-const iconOf = (slot, def) => svg(slot.icon || def?.icon || 'info');
+// Ícone: o escolhido no Espaço, o que vem com o valor (ex.: tempo do Clima) ou o da Métrica
+const iconOf = (slot, def, val) => svg(slot.icon || val?.i || def?.icon || 'info', String(slot.icon || val?.i || def?.icon || '').startsWith('wx-') ? 'wx' : '');
 const labelOf = (slot, def) => (slot.label != null ? slot.label : (def?.name || '').replace(/^.* › /, ''));
 
 function errBadge(item, ctx) {
@@ -277,10 +295,13 @@ function statHTML(item, ctx) {
   const f = fmtVal(val, def, main);
   const max = val?.max ?? main.max ?? null;
   const maxTxt = max != null && def?.unit === 'B' && !main.unit ? ` / ${fmtBytes(max)}` : '';
-  const glyph = val?.glyph ? batteryGlyph(val.glyph, 'wf-glyph') : '';
+  const subVal = sub ? ctx.value(sub.metric) : null;
+  // ícone grande: bateria, ou o tempo do Clima (vindo do valor principal ou da linha de apoio)
+  const wx = val?.i || subVal?.i;
+  const glyph = val?.glyph ? batteryGlyph(val.glyph, 'wf-glyph') : wx ? svg(wx, 'wf-glyph wx') : '';
   let subTxt = '';
   if (sub) {
-    const sv = ctx.value(sub.metric), sd = ctx.def(sub.metric);
+    const sv = subVal, sd = ctx.def(sub.metric);
     const lbl = sub.label != null ? sub.label : labelOf(sub, sd);
     subTxt = `${fmtText(sv, sd, sub)}${lbl ? ` ${lbl}` : ''}`;
   }
@@ -302,8 +323,8 @@ function gridHTML(item, ctx) {
     const def = ctx.def(s.metric), val = ctx.value(s.metric), f = fmtVal(val, def, s);
     const sp = s.spark ? `<span class="wf-cspark">${sparkFor(s, ctx, item.size, 100, 18)}</span>` : '';
     return row
-      ? `<span class="cell wf-cell"><span class="k">${iconOf(s, def)} ${esc(labelOf(s, def))}</span>${sp}<span class="v${lv(levelOf(val, def, s))}">${esc(f.v + f.u)}</span></span>`
-      : `<span class="cell wf-cell">${iconOf(s, def)}<span class="k">${esc(labelOf(s, def))}</span><span class="v${lv(levelOf(val, def, s))}">${esc(f.v + f.u)}</span>${sp}</span>`;
+      ? `<span class="cell wf-cell"><span class="k">${iconOf(s, def, val)} ${esc(labelOf(s, def))}</span>${sp}<span class="v${lv(levelOf(val, def, s))}">${esc(f.v + f.u)}</span></span>`
+      : `<span class="cell wf-cell">${iconOf(s, def, val)}<span class="k">${esc(labelOf(s, def))}</span><span class="v${lv(levelOf(val, def, s))}">${esc(f.v + f.u)}</span>${sp}</span>`;
   }).join('')}</span>`;
 }
 
@@ -315,13 +336,24 @@ function listHTML(item, ctx) {
   if (def0?.kind === 'list') {
     const per = { s: 3, w: 3, t: 8, l: 8, f: 3 }[item.size];
     const max = item.list?.max > 0 ? Math.min(item.list.max, per) : per;
-    const items = (ctx.value(first.metric)?.l || []).slice(0, max);
+    let items = (ctx.value(first.metric)?.l || []).slice(0, max);
     const top = Math.max(1, ...items.map((x) => x.n || 0));
+    // itens com ícone próprio (previsão do Clima): lado a lado na Faixa/Largo, um por linha no resto
+    const all = ctx.value(first.metric)?.l || [];
+    if (all.some((x) => x.i)) {
+      const wide = item.size === 'f' || item.size === 'w';
+      const cap7 = { s: 3, w: 5, t: 7, l: 7, f: 7 }[item.size];
+      items = all.slice(0, item.list?.max > 0 ? Math.min(item.list.max, cap7) : cap7);
+      return `${cap}<span class="wf-list wf-wxlist ${wide ? 'days' : ''}">${items.map((x) => wide
+        ? (() => { const [temps, rain] = (x.v || '').split(' · '), [mx, mn] = (temps || '').split(' / ');
+          return `<span class="wf-day"><small>${esc(x.k)}</small>${svg(x.i || 'wx-cloud', 'wx')}<b>${esc(mx || '')}</b>${mn ? `<small class="wf-min">${esc(mn)}</small>` : ''}${rain ? `<small class="wf-rain">${esc(rain)}</small>` : ''}</span>`; })()
+        : `<span class="wf-li wf-wxrow">${svg(x.i || 'wx-cloud', 'wx')}<span class="wf-lk">${esc(x.k)}</span><span class="wf-lv">${esc(x.v || '')}</span></span>`).join('')}</span>`;
+    }
     return `${cap}<span class="wf-list ${item.size === 'f' || item.size === 'w' ? 'cols' : ''}">${items.length ? items.map((x) => x.n == null && x.v ? `<span class="wf-li stack"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><small class="wf-lsub" title="${esc(x.v)}">${esc(x.v)}</small></span>` : `<span class="wf-li"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><span class="wf-lv">${esc(x.n != null ? fmtText({ n: x.n }, { unit: first.unit ? '' : def0.unit }, first) : x.v || '')}</span>${item.list?.bars !== false && x.n != null ? `<span class="wf-lbar"><i style="width:${((x.n / top) * 100).toFixed(1)}%"></i></span>` : ''}</span>`).join('') : '<span class="w-empty">Sem itens ainda</span>'}</span>`;
   }
   return `${cap}<span class="wf-list">${item.slots.map((s) => {
     const def = ctx.def(s.metric), val = ctx.value(s.metric);
-    return `<span class="wf-li rowv"><span class="wf-lk">${iconOf(s, def)} ${esc(labelOf(s, def))}</span>${s.spark ? `<span class="wf-cspark">${sparkFor(s, ctx, item.size, 100, 18)}</span>` : ''}<span class="wf-lv${lv(levelOf(val, def, s))}">${esc(fmtText(val, def, s))}</span></span>`;
+    return `<span class="wf-li rowv"><span class="wf-lk">${iconOf(s, def, val)} ${esc(labelOf(s, def))}</span>${s.spark ? `<span class="wf-cspark">${sparkFor(s, ctx, item.size, 100, 18)}</span>` : ''}<span class="wf-lv${lv(levelOf(val, def, s))}">${esc(fmtText(val, def, s))}</span></span>`;
   }).join('')}</span>`;
 }
 
@@ -408,11 +440,53 @@ function mediaHTML(item, ctx) {
     ${cap ? `<span class="wf-pcap">${item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : ''}<b>${esc(x.k || '')}</b>${x.v ? `<small>${esc(x.v)}</small>` : ''}</span>` : ''}`;
 }
 
-const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, media: mediaHTML, shortcuts: shortcutsHTML };
+// Relógio: a hora vem do navegador (nada do servidor). Com segundos, a tela inicial redesenha a cada 1 s.
+function clockNow(tz) {
+  const d = new Date(), o = tz ? { timeZone: tz } : {};
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('pt-BR', { ...o, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(d).map((x) => [x.type, x.value]));
+    return { h: +p.hour, m: +p.minute, s: +p.second, hh: p.hour, mm: p.minute, ss: p.second,
+      date: d.toLocaleDateString('pt-BR', { ...o, weekday: 'long', day: 'numeric', month: 'long' }),
+      short: d.toLocaleDateString('pt-BR', { ...o, weekday: 'short', day: 'numeric', month: 'short' }) };
+  } catch { return clockNow(''); } // fuso inválido: usa o do aparelho
+}
+export const clockTicks = (it) => it.format === 'clock' && it.clock?.seconds;
+function clockHTML(item) {
+  const c = item.clock || {}, t = clockNow(c.tz);
+  const tzName = c.tz ? (TIMEZONES.find(([z]) => z === c.tz)?.[1] || c.tz.split('/').pop().replace(/_/g, ' ')) : '';
+  const cap = item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : '';
+  // ponteiros no Pequeno/Largo: data curta ao lado ("ter., 10 de nov.")
+  const short = c.style === 'analog' && (item.size === 's' || item.size === 'w');
+  const date = c.date !== false ? `<span class="wf-cdate">${esc(short ? t.short : t.date)}</span>` : '';
+  const tz = tzName ? `<span class="wf-ctz">${svg('globe')}${esc(tzName)}</span>` : '';
+  if (c.style === 'analog') {
+    const hand = (deg, len, w, cls) => `<line class="${cls}" x1="50" y1="50" x2="50" y2="${50 - len}" stroke-width="${w}" transform="rotate(${deg.toFixed(2)} 50 50)"/>`;
+    const ticks = Array.from({ length: 12 }, (_, i) => `<line x1="50" y1="${i % 3 ? 9 : 7.5}" x2="50" y2="${i % 3 ? 12.5 : 15}" transform="rotate(${i * 30} 50 50)"/>`).join('');
+    return `${cap}<span class="wf-clock analog wsz-${item.size}"><svg viewBox="0 0 100 100" aria-label="${t.hh}:${t.mm}"><circle class="face" cx="50" cy="50" r="46"/><g class="ticks">${ticks}</g>
+      ${hand((t.h % 12) * 30 + t.m * 0.5, 24, 5, 'hh')}${hand(t.m * 6 + t.s * 0.1, 34, 3.4, 'mh')}${c.seconds ? hand(t.s * 6, 37, 1.4, 'sh') : ''}<circle class="pin" cx="50" cy="50" r="3.2"/></svg>
+      ${date || tz ? `<span class="wf-cinfo">${date}${tz}</span>` : ''}</span>`;
+  }
+  return `${cap}<span class="wf-clock digital wsz-${item.size}"><b>${t.hh}<i>:</i>${t.mm}${c.seconds ? `<small>${t.ss}</small>` : ''}</b>${date}${tz}</span>`;
+}
 
-/** HTML de dentro do widget (o que muda quando chegam valores novos). */
-export function innerHTML(item, ctx) {
-  return (RENDER[item.format] || statHTML)(item, ctx) + errBadge(item, ctx);
+// Notas: o texto é montado e editado pela tela inicial (notes.js); aqui só o lugar, que não muda
+// (redesenhar apagaria o que está sendo digitado). Na prévia do editor, um exemplo.
+function notesHTML(item, ctx, id) {
+  const mode = item.notes?.mode === 'list' ? 'list' : 'text';
+  const cap = item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : '';
+  if (!id) {
+    return `${cap}<span class="wf-notes preview ${mode}">${mode === 'list'
+      ? ['Trocar o filtro da ventoinha', 'Atualizar o Immich', 'Backup dos HDs'].map((x, i) => `<span class="wn-item ${i === 0 ? 'done' : ''}"><i class="wn-box">${i === 0 ? svg('check') : ''}</i><span>${x}</span></span>`).join('')
+      : '<span class="wn-text">Senha do Wi-Fi das visitas na geladeira.\nLigar para o provedor na segunda.</span>'}</span>`;
+  }
+  return `${cap}<span class="wf-notes ${mode}" data-note="${esc(id)}" data-mode="${mode}"></span>`;
+}
+
+const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, media: mediaHTML, shortcuts: shortcutsHTML, clock: clockHTML, notes: notesHTML };
+
+/** HTML de dentro do widget (o que muda quando chegam valores novos). id: o do widget (Notas). */
+export function innerHTML(item, ctx, id = '') {
+  return (RENDER[item.format] || statHTML)(item, ctx, id) + errBadge(item, ctx);
 }
 
 /** Estilo de aparência própria (só quando não segue o tema). */
@@ -436,11 +510,14 @@ export function spanStyle(size, cols = 6) {
  * Arrastável sempre que tiver id (como os ícones); a alça de tamanho e o "−" só no modo Organizar.
  */
 export function widgetHTML(item, ctx, { id = '', i = 0, editing = false, cols = 6 } = {}) {
-  const tag = item.format === 'shortcuts' ? 'div' : 'button';
+  // Atalhos e Notas não são botão (as pastas e o texto são); Notas só arrasta no modo Organizar,
+  // senão selecionar o texto com o mouse arrastaria o widget
+  const tag = item.format === 'shortcuts' || item.format === 'notes' ? 'div' : 'button';
+  const drag = id && (item.format !== 'notes' || editing);
   const own = item.look?.follow === false;
   const hideLabel = own && item.look?.hideLabel;
-  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" style="--i:${i};${spanStyle(item.size, cols)}" ${id ? 'draggable="true"' : ''}>
-    <${tag} class="widget wf wfm-${item.format} ${own ? 'w-own' : ''} ${own && item.look?.hue != null ? 'w-hue' : ''}" style="${lookStyle(item)}" ${tag === 'button' ? `type="button" aria-label="${esc(item.title || FORMATS[item.format].label)}"` : ''}>${innerHTML(item, ctx)}</${tag}>
+  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" style="--i:${i};${spanStyle(item.size, cols)}" ${drag ? 'draggable="true"' : ''}>
+    <${tag} class="widget wf wfm-${item.format} ${own ? 'w-own' : ''} ${own && item.look?.hue != null ? 'w-hue' : ''}" style="${lookStyle(item)}" ${tag === 'button' ? `type="button" aria-label="${esc(item.title || FORMATS[item.format].label)}"` : ''}>${innerHTML(item, ctx, id)}</${tag}>
     <div class="widget-label ${hideLabel ? 'is-hidden' : ''}">${esc(item.title || '')}</div>
     ${editing ? `<button class="w-remove" data-wremove="${esc(id)}" aria-label="Remover widget">${svg('minus')}</button><span class="w-resize" data-wresize="${esc(id)}" title="Arraste para mudar o tamanho" aria-hidden="true"></span>` : ''}
   </div>`;
@@ -454,7 +531,7 @@ export function sizeFor(c, r) {
 
 /** Para onde o clique vai quando o Bruno deixou "automático". */
 export function autoClick(item) {
-  if (item.format === 'shortcuts') return { kind: 'none' };
+  if (item.format === 'shortcuts' || item.format === 'notes' || item.format === 'clock') return { kind: 'none' };
   const m = item.slots[0]?.metric || '';
   if (m.startsWith('brunos.')) {
     if (m.startsWith('brunos.battery')) return { kind: 'window', target: 'battery' };

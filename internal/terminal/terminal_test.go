@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,11 @@ func testServer(t *testing.T, hostKey ssh.Signer) (host string, port int) {
 	t.Helper()
 	cfg := &ssh.ServerConfig{PasswordCallback: func(c ssh.ConnMetadata, pw []byte) (*ssh.Permissions, error) {
 		if c.User() == "teste" && string(pw) == "segredo" {
+			return nil, nil
+		}
+		return nil, errors.New("negado")
+	}, PublicKeyCallback: func(c ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
+		if c.User() == "teste" && authorizedKey != nil && string(k.Marshal()) == string(authorizedKey.Marshal()) {
 			return nil, nil
 		}
 		return nil, errors.New("negado")
@@ -160,7 +166,7 @@ func TestTerminalTOFUAndIO(t *testing.T) {
 	if strings.Contains(string(raw), "segredo") {
 		t.Fatal("a senha não pode ir para o disco")
 	}
-	gen, detach := s.Attach()
+	gen, _, detach := s.Attach(false)
 	readUntil(t, s, gen, "bem-vindo")
 	if err := s.Write("ls -la\r"); err != nil {
 		t.Fatal(err)
@@ -171,10 +177,13 @@ func TestTerminalTOFUAndIO(t *testing.T) {
 	}
 	readUntil(t, s, gen, "size=120x40")
 
-	// 5. um segundo leitor substitui o primeiro
-	gen2, detach2 := s.Attach()
+	// 5. um segundo leitor substitui o primeiro; com replay recebe o fim da tela
+	gen2, hist, detach2 := s.Attach(true)
 	if _, _, _, stale := s.Next(gen); !stale {
 		t.Fatal("o leitor antigo deveria ficar obsoleto")
+	}
+	if !strings.Contains(string(hist), "bem-vindo") || !strings.Contains(string(hist), "size=120x40") {
+		t.Fatalf("replay deveria trazer a tela até agora: %q", hist)
 	}
 	detach()
 
@@ -250,6 +259,153 @@ func TestTerminalHostKeyChanged(t *testing.T) {
 		t.Fatalf("depois de esquecer, deveria aceitar a nova chave confirmada: %v", err)
 	}
 	m.Close(s2.ID)
+}
+
+// authorizedKey é a chave pública que o servidor de teste aceita (Chave do Terminal).
+var authorizedKey ssh.PublicKey
+
+func TestTerminalWithKey(t *testing.T) {
+	host, port := testServer(t, newKey(t))
+	tk := newKey(t)
+	authorizedKey = tk.PublicKey()
+	t.Cleanup(func() { authorizedKey = nil })
+	m := NewManager(filepath.Join(t.TempDir(), "known_hosts.json"))
+	// confirma o servidor com senha e depois entra só com a chave
+	_, err := m.Open(OpenRequest{Host: host, Port: port, User: "teste", Signer: tk})
+	var unk *UnknownHostError
+	if !errors.As(err, &unk) {
+		t.Fatalf("esperava pedir confirmação: %v", err)
+	}
+	s, err := m.Open(OpenRequest{Host: host, Port: port, User: "teste", Signer: tk, Trust: unk.Fingerprint, Owner: "sessaoA"})
+	if err != nil {
+		t.Fatalf("a Chave do Terminal deveria entrar: %v", err)
+	}
+	if _, err := m.Open(OpenRequest{Host: host, Port: port, User: "teste", Signer: newKey(t)}); !errors.Is(err, ErrAuth) {
+		t.Fatalf("outra chave deveria ser recusada: %v", err)
+	}
+	s2, _ := m.Open(OpenRequest{Host: host, Port: port, User: "teste", Signer: tk, Owner: "sessaoB"})
+	m.CloseOwner("sessaoA")
+	if _, err := m.Get(s.ID); !errors.Is(err, ErrNoSession) {
+		t.Fatal("CloseOwner deveria fechar as Abas daquela Sessão")
+	}
+	if _, err := m.Get(s2.ID); err != nil {
+		t.Fatal("as Abas de outra Sessão continuam")
+	}
+	m.CloseAll()
+}
+
+func TestParseBusy(t *testing.T) {
+	for _, c := range []struct {
+		out   string
+		known bool
+		names string
+	}{
+		{"", false, ""},               // ps falhou
+		{"OK\n", false, ""},           // não achou o shell
+		{"OK\nS 120 120\n", true, ""}, // só o prompt
+		{"OK\nS 120 455\nF apt\nF dpkg\nF apt\n", true, "apt,dpkg"}, // comando rodando
+		{"OK\nS 120 120\nB rsync\n", true, "rsync"},                 // segundo plano (comando &)
+		{"OK\nS 120 300\nF sudo\nF -bash\n", true, ""},              // sudo -i parado no prompt
+	} {
+		b := parseBusy(c.out)
+		if b.Known != c.known || strings.Join(b.Names, ",") != c.names {
+			t.Errorf("%q: veio %+v", c.out, b)
+		}
+	}
+}
+
+// Sem ninguém olhando: com algo rodando não fecha; quando termina avisa e, com o tempo esgotado, fecha.
+// Sessão do BrunOS bloqueada: não fecha.
+func TestTerminalIdleAndBusy(t *testing.T) {
+	key := newKey(t)
+	host, port := testServer(t, key)
+	m := NewManager(filepath.Join(t.TempDir(), "known_hosts.json"))
+	close(m.stop) // as varreduras deste teste são chamadas à mão
+	running := []string{"apt"}
+	var mu = make(chan struct{}, 1)
+	mu <- struct{}{}
+	m.busyFn = func(*Session) Busy {
+		<-mu
+		defer func() { mu <- struct{}{} }()
+		return Busy{Known: true, Names: running}
+	}
+	var doneNames []string
+	doneCh := make(chan struct{}, 4)
+	m.OnDone = func(addr, user string, tab int, names []string) { doneNames = names; doneCh <- struct{}{} }
+	var paused atomic.Bool
+	m.Paused = func(string) bool { return paused.Load() }
+	m.IdleTimeout = func() time.Duration { return time.Minute }
+
+	s, err := m.Open(OpenRequest{Host: host, Port: port, User: "teste", Password: "segredo", Trust: ssh.FingerprintSHA256(key.PublicKey())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, detach := s.Attach(false)
+	detach() // "minimizou"
+	waitCheck := func() {
+		t.Helper()
+		for range 200 {
+			s.mu.Lock()
+			c := s.checking
+			s.mu.Unlock()
+			if !c {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatal("a conferência não terminou")
+	}
+	base := time.Now()
+	// 1. passou o tempo de "recarregar a página": confere e descobre o apt
+	m.sweep(base.Add(detachGrace + time.Second))
+	waitCheck()
+	if l := m.List(); len(l) != 1 || strings.Join(l[0].Running, ",") != "apt" {
+		t.Fatalf("deveria saber que o apt roda: %+v", l)
+	}
+	// 2. tempo esgotado, mas o apt roda: não fecha
+	s.mu.Lock()
+	s.lastSeen, s.lastCheck = base.Add(-2*time.Minute), base.Add(-2*time.Minute)
+	s.mu.Unlock()
+	m.sweep(base)
+	waitCheck()
+	if _, err := m.Get(s.ID); err != nil {
+		t.Fatal("com algo rodando a Aba não pode fechar")
+	}
+	// 3. Sessão bloqueada e o apt terminou: avisa, mas não fecha
+	paused.Store(true)
+	<-mu
+	running = nil
+	mu <- struct{}{}
+	s.mu.Lock()
+	s.lastCheck = base.Add(-2 * time.Minute)
+	s.mu.Unlock()
+	m.sweep(base)
+	waitCheck()
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("deveria avisar que o apt terminou")
+	}
+	if strings.Join(doneNames, ",") != "apt" {
+		t.Fatalf("aviso com %v", doneNames)
+	}
+	if _, err := m.Get(s.ID); err != nil {
+		t.Fatal("Sessão bloqueada: a Aba não fecha")
+	}
+	// 4. desbloqueou: tempo esgotado e nada rodando → fecha
+	paused.Store(false)
+	s.mu.Lock()
+	s.lastCheck = base.Add(-2 * time.Minute)
+	s.mu.Unlock()
+	m.sweep(base)
+	waitCheck()
+	for range 100 {
+		if _, err := m.Get(s.ID); err != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("deveria fechar por inatividade")
 }
 
 func TestTerminalValidation(t *testing.T) {

@@ -75,3 +75,40 @@ _Evite_: conexão, app conectado, conta
 Alerta para o sino que um Tipo de integração oferece, que o Bruno liga, desliga e ajusta (ex.:
 "aparelho novo na rede").
 _Evite_: regra, alerta personalizado, gatilho
+
+## Acesso
+
+**Sessão**:
+Um login do Bruno em um aparelho (navegador); todas as abas desse navegador compartilham a mesma
+Sessão.
+_Evite_: login, conexão, token
+
+**Bloqueio**:
+Estado de uma Sessão em que o painel fica coberto pela Tela de bloqueio; vale só para aquela Sessão.
+Pode ser só visual (qualquer toque desbloqueia) ou com senha (nada funciona até digitar a senha).
+_Evite_: logout, suspensão, descanso de tela
+
+**Tela de bloqueio**:
+A tela com relógio grande sobre o papel de parede mostrada durante o Bloqueio.
+_Evite_: lock screen, protetor de tela
+
+## Terminal
+
+**Chave do Terminal**:
+Chave SSH criada pelo próprio BrunOS só para o Terminal, guardada trancada pela senha do BrunOS; o
+Bruno autoriza essa chave em cada computador onde quer entrar. Diferente da chave usada no
+desligamento seguro, que só pode rodar um comando.
+_Evite_: minha chave, chave SSH (sozinha), chave do servidor
+
+**Conexão salva**:
+Um computador e usuário guardados para o Terminal entrar direto com a Chave do Terminal ("Servidor
+(bruno)"); uma delas é a principal.
+_Evite_: host, destino, perfil, favorito
+
+**Aba**:
+Uma sessão SSH aberta dentro da janela Terminal; várias Abas podem estar abertas ao mesmo tempo.
+_Evite_: sessão (sozinha, que é a Sessão do BrunOS), janela
+
+**Comando salvo**:
+Um botão do Terminal com um texto de comando que o Bruno guardou para não precisar digitar.
+_Evite_: snippet, atalho, macro

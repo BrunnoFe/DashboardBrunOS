@@ -193,5 +193,30 @@ Pedidos (com prints):
   espaço livre e banco de dados; aviso de pouco espaço.
 - Vaultwarden adiado a pedido do Bruno (decisão 38).
 
+## 0.10.0 (10/11/2026): Tela de bloqueio, relógio, clima, notas e Terminal com abas (etapa 8)
+Combinado numa sessão de perguntas (termos novos em `CONTEXT.md`, decisões 39–41):
+- **Tela de bloqueio**: relógio grande, data e saudação; com senha (padrão, o servidor recusa tudo com
+  423 até a senha; vale por Sessão; errar 5 vezes encerra a Sessão) ou só visual (mostra clima e avisos).
+  Ctrl+Shift+L, busca, botão direito e inatividade (padrão 15 min).
+- **Clima** (Open-Meteo, sem chave): cidade por nome, Métricas, ícones próprios coloridos (o ícone vem
+  com o valor: `Value.Icon`), Modelos "agora", "próximos dias", "semana na faixa" e "detalhes".
+- **Relógio** (Formato): digital ou ponteiros, segundos, data, fuso; **Notas** (Formato): texto livre ou
+  lista de tarefas, escritas na tela inicial, sincronizadas entre aparelhos pelo SSE.
+- **Terminal**: até 4 Abas, minimizar (ícone na dock com pontinho), fim da tela guardado para reabrir,
+  Comandos salvos, Conexões salvas, Chave do Terminal (cifrada pela senha do BrunOS), "ainda está
+  rodando?" antes de fechar e no fim do tempo sem uso (configurável), aviso no sino quando um comando
+  termina numa Aba minimizada.
+- Testes: unitários novos (auth, termkey, notes, weather, terminal com chave/idle/ps), apitest 174 ok,
+  interface contra o servidor real (bloqueio que sobrevive ao recarregar, nota em dois navegadores).
+
+Problemas encontrados no caminho:
+- O login montado por trás da Tela de bloqueio (ao recarregar bloqueado) roubava o foco do campo da
+  senha → não monta mais nesse caso e fica escondido.
+- Aviso "nota mudou" chegando durante a primeira busca era descartado → busca de novo ao terminar; ao
+  (re)conectar o SSE as notas abertas são relidas.
+- A imagem OpenSSH do teste de fumaça é Alpine (ps do busybox, sem `tpgid`): a conferência responde
+  "não sei", que é o comportamento combinado; no Ubuntu do Bruno o procps responde de verdade
+  (conferido com uma simulação da árvore de processos do sshd).
+
 ## Próximas
 Veja `roadmap.md`.

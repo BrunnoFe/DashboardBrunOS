@@ -174,6 +174,22 @@ assert "brunos-42" in text and "teste" in text, f"comando não rodou no shell re
 print("✓ terminal: comando rodou no servidor pelo SSH (saída chegou pelo stream)")
 code, _ = req("POST", "/api/terminal/resize", {"id": sid, "cols": 140, "rows": 40})
 assert code == 204, f"resize falhou: {code}"
+# "ainda está rodando?" (0.10.0): ps por um canal SSH extra na mesma conexão
+req("POST", "/api/terminal/input", {"id": sid, "data": "sleep 30\r"})
+time.sleep(1.5)
+code, b = req("POST", "/api/terminal/busy", {"id": sid})
+assert code == 200 and "known" in b, f"conferência falhou: {code} {b}"
+if b["known"]:
+    assert "sleep" in b["names"], f"deveria ver o sleep rodando: {b}"
+    req("POST", "/api/terminal/input", {"id": sid, "data": "\x03"})
+    time.sleep(1)
+    code, b = req("POST", "/api/terminal/busy", {"id": sid})
+    assert code == 200 and b["known"] and b["names"] == [], f"depois do Ctrl+C não deveria ter nada rodando: {b}"
+    print("✓ terminal: vê o sleep rodando e, depois do Ctrl+C, nada")
+else:
+    # imagem de teste com o ps do busybox (sem tpgid): a resposta certa é "não sei"
+    req("POST", "/api/terminal/input", {"id": sid, "data": "\x03"})
+    print("✓ terminal: sem o ps completo no servidor, a conferência responde \"não sei\" (pergunta antes de fechar)")
 req("POST", "/api/terminal/input", {"id": sid, "data": "exit\r"})
 for _ in range(50):
     if "<<EXIT>>" in "".join(out): break

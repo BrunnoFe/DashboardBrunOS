@@ -74,6 +74,16 @@ func (h *Hub) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.Hand
 	mux.HandleFunc("POST /api/integrations/test", wrap(h.hTest))
 	mux.HandleFunc("GET /api/integrations/{id}/image", wrap(h.hImage))
 	mux.HandleFunc("GET /api/metrics/series", wrap(h.hSeries))
+	mux.HandleFunc("GET /api/integrations/geocode", wrap(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		list, err := Geocode(ctx, h.Client, r.URL.Query().Get("q"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, list)
+	}))
 }
 
 const (

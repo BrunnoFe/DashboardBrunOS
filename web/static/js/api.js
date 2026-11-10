@@ -12,6 +12,7 @@ async function call(method, path, body, { raw = false } = {}) {
   }
   const res = await fetch(path, opts);
   if (res.status === 401 && !path.startsWith('/api/auth/login')) emit('unauthorized');
+  if (res.status === 423) emit('locked'); // Bloqueio com senha feito em outra aba deste navegador
   if (raw) return res;
   let data = null;
   const ct = res.headers.get('content-type') || '';
@@ -92,6 +93,15 @@ const real = {
   me: () => call('GET', '/api/auth/me'),
   updateMe: (b) => call('PUT', '/api/auth/me', b),
   password: (b) => call('POST', '/api/auth/password', b),
+  lockState: () => call('GET', '/api/auth/lock'),
+  lock: () => call('POST', '/api/auth/lock', {}),
+  unlock: (password) => call('POST', '/api/auth/unlock', { password }),
+  notes: {
+    get: (id) => call('GET', `/api/notes/${encodeURIComponent(id)}`),
+    put: (id, text) => call('PUT', `/api/notes/${encodeURIComponent(id)}`, { text }),
+    del: (id) => call('DELETE', `/api/notes/${encodeURIComponent(id)}`),
+  },
+  geocode: (name) => call('GET', `/api/integrations/geocode?${q({ q: name })}`),
   settings: () => call('GET', '/api/settings'),
   saveSettings: (s) => call('PUT', '/api/settings', s),
   wallpapers: () => call('GET', '/api/wallpapers'),
@@ -107,13 +117,16 @@ const real = {
   stats: () => call('GET', '/api/stats'),
   // estatísticas ao vivo; os avisos novos da central (event: notify) e os valores das integrações
   // (event: metrics) chegam pela mesma conexão
-  streamStats(onInit, onPoint, onNotify, onMetrics) {
+  streamStats(onInit, onPoint, onNotify, onMetrics, { onNote, onLocked } = {}) {
     let es, stopped = false, retry;
     const open = () => {
       es = new EventSource('/api/stats/stream');
       es.addEventListener('init', (e) => onInit(JSON.parse(e.data)));
       es.addEventListener('notify', (e) => onNotify?.(JSON.parse(e.data)));
       es.addEventListener('metrics', (e) => onMetrics?.(JSON.parse(e.data)));
+      es.addEventListener('note', (e) => onNote?.(JSON.parse(e.data)));
+      // bloqueou com a conexão aberta: o servidor encerra; não reconecta até desbloquear
+      es.addEventListener('locked', () => { stopped = true; es.close(); onLocked?.(); });
       es.onmessage = (e) => onPoint(JSON.parse(e.data));
       es.onerror = () => { es.close(); if (!stopped) retry = setTimeout(open, 4000); };
     };
@@ -157,15 +170,26 @@ const real = {
     resize: (id, cols, rows) => call('POST', '/api/terminal/resize', { id, cols, rows }),
     close: (id) => call('POST', '/api/terminal/close', { id }),
     forget: (host, port) => call('POST', '/api/terminal/forget', { host, port }),
-    // saída do terminal por Server-Sent Events (base64); reconecta sozinho se a rede piscar
-    stream(id, { onData, onExit, onReplaced, onError }) {
-      let es, stopped = false, fails = 0;
+    list: () => call('GET', '/api/terminal/sessions'),
+    busy: (id) => call('POST', '/api/terminal/busy', { id }),
+    key: {
+      get: () => call('GET', '/api/terminal/key'),
+      create: (password) => call('POST', '/api/terminal/key', { password }),
+      unlock: (password) => call('POST', '/api/terminal/key/unlock', { password }),
+      del: () => call('DELETE', '/api/terminal/key'),
+    },
+    // saída do terminal por Server-Sent Events (base64); reconecta sozinho se a rede piscar.
+    // replay: na primeira conexão, pede o fim da tela (Aba reaberta depois de minimizar).
+    stream(id, { onData, onExit, onReplaced, onError, onLocked, replay = false }) {
+      let es, stopped = false, fails = 0, first = true;
       const open = () => {
-        es = new EventSource(`/api/terminal/stream?id=${encodeURIComponent(id)}`);
+        es = new EventSource(`/api/terminal/stream?${q({ id, ...(first && replay ? { replay: 1 } : {}) })}`);
+        first = false;
         es.addEventListener('ready', () => { fails = 0; });
         es.onmessage = (e) => { const bin = atob(e.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); onData(u8); };
         es.addEventListener('exit', (e) => { stopped = true; es.close(); onExit(JSON.parse(e.data).message); });
         es.addEventListener('replaced', () => { stopped = true; es.close(); onReplaced?.(); });
+        es.addEventListener('locked', () => { stopped = true; es.close(); onLocked?.(); });
         es.onerror = () => { es.close(); if (stopped) return; if (++fails > 5) { stopped = true; onError?.(); } else setTimeout(open, 1500); };
       };
       open();
@@ -471,7 +495,21 @@ function makeDemo() {
     folders_list: { l: [dev('Fotos do celular', 'em dia'), dev('Documentos', 'em dia'), dev('Música', 'sincronizando · falta 2,5 GB'), dev('Backups', 'em dia')] },
     devices_list: { l: [dev('Celular do Bruno', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
   const ncValues = () => ({ users: { n: 4 }, active_5m: { n: 1 }, active_24h: { n: 3 }, files: { n: 120345 }, shares: { n: 17 }, free: { n: 1.5e11 }, free_gb: { n: 150 }, db_size: { n: 5.4e8 }, version: { t: '30.0.2' } });
-  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues, transmission: trValues, syncthing: syValues, nextcloud: ncValues }[it.kind] || (() => ({})))();
+  // 0.10.0: Clima (Open-Meteo)
+  demoKinds.push({ id: 'weather', name: 'Clima', desc: 'Tempo agora e previsão dos próximos dias (Open-Meteo, sem chave)', interval: 900, noUrl: true,
+    note: 'Os dados vêm do Open-Meteo, um serviço gratuito. Ele recebe só as coordenadas da cidade.',
+    fields: [{ id: 'city', label: 'Cidade', type: 'city', placeholder: 'Digite o nome da cidade', required: true, help: 'Escreva o nome e escolha na lista' }, { id: 'lat', label: 'Latitude', type: 'hidden' }, { id: 'lon', label: 'Longitude', type: 'hidden' }],
+    metrics: [M('temp', 'Temperatura agora', 'num', { unit: '°C', icon: 'temp' }), M('feels', 'Sensação térmica', 'num', { unit: '°C', icon: 'temp' }), M('cond', 'Condição', 'text', { icon: 'wx-partly' }), M('max', 'Máxima de hoje', 'num', { unit: '°C', icon: 'arrowUp' }), M('min', 'Mínima de hoje', 'num', { unit: '°C', icon: 'arrowDown' }), M('rain', 'Chance de chuva hoje', 'num', { unit: '%', icon: 'wx-rain' }), M('humidity', 'Umidade', 'num', { unit: '%', icon: 'wx-drop' }), M('wind', 'Vento', 'num', { unit: 'km/h', icon: 'wx-wind' }), M('forecast', 'Previsão (7 dias)', 'list', { icon: 'wx-partly' }), M('city', 'Cidade', 'text', { icon: 'home' })],
+    alerts: [{ id: 'hot', name: 'Calor forte', desc: 'Avisa quando a temperatura passar disto', metric: 'temp', op: '>', default: 35, unit: '°C', level: 'info' }, { id: 'rain', name: 'Chuva provável hoje', desc: 'Avisa quando a chance de chuva hoje passar disto', metric: 'rain', op: '>', default: 70, unit: '%', level: 'info' }] });
+  demoInteg.push({ id: 'wx1', kind: 'weather', name: 'Clima', url: '', hasSecret: false, interval: 900, alerts: {}, options: { city: 'Belo Horizonte, Minas Gerais', lat: '-19.92', lon: '-43.94' } });
+  const WD = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const wxValues = () => {
+    const night = new Date().getHours() < 6 || new Date().getHours() >= 18;
+    const days = [['wx-partly', 29, 18, 10], ['wx-rain', 25, 17, 80], ['wx-storm', 24, 18, 90], ['wx-cloud', 26, 17, 30], ['wx-sun', 30, 16, 0], ['wx-sun', 31, 17, 0], ['wx-drizzle', 27, 18, 40]];
+    return { temp: { n: 26.4 }, feels: { n: 27.9 }, cond: { t: 'Parcialmente nublado', i: night ? 'wx-partly-night' : 'wx-partly' }, max: { n: 29 }, min: { n: 18 }, rain: { n: 10 }, humidity: { n: 61 }, wind: { n: 12 }, city: { t: 'Belo Horizonte' },
+      forecast: { l: days.map(([i, mx, mn, p], d) => ({ k: d ? WD[(new Date().getDay() + d) % 7] : 'Hoje', v: `${mx}° / ${mn}°${p >= 30 ? ` · ${p}%` : ''}`, i })) } };
+  };
+  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues, transmission: trValues, syncthing: syValues, nextcloud: ncValues, weather: wxValues }[it.kind] || (() => ({})))();
   const demoViews = () => demoInteg.map((it) => ({ id: it.id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }));
   const nodeAt = (root, path) => {
     let n = tree[root];
@@ -492,6 +530,22 @@ function makeDemo() {
     me: () => logged ? wait({ username: 'bruno', displayName: settings.displayName || 'Bruno' }) : Promise.reject(new Error('faça login')),
     updateMe: (b) => { settings.displayName = b.displayName; return wait({ ok: true }); },
     password: () => wait({ ok: true }),
+    lockState: () => wait({ locked: false }),
+    lock: () => wait({ locked: true }),
+    unlock: (pw) => pw ? wait({ locked: false }, 300) : Promise.reject(Object.assign(new Error('senha incorreta'), { status: 403 })),
+    notes: (() => {
+      const k = 'brunos.demo.notes';
+      const all = () => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
+      const put = (m) => { try { localStorage.setItem(k, JSON.stringify(m)); } catch { /* sem storage */ } };
+      const seed = { text: '[x] Trocar o filtro da ventoinha\n[ ] Atualizar o Immich\n[ ] Backup dos HDs no domingo', at: 0 };
+      return {
+        get: (id) => wait(all()[id] || (id.startsWith('demo') ? seed : { text: '', at: 0 }), 40),
+        put: (id, text) => { const m = all(); m[id] = { text, at: Date.now() }; put(m); return wait(m[id], 60); },
+        del: (id) => { const m = all(); delete m[id]; put(m); return wait({ ok: true }); },
+      };
+    })(),
+    geocode: (q) => wait([['Belo Horizonte', 'Minas Gerais', -19.92, -43.94], ['São Paulo', 'São Paulo', -23.55, -46.63], ['Rio de Janeiro', 'Rio de Janeiro', -22.91, -43.17], ['Florianópolis', 'Santa Catarina', -27.6, -48.55], ['Lisboa', 'Lisboa', 38.72, -9.14]]
+      .filter(([n]) => n.toLowerCase().includes(q.toLowerCase().slice(0, 3))).map(([name, region, lat, lon]) => ({ name, region, country: name === 'Lisboa' ? 'Portugal' : 'Brasil', lat, lon })), 200),
     settings: () => wait(settings, 30),
     saveSettings: (v) => { settings = v; try { localStorage.setItem(LS, JSON.stringify(v)); } catch { /* sem storage */ } return wait({ ok: true }, 10); },
     wallpapers: () => wait([]),
@@ -563,7 +617,7 @@ function makeDemo() {
         return wait(it, 200);
       },
       del: (id) => { demoInteg = demoInteg.filter((x) => x.id !== id); return wait({ ok: true }, 120); },
-      test: (b) => (/^https?:\/\//.test(b.url || '') || (b.kind || demoInteg.find((x) => x.id === b.id)?.kind) === 'tailscale' ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
+      test: (b) => (/^https?:\/\//.test(b.url || '') || demoKinds.find((k) => k.id === (b.kind || demoInteg.find((x) => x.id === b.id)?.kind))?.noUrl ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
         : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
     },
     statsHistory: (range) => {
@@ -621,21 +675,54 @@ function makeDemo() {
       };
     })(),
     term: (() => {
-      const enc = new TextEncoder(); let out = null, line = '';
+      // várias Abas: cada sessão guarda a tela (para reabrir depois de minimizar) e a linha digitada
+      const enc = new TextEncoder(), tabs = new Map();
+      let trusted = false, keyInfo = { exists: false, unlocked: false }, n = 0;
       const prompt = '\x1b[1;32mptbruno@homeio\x1b[0m:\x1b[1;34m~\x1b[0m$ ';
+      const write = (t, s) => { t.hist += s; t.out?.(enc.encode(s)); };
+      const fp = 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM';
       return {
-        open: (b) => b.trust ? wait({ id: 'demo', addr: `${b.host}:${b.port || 22}`, user: b.user }, 500)
-          : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
+        open: (b) => {
+          if (b.useKey && !keyInfo.exists) return Promise.reject(Object.assign(new Error('a Chave do Terminal ainda não foi criada'), { status: 400, data: { noKey: true } }));
+          if (b.useKey && !keyInfo.unlocked) return Promise.reject(Object.assign(new Error('digite a senha do BrunOS para usar a Chave do Terminal'), { status: 403, data: { keyLocked: true } }));
+          if (!b.trust && !trusted) return Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: fp } }));
+          if (tabs.size >= 4) return Promise.reject(Object.assign(new Error('muitas sessões abertas; feche alguma antes'), { status: 429 }));
+          trusted = true;
+          const id = `demo${++n}`;
+          tabs.set(id, { id, addr: `${b.host}:${b.port || 22}`, user: b.user, created: Date.now(), hist: '', line: '', out: null, running: '' });
+          return wait({ id, addr: `${b.host}:${b.port || 22}`, user: b.user }, 400);
+        },
+        list: () => wait([...tabs.values()].map((t) => ({ id: t.id, addr: t.addr, user: t.user, created: t.created, running: t.running ? [t.running] : undefined }))),
+        busy: (id) => wait({ known: true, names: tabs.get(id)?.running ? [tabs.get(id).running] : [] }, 150),
+        key: {
+          get: () => wait(keyInfo.exists ? { ...keyInfo, publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoChaveDoTerminalQueNaoServeParaNada brunos-terminal', fingerprint: 'SHA256:demoTerminalKey', createdAt: new Date().toISOString() } : keyInfo),
+          create: (pw) => { if (!pw) return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta'), { status: 403 })); keyInfo = { exists: true, unlocked: true }; return api.term.key.get(); },
+          unlock: (pw) => { if (!pw) return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta'), { status: 403 })); keyInfo.unlocked = true; return api.term.key.get(); },
+          del: () => { keyInfo = { exists: false, unlocked: false }; return wait({ ok: true }); },
+        },
         input: (id, d) => {
+          const t = tabs.get(id); if (!t) return Promise.reject(Object.assign(new Error('sessão de terminal não encontrada'), { status: 404 }));
           for (const ch of d) {
-            if (ch === '\r') { const cmd = line.trim(); line = ''; out?.(enc.encode('\r\n' + (cmd === 'uptime' ? ' 17:42:10 up 2 days, 16:03,  1 user,  load average: 0,31, 0,28, 0,25\r\n' : cmd ? `demonstração: "${cmd}" não roda aqui\r\n` : '') + prompt)); }
-            else if (ch === '\x7f') { if (line) { line = line.slice(0, -1); out?.(enc.encode('\b \b')); } }
-            else { line += ch; out?.(enc.encode(ch)); }
+            if (ch === '\r') {
+              const cmd = t.line.trim(); t.line = '';
+              if (/^(sleep|apt|tail)\b/.test(cmd)) { t.running = cmd.split(' ')[0]; write(t, '\r\n'); setTimeout(() => { if (t.running) { t.running = ''; write(t, prompt); } }, 20000); continue; }
+              write(t, '\r\n' + (cmd === 'uptime' ? ' 17:42:10 up 2 days, 16:03,  1 user,  load average: 0,31, 0,28, 0,25\r\n' : cmd === 'docker ps' ? 'CONTAINER ID   IMAGE                         STATUS       NAMES\r\n3f2a1b9c8d7e   ghcr.io/brunnofe/brunos:0.10.0   Up 2 hours   brunos-1\r\n' : cmd ? `demonstração: "${cmd}" não roda aqui\r\n` : '') + prompt);
+            } else if (ch === '\x03') { if (t.running) { t.running = ''; write(t, '^C\r\n' + prompt); } }
+            else if (ch === '\x7f') { if (t.line) { t.line = t.line.slice(0, -1); write(t, '\b \b'); } }
+            else if (!t.running) { t.line += ch; write(t, ch); }
           }
           return wait(null, 5);
         },
-        resize: () => wait(null, 5), close: () => wait(null, 5), forget: () => wait(null, 5),
-        stream(id, h) { out = h.onData; setTimeout(() => out?.(enc.encode('Welcome to Ubuntu 26.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt)), 300); return () => { out = null; }; },
+        resize: () => wait(null, 5),
+        close: (id) => { tabs.delete(id); return wait(null, 5); },
+        forget: () => { trusted = false; return wait(null, 5); },
+        stream(id, h) {
+          const t = tabs.get(id); if (!t) { setTimeout(() => h.onExit('sessão encerrada'), 10); return () => {}; }
+          if (h.replay && t.hist) setTimeout(() => h.onData(enc.encode(t.hist)), 50);
+          t.out = h.onData;
+          if (!t.hist) setTimeout(() => write(t, 'Welcome to Ubuntu 26.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt), 300);
+          return () => { if (t.out === h.onData) t.out = null; };
+        },
       };
     })(),
     logoUrl: () => '',

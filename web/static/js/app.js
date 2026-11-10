@@ -6,6 +6,8 @@ import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNo
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML, driveTempHelp } from './disks.js';
 import { internetDialog } from './internet.js';
+import { initLock, lockNow, showLock, hideLock, isScreenLocked } from './lockscreen.js';
+import { mountNotes, noteFocus, restoreNoteFocus, noteChanged, deleteNote, refreshNotes } from './notes.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -18,6 +20,8 @@ const DEFAULTS = {
   wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
   widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
+  // 0.10.0: Bloqueio (J1) e Terminal (K1–K3)
+  lockMode: 'senha', lockIdleMin: 15, termIdleMin: 15, termConnections: [], termSnippets: [], termSnippetBar: true,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
 function runtipiBase() {
@@ -30,9 +34,12 @@ function runtipiAuto() {
   const port = S.tipi.port && S.tipi.port !== 80 ? `:${S.tipi.port}` : '';
   return `http://${host}${port}`;
 }
-function openTerminal() {
-  import('./terminal.js').then((m) => m.terminalWindow({ settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, defaultHost: S.tipi.internalIp || location.hostname }))
-    .catch((e) => toastError(e, 'Não deu para abrir o terminal'));
+let termMod = null; // carregado na primeira vez que o Terminal abre (a busca usa os Comandos salvos dele)
+function openTerminal(opts = {}) {
+  import('./terminal.js').then((m) => {
+    termMod = m;
+    m.terminalWindow({ settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, saveNow, defaultHost: S.tipi.internalIp || location.hostname, onTabs: () => renderDock(), ...opts });
+  }).catch((e) => toastError(e, 'Não deu para abrir o terminal'));
 }
 const openPower = () => powerDialog({ openTerminal: S.terminal === false ? null : openTerminal });
 function openBattery() {
@@ -271,7 +278,10 @@ function putWidget(id, item, page, beforeId) {
   const at = beforeId ? list.indexOf(beforeId) : -1;
   list.splice(at < 0 ? list.length : at, 0, id);
 }
-function deleteWidget(id) { removeFromAreas(id); delete W2().items[id]; save(); renderApps(); }
+function deleteWidget(id) {
+  if (W2().items[id]?.format === 'notes') deleteNote(id); // o texto da nota sai do servidor junto
+  removeFromAreas(id); delete W2().items[id]; save(); renderApps();
+}
 
 // Definições das Métricas: fonte BrunOS + cada Integração (nomes "Integração › Métrica")
 let defsCache = null;
@@ -458,10 +468,20 @@ function paintWidgets(root = document) {
   const ctx = widgetCtx();
   for (const wrap of wraps) {
     const it = widgetById(wrap.dataset.wid); if (!it) continue;
-    const box = wrap.firstElementChild, h = innerHTML(it, ctx);
+    const box = wrap.firstElementChild, h = innerHTML(it, ctx, wrap.dataset.wid);
     if (box._h !== h) { box.innerHTML = h; box._h = h; }
   }
+  mountNotes(root);
 }
+// Relógios: redesenha a cada segundo só os widgets de Relógio (o HTML só muda quando a hora muda)
+setInterval(() => {
+  if (document.hidden || document.body.classList.contains('is-locked')) return;
+  for (const wrap of $$('.widget-wrap[data-wid]')) {
+    const it = widgetById(wrap.dataset.wid); if (it?.format !== 'clock') continue;
+    const box = wrap.firstElementChild, h = innerHTML(it, null, wrap.dataset.wid);
+    if (box._h !== h) { box.innerHTML = h; box._h = h; }
+  }
+}, 1000);
 // widgets com métricas de internet: o servidor mede a cada minuto; aqui só busca o resultado
 const usesInternet = () => Object.values(W2().items).some((it) => (it.slots || []).some((s) => s.metric?.startsWith('brunos.net_')));
 async function refreshInternet(force = false) {
@@ -579,7 +599,13 @@ function bindStats(root = document) {
 }
 
 /* ── Grade de apps ─────────────────────────────────────────────── */
+// Redesenhar a tela inicial não pode tirar o cursor de uma Nota que está sendo escrita
 function renderApps() {
+  const f = noteFocus();
+  drawHome();
+  restoreNoteFocus(f);
+}
+function drawHome() {
   const grid = $('#app-grid');
   const appW = Math.min(Math.round(set().iconSize * 1.8), Math.floor((innerWidth - 40) / 4));
   document.documentElement.style.setProperty('--app-w', appW + 'px');
@@ -930,12 +956,15 @@ const SYS = {
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
   widgets: { label: 'Widgets', glyph: 'grid', tile: 'linear-gradient(160deg,#ffd36e 0%,#ff9f43 50%,#f0643c 100%)', run: (el) => openSheet('widgets', el) },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
+  // só aparece enquanto há Abas do Terminal abertas (minimizadas ou não), com o pontinho
+  terminal: { label: 'Terminal', glyph: 'terminal', tile: 'linear-gradient(160deg,#454c5e 0%,#191c24 100%)', run: () => openTerminal() },
 };
 const DOCK = { base: 50, zoom: 80, range: 150 };
 let dockMouseX = null, dockRaf = 0, tipFor = null;
 function renderDock() {
   const box = $('.dock-items');
-  const sysHTML = Object.entries(SYS).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(it.label)}">
+  const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0;
+  const sysHTML = Object.entries(SYS).filter(([k]) => k !== 'terminal' || (S.terminal !== false && tabs > 0)).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : it.label)}">
     <button style="--tile:${it.tile}" aria-label="${esc(it.label)}">${it.icon ? `<img src="assets/icons/${it.icon}.webp" alt="">` : svg(it.glyph, 'glyph')}</button><span class="open-dot"></span></div>`).join('');
   const pins = set().dock.map(appById).filter(Boolean);
   const pinHTML = pins.map((a) => {
@@ -997,7 +1026,7 @@ function positionTip() {
     appMenu(appById(item.dataset.app), e.clientX, e.clientY);
   });
 })();
-const markDockOpen = () => $$('.dock-item').forEach((el) => el.classList.toggle('open', !!el.dataset.sys && el.dataset.sys === currentSheet));
+const markDockOpen = () => $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.sys === 'terminal' || (!!el.dataset.sys && el.dataset.sys === currentSheet)));
 
 /* ── Sheets ────────────────────────────────────────────────────── */
 let currentSheet = null, sheetCleanup = null;
@@ -1123,12 +1152,16 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'sort', title: 'Ordem dos apps', desc: 'Arraste os ícones na tela inicial para reordenar', ctrl: st.order.length ? `<button class="pill-btn" data-act="reset-order">Ordem alfabética</button>` : '' },
     { group: 'Conta', cat: 'account', icon: 'user', title: 'Nome de exibição', desc: 'Usado na saudação e na tela de login', ctrl: `<input class="text-input" data-input="displayName" value="${esc(displayName())}" aria-label="Nome de exibição">` },
     { group: 'Conta', cat: 'account', icon: 'key', title: 'Trocar senha', desc: `Usuário: ${esc(S.me?.username || '—')}. Ao trocar, as outras sessões abertas são encerradas`, ctrl: `<button class="pill-btn" data-act="password">Trocar</button>` },
+    { group: 'Conta', cat: 'account', icon: 'lock', title: 'Tela de bloqueio', desc: st.lockMode === 'visual' ? 'Só visual: cobre a tela com o relógio; qualquer clique ou tecla volta (não protege nada)' : 'Com senha: até digitar a senha, nada funciona neste aparelho, nem Arquivos nem Terminal. Atalho: Ctrl+Shift+L',
+      ctrl: `<div class="seg">${[['senha', 'Com senha'], ['visual', 'Só visual']].map(([k, l]) => `<button class="${(st.lockMode || 'senha') === k ? 'on' : ''}" data-lockmode="${k}">${l}</button>`).join('')}</div><button class="pill-btn" data-act="lock-now">${svg('lock')}Bloquear agora</button>` },
+    { group: 'Conta', cat: 'account', icon: 'clock', title: 'Bloquear sozinho', desc: 'Depois de quanto tempo sem mexer o mouse nem digitar', ctrl: `<select class="text-input sm" data-select="lockIdleMin" aria-label="Bloquear sozinho">${[[5, '5 minutos'], [15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [0, 'Nunca']].map(([v, l]) => `<option value="${v}" ${(st.lockIdleMin ?? 15) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` },
     { group: 'Conta', cat: 'account', icon: 'logout', title: 'Sair', desc: 'Encerra esta sessão neste navegador', ctrl: `<button class="pill-btn" data-act="logout">Sair</button>` },
     { group: 'Sistema', cat: 'system', icon: 'power', title: 'Energia e desligamento seguro', desc: S.snapshot?.battery ? 'Desliga o servidor com segurança quando a bateria acabar e registra as quedas de energia' : 'Registra as quedas de energia e desliga o servidor com segurança (precisa de bateria)', ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'power' },
     { group: 'Sistema', cat: 'system', icon: 'info', title: 'Informações do dispositivo', desc: `${esc(info.os || 'Linux')} · ${esc(info.cpuModel || '')}`, ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'device' },
     { group: 'Sistema', cat: 'system', icon: 'box', title: 'Runtipi', desc: S.tipi.found ? `${S.apps.length} apps instalados · domínio local ${esc(S.tipi.localDomain || '—')}` : 'Pasta do Runtipi não encontrada (monte em /runtipi)', ctrl: `<button class="pill-btn" data-act="open-runtipi">Abrir ${svg('external')}</button>` },
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
-    { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Abre um terminal no servidor por SSH, com o seu usuário e senha (nada fica guardado)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Terminal no servidor por SSH, com abas, comandos salvos e a Chave do Terminal (trancada pela sua senha do BrunOS)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
+    ...(S.terminal === false ? [] : [{ group: 'Sistema', cat: 'system', icon: 'clock', title: 'Encerrar aba do Terminal sem ninguém olhando', desc: 'Aba minimizada ou janela fechada. Se algo ainda estiver rodando nela (ex.: apt), ela espera o comando terminar', ctrl: `<select class="text-input sm" data-select="termIdleMin" aria-label="Encerrar aba sem uso">${[[3, '3 minutos'], [5, '5 minutos'], [10, '10 minutos'], [15, '15 minutos'], [20, '20 minutos'], [30, '30 minutos'], [0, 'Nunca']].map(([v, l]) => `<option value="${v}" ${(st.termIdleMin ?? 15) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` }]),
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
@@ -1222,6 +1255,7 @@ function wireSettings(body) {
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
+    else if ((el = q('[data-lockmode]'))) { st.lockMode = el.dataset.lockmode; save(); redraw(); }
     else if ((el = q('[data-act]'))) {
       const a = el.dataset.act;
       if (a === 'live') liveUsageDialog();
@@ -1233,6 +1267,7 @@ function wireSettings(body) {
       else if (a === 'add-link') linkDialog();
       else if (a === 'open-runtipi') SYS.runtipi.run();
       else if (a === 'terminal') openTerminal();
+      else if (a === 'lock-now') { closeSheet(); setTimeout(lockNow, 200); }
       else if (a === 'map-disks') import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); }));
       else if (a === 'unhide') { for (const k of Object.keys(st.apps)) if (st.apps[k].hidden) st.apps[k].hidden = false; save(); renderApps(); redraw(); }
       else if (a === 'reset-order') { st.order = []; save(); renderApps(); redraw(); }
@@ -1257,6 +1292,8 @@ function wireSettings(body) {
       t.style.setProperty('--p', ((t.value - t.min) / (t.max - t.min)) * 100 + '%');
       t.nextElementSibling.textContent = t.value + (t.dataset.unit || '');
       applyPrefs();
+    } else if (t.matches('[data-select]')) {
+      set()[t.dataset.select] = +t.value; save(); // termIdleMin é lido pelo servidor (settings.json)
     } else if (t.matches('[data-hue-range]')) {
       set().manualHue = +t.value; t.style.setProperty('--p', t.value / 3.59 + '%'); save(); applyBrand();
     } else if (t.matches('[data-input="runtipiUrl"]')) { set().runtipiUrl = t.value.trim(); save(); }
@@ -1531,8 +1568,11 @@ function commandPalette() {
     { icon: 'sparkles', label: 'Cor de destaque: vibrante', run: () => { set().accentMode = 'vibrant'; save(); applyBrand(); } },
     { icon: 'box', label: 'Abrir o Runtipi', run: () => SYS.runtipi.run() },
     { icon: 'terminal', label: 'Abrir o terminal (SSH)', hidden: S.terminal === false, run: () => openTerminal() },
+    // Comandos salvos: digitam na Aba atual do Terminal (só com a janela aberta)
+    ...(termMod?.paletteActions?.() || []),
+    { icon: 'lock', label: 'Bloquear a tela', run: () => lockNow() },
     { icon: 'logout', label: 'Sair', run: () => logout() },
-  ];
+  ].filter((a) => !a.hidden);
   const d = openDialog(`<div class="cmdk-input">${svg('search')}<input placeholder="Pesquisar apps, ações e arquivos…" aria-label="Pesquisar"></div><div class="cmdk-list"></div>`, { cls: 'cmdk', wrapCls: 'cmdk-wrap', closeBtn: false });
   const input = $('input', d.el), list = $('.cmdk-list', d.el);
   let idx = 0, flat = [];
@@ -1635,14 +1675,40 @@ async function logout() {
   lock();
 }
 function lock() {
+  hideLock(true);
   dialogs.slice().forEach((c) => c());
   closeSheet(); closeMenu(); closePanel(); paintBanner(null);
   if (wEditing) { wEditing = false; document.body.classList.remove('w-editing'); $('#w-done')?.remove(); }
   S.stopStream?.(); S.stopStream = null;
+  S.desktopReady = false;
   document.body.classList.add('is-locked');
   renderLogin('login');
 }
-on('unauthorized', () => { if (!document.body.classList.contains('is-locked')) { lock(); toast('Sua sessão expirou', 'Entre de novo para continuar.'); } });
+on('unauthorized', () => { if (!document.body.classList.contains('is-locked') || isScreenLocked()) { lock(); toast('Sua sessão expirou', 'Entre de novo para continuar.'); } });
+
+// Tela de bloqueio (J1): o que ela precisa saber do resto da interface
+function weatherNow() {
+  const it = (S.integrations || []).find((x) => x.kind === 'weather'), v = it && S.metrics[it.id]?.values;
+  if (!v?.temp) return null;
+  return { temp: `${fmt(v.temp.n, 0)}°`, icon: v.cond?.i, text: v.cond?.t || '' };
+}
+initLock({
+  settings: () => set(),
+  greeting: () => greeting(),
+  extra: () => ({ weather: weatherNow(), unread: +($('#bell .bell-badge:not([hidden])')?.textContent || 0) }),
+  active: () => !!S.desktopReady && !document.body.classList.contains('is-locked'),
+  onLocked: (mode) => {
+    closeMenu();
+    // com senha o servidor para de mandar dados: fecha a conexão ao vivo até desbloquear
+    if (mode === 'senha') { S.stopStream?.(); S.stopStream = null; }
+  },
+  onUnlocked: async (mode) => {
+    if (mode !== 'senha') return;
+    if (!S.desktopReady) { try { await enterDesktop(true); } catch (e) { toastError(e); } return; }
+    startStream(); loadApps(); emit('unlocked');
+  },
+  onEnded: (msg) => { lock(); toast('Sessão encerrada', msg || 'Entre de novo com usuário e senha.'); },
+});
 
 async function loadApps() {
   try {
@@ -1650,6 +1716,23 @@ async function loadApps() {
     S.apps = r.apps; S.tipi = r.runtipi || {}; S.docker = r.docker; S.dockerActions = r.dockerActions;
     renderApps(); renderDock();
   } catch (e) { if (!/login|sessão/.test(e.message)) toastError(e, 'Não foi possível carregar os apps'); }
+}
+// Conexão ao vivo: estatísticas, avisos, valores das integrações e notas mudadas, tudo numa só
+function startStream() {
+  S.stopStream?.();
+  S.stopStream = api.streamStats(
+    // init chega ao conectar e a cada reconexão: relê avisos e a contagem para não perder nada
+    (d) => {
+      S.snapshot = d.snapshot; S.history = d.history || [];
+      for (const v of d.metrics || []) S.metrics[v.id] = v;
+      bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner(); refreshNotes();
+    },
+    (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); paintWidgets(); emit('stats'); },
+    (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
+    // valores novos de uma integração (o servidor só manda quando busca)
+    (m) => { if (m.removed) delete S.metrics[m.id]; else S.metrics[m.id] = m; paintWidgets(); emit('metrics'); },
+    { onNote: noteChanged, onLocked: () => showLock('senha') },
+  );
 }
 async function enterDesktop(animate) {
   const [me, settings, system, roots, wallpapers] = await Promise.all([
@@ -1667,19 +1750,9 @@ async function enterDesktop(animate) {
   renderDock();
   await loadApps();
   refreshInternet();
-  S.stopStream?.();
-  S.stopStream = api.streamStats(
-    // init chega ao conectar e a cada reconexão: relê avisos e a contagem para não perder nada
-    (d) => {
-      S.snapshot = d.snapshot; S.history = d.history || [];
-      for (const v of d.metrics || []) S.metrics[v.id] = v;
-      bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner();
-    },
-    (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); paintWidgets(); emit('stats'); },
-    (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
-    // valores novos de uma integração (o servidor só manda quando busca)
-    (m) => { if (m.removed) delete S.metrics[m.id]; else S.metrics[m.id] = m; paintWidgets(); emit('metrics'); },
-  );
+  startStream();
+  S.desktopReady = true;
+  if (S.terminal) api.term.list().then((l) => { S.termTabs = l.length; renderDock(); }).catch(() => {}); // Abas que ficaram abertas
   // estado dos apps (bolinhas) atualizado a cada minuto, junto com o monitor do servidor
   clearInterval(S.appsTimer);
   S.appsTimer = setInterval(() => { if (!document.body.classList.contains('is-locked') && !document.hidden) { loadApps(); refreshInternet(); } }, 60000);
@@ -1704,7 +1777,9 @@ function applyPrefs() {
 
 /* ── Eventos globais ───────────────────────────────────────────── */
 document.addEventListener('keydown', (e) => {
-  if (document.body.classList.contains('is-locked')) return;
+  if (document.body.classList.contains('is-locked') || isScreenLocked()) return;
+  // Ctrl+Shift+L bloqueia a tela (vale até dentro do terminal)
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); lockNow(); return; }
   if (e.target.closest?.('.xterm')) return; // dentro do terminal, Esc e Ctrl+K são do shell
   if (e.key === 'Escape' && e.target.closest?.('.cm-editor')) return; // no editor, Esc fecha a busca dele
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); commandPalette(); }
@@ -1828,6 +1903,7 @@ $('#desktop').addEventListener('contextmenu', (e) => {
     { icon: 'link', label: 'Novo atalho…', run: () => linkDialog() },
     { icon: 'refresh', label: 'Atualizar apps', run: () => loadApps() },
     '-',
+    { icon: 'lock', label: 'Bloquear a tela', kbd: 'Ctrl+Shift+L', run: () => lockNow() },
     { icon: 'logout', label: 'Sair', run: () => logout() },
   ]);
 });
@@ -1855,5 +1931,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !d
   setWallpaper(set().wallpaper, { instant: true, pub: true });
   if (S.pub.setupRequired) { renderLogin('setup'); return; }
   try { await enterDesktop(false); }
-  catch { renderLogin('login'); }
+  catch (e) {
+    // Sessão bloqueada no servidor (recarregou a página com a tela bloqueada): pede só a senha
+    // (sem montar o login por trás: ele puxaria o foco do campo da senha)
+    if (e.status === 423) { showLock('senha'); return; }
+    renderLogin('login');
+  }
 })();
