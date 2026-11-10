@@ -183,6 +183,7 @@ s,b,_=req('PUT','/api/notes/w1',{'text':'a'*20001}); check('notas: mais de 20 mi
 s,b,_=req('PUT','/api/notes/..%2Fx',{'text':'a'}); check('notas: id inválido → 400/404', s in (400,404), (s,b))
 s,b,_=req('DELETE','/api/notes/w1'); s2,b2,_=req('GET','/api/notes/w1'); check('notas: apagar', s==200 and json.loads(b2)['text']=='', b2)
 check('integrações: Clima existe e não pede endereço', 'weather' in ks)
+s,b,_=req('GET','/api/integrations/kinds'); kl=json.loads(b); check('integrações: todo Tipo manda fields/alerts/metrics como lista (Tailscale sem campos)', all(isinstance(k.get(f),list) for k in kl for f in ('fields','alerts','metrics')), [k['id'] for k in kl if not isinstance(k.get('fields'),list)])
 s,b,_=req('POST','/api/integrations',{'kind':'weather','url':'http://ignorado','options':{'city':'Belo Horizonte, Minas Gerais','lat':'-19.92','lon':'-43.94','inventado':'x'}}); wx=json.loads(b); check('integrações: Clima guarda cidade e coordenadas', s==200 and wx.get('url')=='' and wx.get('options')=={'city':'Belo Horizonte, Minas Gerais','lat':'-19.92','lon':'-43.94'} and wx.get('interval')==900, b)
 s,b,_=req('POST','/api/integrations/test',{'kind':'weather','options':{'city':'X'}}); check('integrações: Clima sem escolher a cidade na lista → erro amigável', s==502 and 'escolha a cidade' in json.loads(b)['error'], b)
 s,b,_=req('GET','/api/integrations/geocode?q=a'); check('integrações: procurar cidade com 1 letra → lista vazia', s==200 and json.loads(b)==[], b)

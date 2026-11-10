@@ -198,6 +198,10 @@ assert "<<EXIT>>" in "".join(out), "a sessão não terminou depois do exit"
 code, lst = req("GET", "/api/terminal/sessions")
 assert lst == [], f"sessão deveria sair da lista: {lst}"
 print("✓ terminal: exit encerra a sessão")
+# HTTPS para fora a partir da imagem real (certificados das autoridades na imagem scratch)
+code, places = req("GET", "/api/integrations/geocode?q=Belo%20Horizonte")
+assert code == 200 and any(p.get("name") == "Belo Horizonte" for p in places), f"procurar cidade falhou (HTTPS/certificados?): {code} {places}"
+print("✓ clima: acha a cidade pelo Open-Meteo (HTTPS de dentro do container)")
 EOF
 perm=$(stat -c '%a' "$FIX/data/known_hosts.json")
 [ "$perm" = "600" ] || { echo "known_hosts.json deveria ter permissão 600 (tem $perm)"; exit 1; }

@@ -2,11 +2,31 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// Listas vazias precisam ir como [] (a tela percorre fields/alerts/metrics; null quebrava o Tailscale).
+func TestKindsNoNullLists(t *testing.T) {
+	b, err := json.Marshal(Kinds())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list []map[string]json.RawMessage
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range list {
+		for _, f := range []string{"fields", "alerts", "metrics"} {
+			if v := string(k[f]); v == "" || v == "null" {
+				t.Errorf("%s: %s veio %q (precisa ser lista)", k["id"], f, v)
+			}
+		}
+	}
+}
 
 func TestWeather(t *testing.T) {
 	var gotQuery string

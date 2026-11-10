@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.10.0 em 10/11/2026)
+- Versão atual: veja `VERSION` (0.10.1 em 10/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 

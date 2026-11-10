@@ -218,5 +218,16 @@ Problemas encontrados no caminho:
   depois do Ctrl+C, nada. Sem o `ps` completo (ex.: só busybox), a resposta é "não sei" e a janela
   pergunta antes de fechar.
 
+## 0.10.1 (10/11/2026): correções do Clima e do Tailscale (prints do Bruno)
+- **Clima não achava a cidade** ("não consegui procurar a cidade (o servidor está sem internet?)"): a
+  imagem `scratch` não tinha os certificados das autoridades, então todo HTTPS para fora falhava com
+  `x509: certificate signed by unknown authority` (reproduzido no WSL sem certificados). A imagem agora
+  leva `/etc/ssl/certs/ca-certificates.crt` (~220 KB); o teste de fumaça procura uma cidade de dentro
+  do container. O motivo real de falhas de conexão das integrações passou a ir para o log.
+- **"Buscar a cada" mostrava 10 segundos** no Clima: faltava a opção de 15 minutos na lista.
+- **Tailscale: clicar não fazia nada** (desde a 0.9.2): o Tipo sem campos ia como `"fields": null` e a
+  tela quebrava ao percorrer a lista. Listas vazias agora vão como `[]` (teste Go e da API) e a tela
+  tolera lista ausente.
+
 ## Próximas
 Veja `roadmap.md`.

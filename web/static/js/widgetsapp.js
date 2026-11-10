@@ -25,7 +25,7 @@ function searchCity(input) {
     } catch (e) { if (seq === citySeq) box.innerHTML = `<span class="hint">${esc(e.message)}</span>`; }
   }, 350);
 }
-const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
+const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
 const PREVIEW = { s: [240, 148], w: [508, 148], t: [240, 322], l: [508, 322], f: [508, 148] };
 
 let st = null; // { body, ctx, view, page, draft, editId, integ }
@@ -355,7 +355,7 @@ function applyKindDefaults() {
   const k = st.ctx.kinds.find((x) => x.id === st.integ.kind); if (!k) return;
   st.integ.interval ||= k.interval;
   st.integ.name ||= k.name;
-  for (const a of k.alerts) st.integ.alerts[a.id] ||= { on: false, value: a.default };
+  for (const a of k.alerts || []) st.integ.alerts[a.id] ||= { on: false, value: a.default };
 }
 function drawIntegration() {
   const g = st.integ, kinds = st.ctx.kinds, k = kinds.find((x) => x.id === g.kind);
@@ -378,18 +378,18 @@ function drawIntegration() {
     if (f.id === 'secret') return `<label>${esc(f.label)}${f.required ? '' : ' <small>(opcional)</small>'}<input class="text-input" type="password" autocomplete="new-password" data-g="secret" value="${esc(g.secret)}" placeholder="${g.hasSecret ? '•••••••• guardado (deixe vazio para manter)' : ''}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     return `<label>${esc(f.label)}<input class="text-input" data-g="${f.id}" value="${esc(g[f.id] || '')}" placeholder="${esc(f.placeholder || '')}" ${f.id === 'url' ? 'inputmode="url"' : ''}>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
   };
-  const defs = new Map(k.metrics.map((m) => [m.id, m]));
+  const defs = new Map((k.metrics || []).map((m) => [m.id, m]));
   const tr = st.testResult;
   main().innerHTML = `<div class="wapp-head"><span class="winteg-ico big">${kindIcon(k.id)}</span><div><h3>${g.id ? esc(g.name) : `Nova integração: ${esc(k.name)}`}</h3><p>${esc(k.desc)}</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
     <form class="form-grid winteg-form" onsubmit="return false">
-      <label>Nome<input class="text-input" data-g="name" value="${esc(g.name)}" maxlength="60"><small class="hint">Aparece nas métricas, ex.: “${esc(g.name || k.name)} › ${esc(k.metrics[0]?.name || '')}”.</small></label>
+      <label>Nome<input class="text-input" data-g="name" value="${esc(g.name)}" maxlength="60"><small class="hint">Aparece nas métricas, ex.: “${esc(g.name || k.name)} › ${esc(k.metrics?.[0]?.name || '')}”.</small></label>
       ${k.note ? `<div class="wapp-note">${svg('info')}<span>${esc(k.note)}</span></div>` : ''}
       ${k.id === 'tailscale' ? `<div class="wts-cmds"><button type="button" class="pill-btn" data-act="ts-cmds">${svg('terminal')}Mostrar os comandos de atualização</button><pre class="pw-cmds" hidden tabindex="0"></pre></div>` : ''}
-      ${k.fields.map(field).join('')}
+      ${(k.fields || []).map(field).join('')}
       <label>Buscar a cada<select class="text-input" data-g="interval">${INTERVALS.map(([s, l]) => `<option value="${s}" ${g.interval === s ? 'selected' : ''}>${l}${s === k.interval ? ' (recomendado)' : ''}</option>`).join('')}</select>
         <small class="hint">Só enquanto alguém está com o BrunOS aberto e algum widget usa esta integração. Avisos ligados fazem uma busca a cada 5 minutos mesmo com a tela fechada.</small></label>
       <div class="wed-lbl">Avisos no sino</div>
-      <div class="walerts">${k.alerts.map((a) => { const s = g.alerts[a.id] || { on: false, value: a.default }; return `<div class="walert"><span class="walert-txt"><b>${esc(a.name)}</b><small>${esc(a.desc || '')}</small></span>
+      <div class="walerts">${(k.alerts || []).map((a) => { const s = g.alerts[a.id] || { on: false, value: a.default }; return `<div class="walert"><span class="walert-txt"><b>${esc(a.name)}</b><small>${esc(a.desc || '')}</small></span>
         ${a.fixed ? '' : `<span class="walert-val"><input class="text-input sm" type="number" step="any" data-alert-val="${a.id}" value="${esc(s.value || a.default)}"><small>${esc(a.unit || '')}</small></span>`}${sw(s.on, `data-alert="${a.id}"`)}</div>`; }).join('')}</div>
       ${tr ? `<div class="wtest ${tr.ok ? 'ok' : 'bad'}">${tr.ok ? `${svg('check')}<div><b>Funcionou!</b><small>${Object.entries(tr.values || {}).filter(([id]) => defs.get(id) && ['num', 'text'].includes(defs.get(id).kind)).slice(0, 5).map(([id, v]) => `${esc(defs.get(id).name)}: ${esc(fmtText(v, defs.get(id), {}))}`).join(' · ')}</small></div>` : `${svg('alert')}<div><b>Não funcionou</b><small>${esc(tr.error)}</small></div>`}</div>` : ''}
       <div class="dlg-actions">${g.id ? `<button type="button" class="pill-btn danger" data-act="del-integ" style="margin-right:auto">${svg('trash')}Apagar</button>` : ''}

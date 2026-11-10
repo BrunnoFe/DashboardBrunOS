@@ -16,6 +16,9 @@ FROM scratch
 LABEL org.opencontainers.image.title="BrunOS" \
       org.opencontainers.image.description="Painel leve para servidor caseiro com Runtipi, no estilo do umbrelOS"
 COPY --from=build /out/brunos /brunos
+# certificados das autoridades (~220 KB): sem eles nenhuma conexão HTTPS para fora funciona
+# (Clima/Open-Meteo, integrações em https://)
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=1000:1000 /out/data /data
 ENV BRUNOS_DATA=/data BRUNOS_ADDR=:8080
 EXPOSE 8080

@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
+	neturl "net/url"
 	"sort"
 	"time"
 )
@@ -201,7 +203,18 @@ func KindByID(id string) Kind { return kinds[id] }
 func Kinds() []KindInfo {
 	out := make([]KindInfo, 0, len(kinds))
 	for _, k := range kinds {
-		out = append(out, k.Info())
+		info := k.Info()
+		// listas vazias vão como [] e não null (o Tailscale não tem campos; null quebrava a tela)
+		if info.Fields == nil {
+			info.Fields = []Field{}
+		}
+		if info.Alerts == nil {
+			info.Alerts = []AlertDef{}
+		}
+		if info.Metrics == nil {
+			info.Metrics = []MetricDef{}
+		}
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -235,6 +248,13 @@ func getJSON(ctx context.Context, c *http.Client, url string, hdr map[string]str
 	}
 	resp, err := c.Do(req)
 	if err != nil {
+		// o motivo real vai para o log (só o endereço do servidor, nunca caminho ou token)
+		why := err
+		var uerr *neturl.Error
+		if errors.As(err, &uerr) {
+			why = uerr.Err // sem o endereço completo
+		}
+		slog.Info("integração: falha ao conectar", "servidor", req.URL.Host, "erro", why)
 		var ue interface{ Timeout() bool }
 		if errors.As(err, &ue) && ue.Timeout() {
 			return 0, ferr("o app demorou demais para responder")
