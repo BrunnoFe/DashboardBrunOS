@@ -214,9 +214,9 @@ Problemas encontrados no caminho:
   senha → não monta mais nesse caso e fica escondido.
 - Aviso "nota mudou" chegando durante a primeira busca era descartado → busca de novo ao terminar; ao
   (re)conectar o SSE as notas abertas são relidas.
-- A imagem OpenSSH do teste de fumaça é Alpine (ps do busybox, sem `tpgid`): a conferência responde
-  "não sei", que é o comportamento combinado; no Ubuntu do Bruno o procps responde de verdade
-  (conferido com uma simulação da árvore de processos do sshd).
+- "Ainda está rodando?" conferido no OpenSSH real do teste de fumaça (CI): vê o `sleep` rodando e,
+  depois do Ctrl+C, nada. Sem o `ps` completo (ex.: só busybox), a resposta é "não sei" e a janela
+  pergunta antes de fechar.
 
 ## Próximas
 Veja `roadmap.md`.
