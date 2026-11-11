@@ -46,7 +46,6 @@ import (
 	"brunos/internal/secret"
 	"brunos/internal/smart"
 	"brunos/internal/sshknown"
-	"brunos/internal/store"
 	"brunos/internal/sysinfo"
 	"brunos/internal/terminal"
 	"brunos/internal/termkey"
@@ -330,6 +329,8 @@ func (s *server) routes() http.Handler {
 
 	mux.HandleFunc("GET /api/settings", a(s.hSettingsGet))
 	mux.HandleFunc("PUT /api/settings", a(s.hSettingsPut))
+	mux.HandleFunc("GET /api/settings/backups", a(s.hSettingsBackups))
+	mux.HandleFunc("POST /api/settings/restore", a(s.hSettingsRestore))
 	mux.HandleFunc("GET /api/wallpapers", a(s.hWallpapers))
 	mux.HandleFunc("PUT /api/wallpapers", a(s.hWallpaperUpload))
 	mux.HandleFunc("GET /api/wallpapers/{name}", a(s.hWallpaperFile))
@@ -807,40 +808,6 @@ func (s *server) hPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── Preferências (iguais em todos os dispositivos) ────────────────
-
-func (s *server) settingsPath() string { return filepath.Join(s.cfg.DataDir, "settings.json") }
-
-func (s *server) readSettings() map[string]any {
-	s.settingMu.Lock()
-	defer s.settingMu.Unlock()
-	m := map[string]any{}
-	if _, err := store.ReadJSON(s.settingsPath(), &m); err != nil || m == nil {
-		return map[string]any{}
-	}
-	return m
-}
-
-func (s *server) hSettingsGet(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.readSettings())
-}
-
-func (s *server) hSettingsPut(w http.ResponseWriter, r *http.Request) {
-	var m map[string]any
-	if err := decode(r, &m, 512<<10); err != nil || m == nil {
-		writeJSON(w, 400, map[string]string{"error": "preferências inválidas (máx. 512 KB)"})
-		return
-	}
-	s.settingMu.Lock()
-	err := store.WriteJSON(s.settingsPath(), m, 0o600)
-	s.settingMu.Unlock()
-	if err != nil {
-		slog.Error("salvar preferências", "erro", err)
-		writeJSON(w, 500, map[string]string{"error": "não foi possível salvar"})
-		return
-	}
-	s.integ.SetUsage(m) // os widgets dizem quais integrações precisam ser buscadas
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
 
 // integrationApps lista os apps do Runtipi para sugerir integrações já com endereço.
 func (s *server) integrationApps() ([]integrations.AppRef, string) {

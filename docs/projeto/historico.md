@@ -245,5 +245,21 @@ H4 (convidados) e I2 (Wake-on-LAN) foram para o futuro; B4 já existia.
 - Script do servidor **versão 4** (energia, smart, temperatura, atualizacoes; só leitura).
 - Testes: pacotes energy/smart/updates/runtipi e Tuya; apitest 189 ok.
 
+## 0.11.1 (11/11/2026): preferências nunca mais zeram; Tomada Tuya em fila
+Bruno abriu o painel de manhã e achou tudo no padrão (widgets, segunda página, bloqueio); as
+integrações sobreviveram (outro arquivo).
+- **Causa**: ao entrar, se a leitura de `/api/settings` falhasse por qualquer motivo (rede acordando,
+  proxy, arquivo ilegível — o servidor também devolvia `{}` em erro), a tela seguia com o padrão;
+  `W2()` montava os 3 widgets padrão e `welcomed: false` disparava um salvamento, gravando o padrão
+  por cima de `/data/settings.json`. Bug antigo, latente desde as primeiras versões.
+- **Correção** (decisão 45): a tela tenta de novo e nunca entra com o padrão nem salva antes de ler;
+  o servidor responde 500 em arquivo ilegível, recusa (409) gravar preferências sem `welcomed` por cima
+  de preferências com `welcomed`, e guarda uma cópia por dia (14 dias) em `/data/settings-backup`,
+  restaurável em Configurações → Sistema → Cópias das preferências.
+- **Tomada Tuya**: o Testar funcionava, mas o Medidor (e o widget de consumo) dava "não consegui falar
+  com a tomada". A tomada atende uma conexão por vez; agora há fila por tomada, a última leitura vale
+  15 s (50 s para o Medidor), mais uma tentativa após 2 s, mensagem própria para "recusou a conexão"
+  e o erro de verdade no log.
+
 ## Próximas
 Veja `roadmap.md`.

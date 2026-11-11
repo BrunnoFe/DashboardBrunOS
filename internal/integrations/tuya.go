@@ -13,11 +13,14 @@ import (
 	"errors"
 	"hash/crc32"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -78,12 +81,18 @@ var (
 )
 
 func (tuyaPlug) Fetch(ctx context.Context, _ *http.Client, cfg Config) (map[string]Value, error) {
+	return tuyaFetch(ctx, cfg, tuyaFresh)
+}
+
+// tuyaFetch lê a tomada e traduz os números. fresh: idade máxima de uma leitura já feita por outro
+// pedido (o Medidor aceita uma mais velha que os widgets e assim não abre outra conexão).
+func tuyaFetch(ctx context.Context, cfg Config, fresh time.Duration) (map[string]Value, error) {
 	host := strings.TrimSpace(cfg.Options["host"])
 	dev := strings.TrimSpace(cfg.Options["devid"])
 	if host == "" || dev == "" || len(cfg.Secret) != 16 {
 		return nil, ferr("preencha o IP, o ID e a chave local (16 caracteres) da tomada")
 	}
-	dps, err := TuyaStatus(ctx, host, dev, cfg.Secret, cfg.Options["version"])
+	dps, err := tuyaStatus(ctx, host, dev, cfg.Secret, cfg.Options["version"], fresh)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +142,7 @@ func (h *Hub) PlugPower(ctx context.Context, id string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	vals, err := tuyaPlug{}.Fetch(ctx, nil, cfg)
+	vals, err := tuyaFetch(ctx, cfg, tuyaMeterFresh)
 	if err != nil {
 		return 0, err
 	}
@@ -151,19 +160,95 @@ func (h *Hub) PlugIDs() []string {
 	return out
 }
 
+// As tomadas Tuya só atendem UMA conexão por vez (e algumas demoram a liberar a anterior). Os widgets
+// (Hub, a cada 30 s) e o Medidor do consumo (a cada minuto) pedem a mesma tomada e, ligados juntos,
+// batiam um no outro: um deles levava "não consegui falar com a tomada". Por isso cada tomada tem uma
+// fila (um pedido de cada vez), a última leitura vale por tuyaFresh para quem pedir logo depois, e uma
+// falha ganha mais uma tentativa depois de uma pausa curta.
+const (
+	tuyaFresh      = 15 * time.Second // widgets e Testar
+	tuyaMeterFresh = 50 * time.Second // Medidor (amostra por minuto)
+)
+
+var tuyaRetry = 2 * time.Second // variável para os testes
+
+type tuyaSlot struct {
+	mu  sync.Mutex
+	at  time.Time
+	dps map[string]any
+}
+
+var (
+	tuyaSlotsMu sync.Mutex
+	tuyaSlots   = map[string]*tuyaSlot{}
+)
+
+func tuyaSlotFor(host, devID, localKey, version string) *tuyaSlot {
+	h := sha256.Sum256([]byte(host + "\x00" + devID + "\x00" + localKey + "\x00" + version))
+	k := string(h[:])
+	tuyaSlotsMu.Lock()
+	defer tuyaSlotsMu.Unlock()
+	s := tuyaSlots[k]
+	if s == nil {
+		s = &tuyaSlot{}
+		tuyaSlots[k] = s
+	}
+	return s
+}
+
 // TuyaStatus pede o estado (dps) da tomada. version: "3.3", "3.4" ou "3.5" (vazio = 3.5).
 func TuyaStatus(ctx context.Context, host, devID, localKey, version string) (map[string]any, error) {
+	return tuyaStatus(ctx, host, devID, localKey, version, tuyaFresh)
+}
+
+func tuyaStatus(ctx context.Context, host, devID, localKey, version string, fresh time.Duration) (map[string]any, error) {
+	slot := tuyaSlotFor(strings.TrimSpace(host), strings.TrimSpace(devID), localKey, strings.TrimSpace(version))
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if slot.dps != nil && time.Since(slot.at) < fresh {
+		return slot.dps, nil
+	}
+	if err := tuyaInput(version, localKey); err != nil {
+		return nil, err // dado errado não melhora com outra tentativa
+	}
+	dps, err := tuyaStatusOnce(ctx, host, devID, localKey, version)
+	if err != nil {
+		slog.Warn("tomada tuya: nova tentativa", "erro", err)
+		select { // mais uma tentativa: a tomada pode estar terminando outra conexão
+		case <-ctx.Done():
+		case <-time.After(tuyaRetry):
+			dps, err = tuyaStatusOnce(ctx, host, devID, localKey, version)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	slot.dps, slot.at = dps, time.Now()
+	return dps, nil
+}
+
+// tuyaInput confere a versão e a chave antes de abrir conexão.
+func tuyaInput(version, localKey string) error {
+	switch strings.TrimSpace(version) {
+	case "", "3.3", "3.4", "3.5":
+	default:
+		return ferr("versão do protocolo inválida (use 3.3, 3.4 ou 3.5)")
+	}
+	if len(localKey) != 16 {
+		return ferr("a chave local precisa ter 16 caracteres")
+	}
+	return nil
+}
+
+func tuyaStatusOnce(ctx context.Context, host, devID, localKey, version string) (map[string]any, error) {
+	if err := tuyaInput(version, localKey); err != nil {
+		return nil, err
+	}
 	version = strings.TrimSpace(version)
 	if version == "" {
 		version = "3.5"
 	}
-	if version != "3.3" && version != "3.4" && version != "3.5" {
-		return nil, ferr("versão do protocolo inválida (use 3.3, 3.4 ou 3.5)")
-	}
 	key := []byte(localKey)
-	if len(key) != 16 {
-		return nil, ferr("a chave local precisa ter 16 caracteres")
-	}
 	addr := host
 	if _, _, err := net.SplitHostPort(host); err != nil {
 		addr = net.JoinHostPort(host, tuyaPort) // sem porta: a padrão da Tuya
@@ -171,6 +256,10 @@ func TuyaStatus(ctx context.Context, host, devID, localKey, version string) (map
 	d := net.Dialer{Timeout: tuyaTimeout}
 	nc, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		slog.Warn("tomada tuya: conexão", "erro", err) // o motivo de verdade (recusada, sem resposta...) fica no log
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return nil, ferr("a tomada em %s recusou a conexão: ela atende um aparelho por vez (feche o tinytuya ou outro programa que esteja falando com ela)", host)
+		}
 		return nil, ferr("não consegui falar com a tomada em %s (confira o IP e se ela está na mesma rede)", host)
 	}
 	defer nc.Close()

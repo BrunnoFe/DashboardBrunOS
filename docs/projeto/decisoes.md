@@ -182,3 +182,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     baixada (`repos/`), pelo `tipi_version`, sem tocar no Postgres do Runtipi. Linux: `apt-check` e
     `reboot-required` pelo script. O BrunOS não atualiza nada sozinho: abre o Runtipi ou digita o
     comando no Terminal para o Bruno confirmar.
+45. **Preferências protegidas em três camadas** (0.11.1, depois do reset da 0.11.0). (1) A tela nunca
+    entra com o padrão nem salva antes de ler as preferências do servidor (tenta de novo e, se não der,
+    para com erro). (2) O servidor recusa (409) gravar preferências sem `welcomed` por cima de
+    preferências com `welcomed` — o "Restaurar aparência padrão" de propósito mantém `welcomed: true`.
+    (3) Uma cópia por dia, 14 dias, em `/data/settings-backup`, restaurável na interface. Uma cópia por
+    dia (e não por salvamento) porque a interface salva a cada mudança pequena; 14 cópias de ~20 KB.
+    Tomada Tuya: uma conexão por vez por tomada (fila + leitura reaproveitada), sem conexão persistente
+    por enquanto (mais simples; reavaliar se a fila não bastar).

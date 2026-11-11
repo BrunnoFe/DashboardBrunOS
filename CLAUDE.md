@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.11.0 em 10/11/2026)
+- Versão atual: veja `VERSION` (0.11.1 em 11/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -75,6 +75,8 @@ internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa c
 internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
 internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux, 1×/dia (/data/updates.json)
 etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 4)
+settings.go                 preferências (/data/settings.json): erro de leitura ≠ vazio, trava contra gravar o
+                            padrão por cima (409), cópia diária em /data/settings-backup (14 dias) e restaurar
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
 internal/events/            central de notificações (sino), /data/events.json
 internal/hostcmd/           chave SSH própria + comando forçado no servidor (desligamento)

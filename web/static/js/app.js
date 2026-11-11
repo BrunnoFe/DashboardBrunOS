@@ -55,7 +55,12 @@ const S = {
   kinds: [], integrations: [], metrics: {}, internet: null,
 };
 const set = () => S.settings;
-const saveNow = async () => { try { await api.saveSettings(S.settings); } catch (e) { toastError(e, 'Não foi possível salvar as preferências'); } };
+// Só salva depois de as preferências do servidor chegarem: antes disso S.settings é o padrão, e
+// gravar o padrão apagaria widgets, páginas e tudo o mais (bug da 0.11.0)
+const saveNow = async () => {
+  if (!S.settingsLoaded) return;
+  try { await api.saveSettings(S.settings); } catch (e) { toastError(e, 'Não foi possível salvar as preferências'); }
+};
 const save = debounce(saveNow, 400);
 
 /* ── Tema a partir do papel de parede ──────────────────────────── */
@@ -1190,6 +1195,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
+    { group: 'Sistema', cat: 'system', icon: 'clock', title: 'Cópias das preferências', desc: 'O servidor guarda uma cópia por dia (últimos 14 dias) de widgets, páginas, dock e aparência. Volte para uma delas se algo se perder', ctrl: `<button class="pill-btn" data-act="backups">Ver cópias</button>` },
     { group: 'Sistema', cat: 'system', icon: 'copy', title: 'Exportar preferências', desc: 'Copia o JSON com apps, dock e aparência', ctrl: `<button class="pill-btn" data-act="copy-config">Copiar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
   ];
@@ -1296,6 +1302,7 @@ function wireSettings(body) {
       else if (a === 'check-updates') { el.disabled = true; try { S.updates = await api.updates.check(); await loadApps(); toast('Atualizações conferidas', S.updates.apps.length ? `${S.updates.apps.length} app(s) com atualização.` : 'Tudo em dia.'); } catch (err) { toastError(err); } redraw(); }
       else if (a === 'os-update') { closeSheet(); openTerminal({ typeCmd: 'sudo apt update && sudo apt upgrade' }); }
       else if (a === 'os-list') osUpdatesDialog();
+      else if (a === 'backups') backupsDialog();
       else if (a === 'script') import('./energy.js').then((m) => m.scriptDialog());
       else if (a === 'map-disks') import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); }));
       else if (a === 'unhide') { for (const k of Object.keys(st.apps)) if (st.apps[k].hidden) st.apps[k].hidden = false; save(); renderApps(); redraw(); }
@@ -1335,6 +1342,23 @@ function wireSettings(body) {
 }
 
 /* ── Diálogos ──────────────────────────────────────────────────── */
+// Cópias das preferências (0.11.1): uma por dia no servidor; restaurar recarrega a página
+async function backupsDialog() {
+  let list;
+  try { list = await api.settingsBackups(); } catch (e) { toastError(e); return; }
+  const day = (s) => new Date(s + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+  const d = openDialog(`<h2>${svg('clock')}Cópias das preferências</h2>
+    <p class="dlg-text">Cada cópia é como as preferências estavam no começo daquele dia (antes da primeira mudança). Restaurar troca as atuais pela cópia; as atuais viram a cópia de hoje, se ainda não houver uma.</p>
+    ${list.length ? `<div class="s-group">${list.map((b) => `<div class="s-row"><span class="s-ico">${svg('clock')}</span><span class="s-text"><b>${esc(day(b.date))}</b><small>${b.widgets} ${b.widgets === 1 ? 'widget' : 'widgets'}${b.pages ? ` em ${b.pages} ${b.pages === 1 ? 'página' : 'páginas'}` : ''}</small></span><span class="s-ctrl"><button class="pill-btn" data-restore="${esc(b.date)}">Restaurar</button></span></div>`).join('')}</div>`
+    : '<p class="dlg-text">Ainda não há cópias: a primeira é feita na próxima vez que você mudar alguma preferência.</p>'}
+    <div class="dlg-actions"><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 480 });
+  d.el.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-c]')) { d.close(); return; }
+    const b = e.target.closest('[data-restore]'); if (!b) return;
+    if (!(await confirmDialog('Restaurar esta cópia?', `As preferências voltam a ser como estavam em ${day(b.dataset.restore)}. A página vai recarregar.`, 'Restaurar'))) return;
+    try { await api.settingsRestore(b.dataset.restore); S.settingsLoaded = false; location.reload(); } catch (err) { toastError(err); }
+  });
+}
 // Atualizações do Linux (0.11.0): lista de pacotes e o botão que digita o comando no Terminal
 function osUpdatesDialog() {
   const o = S.updates?.os; if (!o) return;
@@ -1750,7 +1774,7 @@ function lock() {
   closeSheet(); closeMenu(); closePanel(); paintBanner(null);
   if (wEditing) { wEditing = false; document.body.classList.remove('w-editing'); $('#w-done')?.remove(); }
   S.stopStream?.(); S.stopStream = null;
-  S.desktopReady = false;
+  S.desktopReady = false; S.settingsLoaded = false;
   document.body.classList.add('is-locked');
   renderLogin('login');
 }
@@ -1804,12 +1828,28 @@ function startStream() {
     { onNote: noteChanged, onLocked: () => showLock('senha') },
   );
 }
+// Preferências do servidor. Uma falha passageira (rede acordando, proxy reiniciando) ganha mais
+// tentativas; se continuar falhando, a entrada para com erro (NUNCA entra com o padrão).
+async function fetchSettings() {
+  for (let i = 0; ; i++) {
+    try {
+      const s = await api.settings();
+      if (s && typeof s === 'object' && !Array.isArray(s)) return s;
+      throw Object.assign(new Error('O servidor mandou as preferências num formato estranho.'), { status: 502 });
+    } catch (e) {
+      if (e.status === 401 || e.status === 423 || i >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+}
 async function enterDesktop(animate) {
+  S.settingsLoaded = false;
   const [me, settings, system, roots, wallpapers] = await Promise.all([
-    api.me(), api.settings().catch(() => ({})), api.system().catch(() => null), api.files.roots().catch(() => []), api.wallpapers().catch(() => []),
+    api.me(), fetchSettings(), api.system().catch(() => null), api.files.roots().catch(() => []), api.wallpapers().catch(() => []),
   ]);
   S.me = me; S.system = system; S.roots = roots; S.wallpapers = wallpapers;
   S.settings = { ...structuredClone(DEFAULTS), ...settings };
+  S.settingsLoaded = true;
   if (system) { S.tipi = system.runtipi || {}; S.docker = system.docker; S.dockerActions = system.dockerActions; S.terminal = system.terminal !== false; }
   W2(); // converte os widgets da 0.8.x, se for a primeira vez
   await loadIntegrations();
@@ -2006,5 +2046,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !d
     // (sem montar o login por trás: ele puxaria o foco do campo da senha)
     if (e.status === 423) { showLock('senha'); return; }
     renderLogin('login');
+    // logado, mas sem conseguir ler as preferências: avisa (sem isso pareceria só "sessão expirada")
+    if (e.status && e.status !== 401) toastError(e, 'Não consegui carregar suas preferências');
   }
 })();
