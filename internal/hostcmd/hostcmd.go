@@ -54,8 +54,9 @@ const (
 	// Script novo com pedidos a mais (ScriptVersion) NÃO sobe isto: um servidor com o script 2 continua
 	// desligando com a chave nova e só recusa os pedidos que não conhece.
 	SetupVersion = 2
-	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2).
-	ScriptVersion = 3
+	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2; 4 = "energia", "smart",
+	// "temperatura" e "atualizacoes", 0.11.0).
+	ScriptVersion = 4
 	maxOutput     = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
 	dialTimeout   = 10 * time.Second
 	keyComment    = "brunos-power"
@@ -66,7 +67,15 @@ const (
 	CmdShutdown  = "desligar"
 	CmdVersion   = "versao"
 	CmdTailscale = "tailscale" // só lê: tailscale status --json (script 3)
+	// script 4 (0.11.0), todos só leitura:
+	CmdEnergy  = "energia"      // contador do RAPL (energy_uj) e o limite dele
+	CmdSmart   = "smart"        // smartctl -j -a -n standby de cada disco
+	CmdTemps   = "temperatura"  // smartctl -j -A -n standby de cada disco (temperatura)
+	CmdUpdates = "atualizacoes" // apt-check, reboot-required e a lista de pacotes
 )
+
+// ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
+var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true}
 
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
 func CmdLimit(pct int) string { return fmt.Sprintf("limite %d", pct) }
@@ -80,8 +89,9 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 3: o único programa que a chave do BrunOS pode rodar neste servidor.
-# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | versao. Recusa todo o resto.
+# brunos-host 4: o único programa que a chave do BrunOS pode rodar neste servidor.
+# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | smart |
+# temperatura | atualizacoes | versao. Recusa todo o resto. Fora desligar/limite/protecao, só lê.
 # Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -97,9 +107,8 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
 case "$acao" in
-  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 3"; exit 0 ;;
-  desligar) [ $# -eq 1 ] || falha "pedido inválido" ;;
-  tailscale) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 4"; exit 0 ;;
+  desligar|tailscale|energia|smart|temperatura|atualizacoes) [ $# -eq 1 ] || falha "pedido inválido" ;;
   limite) case "$valor" in [5-9][0-9]|100) ;; *) falha "limite inválido (use de 50 a 100)" ;; esac ;;
   protecao) case "$valor" in on|off) ;; *) falha "valor inválido (use on ou off)" ;; esac ;;
   *) falha "pedido inválido" ;;
@@ -121,6 +130,34 @@ case "$acao" in
   tailscale)
     command -v tailscale >/dev/null 2>&1 || falha "o Tailscale não está instalado neste servidor" 3
     exec tailscale status --json ;;
+  energia)
+    for z in /sys/class/powercap/intel-rapl:0 /sys/class/powercap/intel-rapl/intel-rapl:0; do
+      if [ -r "$z/energy_uj" ]; then
+        echo "energia $(cat "$z/energy_uj") $(cat "$z/max_energy_range_uj" 2>/dev/null || echo 0)"
+        exit 0
+      fi
+    done
+    falha "este processador não tem medidor de energia (RAPL)" 3 ;;
+  smart|temperatura)
+    command -v smartctl >/dev/null 2>&1 || falha "o smartmontools não está instalado (sudo apt install smartmontools)" 3
+    if [ "$acao" = smart ]; then o=-a; else o=-A; fi
+    for d in /dev/sd? /dev/sd?? /dev/nvme?n1; do
+      [ -b "$d" ] || continue
+      echo "=== $d"
+      # -n standby: não acorda HD parado; adaptador USB desconhecido: tenta de novo com -d sat
+      r=$(smartctl -j -n standby $o "$d" 2>/dev/null || true)
+      case "$r" in *"Unknown USB bridge"*|*"specify device type"*) r=$(smartctl -j -n standby $o -d sat "$d" 2>/dev/null || true) ;; esac
+      echo "$r"
+    done
+    exit 0 ;;
+  atualizacoes)
+    if [ -x /usr/lib/update-notifier/apt-check ]; then
+      echo "apt $(/usr/lib/update-notifier/apt-check 2>&1 | tail -n 1)"
+    fi
+    if [ -f /var/run/reboot-required ]; then echo "reiniciar"; fi
+    echo "=== pacotes"
+    apt list --upgradable 2>/dev/null | sed -n '2,301p' || true
+    exit 0 ;;
   limite)
     for b in $(baterias); do
       fim=$b/charge_control_end_threshold

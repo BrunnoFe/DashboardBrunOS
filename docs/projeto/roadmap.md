@@ -14,7 +14,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
-| A1 | Aviso de atualização de apps do Runtipi | M | a investigar | O Runtipi guarda a versão instalada no Postgres, não em arquivos. Opções: comparar `tipi_version` do repositório da loja com algo legível em `app-data` (verificar), ou API interna do Runtipi. Não abrir acesso ao banco. |
+| A1 | Aviso de atualização de apps do Runtipi | M | **feito (0.11.0)** (apps × repos pelo tipi_version; + Linux) | O Runtipi guarda a versão instalada no Postgres, não em arquivos. Opções: comparar `tipi_version` do repositório da loja com algo legível em `app-data` (verificar), ou API interna do Runtipi. Não abrir acesso ao banco. |
 | A2 | Widgets com dados dos apps (Immich: fotos/vídeos; AdGuard: consultas/bloqueios; Plex: tocando agora) | M | a fazer | Cada integração precisa de URL + token do app, guardados no servidor (criptografados? decidir) e **nunca** enviados ao navegador; o backend faz as chamadas. |
 | A3 | PWA (instalar no celular) | B | adiado (celular) | `manifest.webmanifest`, ícones, service worker mínimo (só cache da casca; API nunca em cache). Base para F6 e C2. |
 | A4 | Monitor de disponibilidade dos apps com alerta | M | feito (0.7.0) | Checagem HTTP periódica (porta/domínio de cada app) + estado do container; histórico de uptime; alertas pela central (C1). |
@@ -25,7 +25,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 |---|---|---|---|---|
 | B1 | **Desligamento seguro** quando a bateria cai abaixo de X% fora da tomada | M | feito (0.4.0) | Prioridade 1. Config: limite %, tempo de espera, aviso antes. Execução via SSH com chave restrita a `sudo /sbin/shutdown -h +1` (ou `systemctl poweroff`). Precisa de assistente de configuração (gera a chave, mostra a linha do `authorized_keys` e do sudoers). Testar sem desligar de verdade (modo simulação). |
 | B2 | Registro de quedas de energia | B | feito (0.4.0) | Detectar transições AC→bateria→AC; gravar em `/data/power-events.json` (início, fim, % gasto). Persistir também o último consumo medido (hoje `estimate` some ao reiniciar). |
-| B3 | Consumo do servidor (W) e custo (R$/mês) | B–M | a fazer | Intel RAPL (`/sys/class/powercap/intel-rapl:0/energy_uj`, pode exigir permissão de leitura) + consumo da bateria quando descarregando; tarifa em R$/kWh configurável. |
+| B3 | Consumo do servidor (W) e custo (R$/mês) | B–M | **feito (0.11.0)** (Medidor + Tomada Tuya local) | Intel RAPL (`/sys/class/powercap/intel-rapl:0/energy_uj`, pode exigir permissão de leitura) + consumo da bateria quando descarregando; tarifa em R$/kWh configurável. |
 | B4 | Limite de carga (agnóstico ao notebook) | M | feito (0.8.1) | Detecta uma vez ao ligar (contínuo, liga/desliga ou nada); aplica pelo script `brunos-host`; reconfere a cada 10 min só se houver suporte e pedido. O Inspiron 3542 do Bruno não tem: aparece esmaecido com o modelo. |
 | B5 | Correções do desligamento seguro | B | feito (0.8.1) | Comando novo que passa pela trava do unattended-upgrades; tenta sem limite enquanto estiver na bateria; erro em pt-BR; queda fecha no último minuto ligado quando o servidor apaga; aviso para atualizar servidores configurados antes. |
 | B6 | Ajustes visuais no celular | B | feito (0.8.1) | Gaveta ☰ no Arquivos; controles à direita nas configurações; terminal em tela cheia com letra 11; porta vazia (22); sem o texto HSL na cor de destaque. |
@@ -43,7 +43,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 |---|---|---|---|---|
 | D1 | Alerta de disco mapeado que se desmontou | B | feito (0.4.0) | Disco mapeado com `isMountPoint == false` → evento crítico (risco de o mergerfs/apps gravarem no SSD do sistema). |
 | D2 | Temperatura dos HDs | B | feito (0.5.0) | hwmon `drivetemp` (módulo do kernel: `sudo modprobe drivetemp` + `/etc/modules-load.d`; a interface ensina) e `nvme`. HD só é lido de novo quando teve atividade (não acorda disco parado). Aviso na central: HD ≥ 55 °C, SSD ≥ 70 °C. |
-| D3 | Saúde SMART | M | a fazer | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
+| D3 | Saúde SMART | M | **feito (0.11.0)** (smartctl pelo script; temperatura dos discos USB) | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
 | D4 | Previsão de disco cheio | B | feito (0.5.0), **opcional e desligada por padrão** (pedido do Bruno: Configurações → Sistema → Previsão de disco cheio, preferência `diskForecast`) | Uso diário (gravado sempre) por disco em `/data/disk-history.json` (180 dias), regressão linear sobre 30 dias. Avisos: "vai encher em ≤ 30 dias" e "≥ 90% ocupado" (este é o "disco > 90%" do C1). |
 | D5 | Mapa do espaço (treemap) no gerenciador | M | feito (0.6.0) | Varredura limitada (tempo/entradas) em segundo plano, cache por pasta; desenho em canvas/SVG. |
 
@@ -83,14 +83,14 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | H1 | Verificação em dois passos (TOTP) | M | adiado | RFC 6238 com stdlib (HMAC-SHA1); QR code (gerar em JS ou Go sem dependência); códigos de recuperação. |
 | H2 | Sessões ativas com "encerrar" | B | adiado | `sessions.json` já guarda ip/userAgent/criação; listar e revogar. |
 | H3 | Aviso de login novo | B | feito (0.5.0) | `internal/logins`: navegador + sistema + rede (rede local conta como um lugar só; internet por faixa /24 ou /48), `/data/logins.json`. Também avisa quando um endereço é bloqueado por errar a senha (no máximo 1 aviso a cada 6 h por endereço). |
-| H4 | Contas de convidado (família) | A | a fazer | Papéis (admin/convidado), permissões por recurso (arquivos, terminal, configurações, apps visíveis). Muda auth e todas as rotas. |
+| H4 | Contas de convidado (família) | A | **futuro** (adiado em 10/11/2026) | Papéis (admin/convidado), permissões por recurso (arquivos, terminal, configurações, apps visíveis). Muda auth e todas as rotas. |
 
 ## I. Rede da casa
 
 | # | Item | Esforço | Status | Notas técnicas |
 |---|---|---|---|---|
 | I1 | Quem está na rede (WatchYourLAN) | B | a fazer | API do WatchYourLAN; aviso de aparelho desconhecido (C1). |
-| I2 | Wake-on-LAN | B | a fazer | Pacote mágico UDP broadcast; da rede bridge do Docker o broadcast pode não chegar à LAN → testar; alternativa via SSH (`wakeonlan` no host). |
+| I2 | Wake-on-LAN | B | **futuro** (adiado em 10/11/2026) | Pacote mágico UDP broadcast; da rede bridge do Docker o broadcast pode não chegar à LAN → testar; alternativa via SSH (`wakeonlan` no host). |
 | I3 | Widget Tailscale e AdGuard | B–M | a fazer | Tailscale: API local do tailscaled exige socket (não montar) → usar API web com token ou SSH. AdGuard: API com usuário/senha. |
 
 ## J. Aparência
@@ -128,9 +128,9 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 7b | 0.9.2 | Plex e Immich (A2, Immich só em Widget, formato Mídia) · WatchYourLAN (I1, aviso de aparelho novo) · Tailscale por SSH (I3) · papel de parede por horário (J2) — **feito (0.9.2), aguardando teste no servidor** (o Tailscale pede colar os comandos de atualização do script) |
 | 7c | 0.9.3 | Transmission · Syncthing · Nextcloud (pedidos do Bruno em 08/11/2026) — **feito (0.9.3), aguardando teste no servidor**. Vaultwarden **adiado** ("Vamos sem integração com Vaultwarden nesse momento. Deixe para o futuro."): sem token só daria no ar, versão e cadastro aberto; com o ADMIN_TOKEN, usuários (decidir no futuro) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 — **feito (0.10.0), aguardando teste no servidor** |
-| 9 | 0.11.0 | A1 · B3 · B4 · D3 · I2 · H4 |
+| 9 | 0.11.0 | A1 · B3 · D3 — **feito (0.11.0), aguardando teste no servidor** (B4 já feito na 0.8.1; H4 e I2 adiados em 10/11/2026: "Vamos deixar H4 e I2 para o futuro") |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
-| — | futuro | C2 · A3 · F6 (celular) |
+| — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) |
 
 Em 08/11/2026 o Bruno escolheu o **CodeMirror 6** para o editor (F2), em vez de um editor leve feito à
 mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob demanda.
@@ -139,6 +139,30 @@ mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob deman
 tokens~~ (decidido em 08/11/2026: cifrados com chave em arquivo, decisão 33); ~~F2 qual editor~~; J1
 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais permissões; A1 como saber a
 versão instalada sem tocar no Postgres.
+
+### Etapa 9 (0.11.0) combinada em 10/11/2026
+
+Pedido: "Pode seguir para a etapa 9". H4 e I2 adiados; B4 já existia. Termos novos em `CONTEXT.md`
+(Medidor, Estimativa calibrada); porquês nas decisões 42–44.
+
+- **B3 Consumo e custo**: Medidor em Configurações → Energia (Automático = tomada → bateria
+  descarregando → estimativa calibrada; ou fixo: tomada, bateria, processador/RAPL, estimativa).
+  Integração nova **Tomada Tuya** (protocolo local 3.3/3.4/3.5; a do Bruno é 3.5, DPS 19 = W×10,
+  20 = V×10, 18 = mA, 17 = kWh×100). Amostra a cada minuto mesmo com a tela fechada; tarifa R$/kWh
+  (padrão 0,90); kWh e R$ de hoje/mês/projeção; 24 h por minuto + 13 meses por dia. Seção "Consumo" na
+  janela Energia, Métricas da fonte BrunOS e Modelos "Consumo e custo", "Consumo 24 h", "Gasto do mês".
+  RAPL só quando o Medidor precisa (pelo script, pedido `energia`).
+- **D3 Saúde SMART**: `smartctl` pelo script (pedido `smart`), a cada 6 h com `-n standby`; selo
+  OK/Atenção/Falhando no Uso ao vivo + detalhes; avisos uma vez por mudança (FAILED = crítico; setores
+  realocados/pendentes novos = aviso). Temperatura dos discos USB (sem drivetemp) a cada **20 min**
+  (pedido `temperatura`), também sem acordar.
+- **A1 Atualização de apps**: 1×/dia (+ "Conferir agora"), `apps/<loja>/<app>` × `repos/<loja>/apps/<app>`
+  pelo `tipi_version` (loja oficial "migrated" e a do Bruno; `_user` fora). Selo ↑ no ícone, "v1.2 →
+  v1.3" + "Atualizar no Runtipi" nos detalhes, aviso no sino por versão (desligável), busca e Métrica.
+- **Atualizações do Linux**: 1×/dia pelo script (pedido `atualizacoes`: apt-check, reboot-required,
+  lista); Configurações → Sistema, "Atualizar no Terminal" (comando digitado, sem Enter), avisos de
+  reinício necessário e de segurança, Métricas.
+- Script do servidor **versão 4** com os quatro pedidos de leitura (uma atualização só).
 
 ### Etapa 8 (0.10.0) combinada em 10/11/2026
 

@@ -56,7 +56,20 @@ export const BRUNOS_METRICS = [
   B('net_uptime', 'Internet: tempo no ar (24 h)', 'num', '%', 'globe'),
   B('apps_running', 'Apps rodando', 'num', '', 'apps'),
   B('apps_down', 'Apps fora do ar', 'num', '', 'alert'),
+  // 0.11.0: consumo e custo (Medidor) e atualizações
+  B('power_w', 'Consumo do servidor', 'num', 'W', 'bolt', { hist: 'energy' }),
+  B('energy_meter', 'Consumo: medidor em uso', 'text', '', 'activity'),
+  B('energy_today', 'Energia de hoje', 'num', 'kWh', 'chart'),
+  B('energy_month', 'Energia do mês', 'num', 'kWh', 'chart'),
+  B('cost_today', 'Gasto de hoje', 'num', 'R$', 'bag'),
+  B('cost_month', 'Gasto do mês', 'num', 'R$', 'bag'),
+  B('cost_projection', 'Projeção do gasto do mês', 'num', 'R$', 'bag'),
+  B('apps_updates', 'Apps com atualização', 'num', '', 'arrowUp'),
+  B('os_updates', 'Atualizações do Linux', 'num', '', 'refresh'),
+  B('os_security', 'Atualizações de segurança', 'num', '', 'shield'),
+  B('os_reboot', 'Reinício necessário', 'text', '', 'power'),
 ];
+const METER_TXT = { plug: 'pela tomada', battery: 'pela bateria', rapl: 'só o processador', estimate: 'estimativa calibrada' };
 const BRUNOS_BY_ID = Object.fromEntries(BRUNOS_METRICS.map((m) => [m.id, m]));
 export const brunosDef = (id) => BRUNOS_BY_ID[id];
 
@@ -96,6 +109,17 @@ export function brunosValue(id, S) {
     case 'brunos.net_uptime': return st?.uptime != null ? { n: st.uptime } : undefined;
     case 'brunos.apps_running': return S.apps && { n: S.apps.filter((a) => a.state === 'running').length };
     case 'brunos.apps_down': return S.apps && { n: S.apps.filter((a) => a.health === 'down' && a.state !== 'stopped').length };
+    case 'brunos.power_w': { const e = S.energy; if (!e) return undefined; return e.w != null ? { n: e.w } : { t: e.err ? 'sem medidor' : 'medindo…' }; }
+    case 'brunos.energy_meter': return S.energy && { t: S.energy.w != null ? METER_TXT[S.energy.meter] || '' : (S.energy.err || 'medindo…') };
+    case 'brunos.energy_today': return S.energy && { n: S.energy.todayKWh };
+    case 'brunos.energy_month': return S.energy && { n: S.energy.monthKWh };
+    case 'brunos.cost_today': return S.energy && { n: S.energy.todayCost };
+    case 'brunos.cost_month': return S.energy && { n: S.energy.monthCost };
+    case 'brunos.cost_projection': return S.energy && (S.energy.projection ? { n: S.energy.projection } : { t: '—' });
+    case 'brunos.apps_updates': return S.updates && { n: S.updates.apps.length };
+    case 'brunos.os_updates': return S.updates && (S.updates.os.err ? { t: '—' } : { n: S.updates.os.total });
+    case 'brunos.os_security': return S.updates && (S.updates.os.err ? { t: '—' } : { n: S.updates.os.security, level: S.updates.os.security ? 'aviso' : '' });
+    case 'brunos.os_reboot': return S.updates && (S.updates.os.reboot ? { t: 'sim', level: 'aviso' } : { t: 'não' });
     default: return undefined;
   }
 }
@@ -118,6 +142,8 @@ export function fmtVal(val, def, slot = {}) {
     case 'ts': return { v: timeAgo(n), u: '' };
     case 's': return { v: fmtDuration(n), u: '' };
     case '°C': return { v: fmt(n, d ?? 0), u: ' °C' };
+    case 'R$': return { v: `R$ ${fmt(n, d ?? 2)}`, u: '' };
+    case 'kWh': return { v: fmt(n, d ?? (n < 10 ? 2 : 1)), u: ' kWh' };
     default: return { v: slot.compact ? compactFmt.format(n) : fmt(n, d ?? autoDec(n)), u: unit ? ` ${unit}` : '' };
   }
 }
@@ -154,6 +180,10 @@ function brunosModels() {
     { id: 'files', name: 'Arquivos', desc: 'Atalhos para as pastas favoritas', item: { format: 'shortcuts', title: 'Arquivos', caption: false } },
     { id: 'cpu-chart', name: 'CPU e temperatura', desc: 'Gráfico das últimas 24 horas', item: { format: 'chart', size: 'w', title: 'CPU e temperatura', slots: [S1('brunos.cpu'), S1('brunos.temp')], chart: { type: 'line', range: '24h', stats: true }, click: { kind: 'window', target: 'live' } } },
     { id: 'net-chart', name: 'Tráfego de rede', desc: 'Download e upload nas últimas 24 horas', item: { format: 'chart', size: 'w', title: 'Rede', slots: [S1('brunos.rx', { label: 'Download' }), S1('brunos.tx', { label: 'Upload' })], chart: { type: 'line', range: '24h', stats: false }, click: { kind: 'window', target: 'live' } } },
+    { id: 'energy', name: 'Consumo e custo', desc: 'Watts agora, hoje, gasto do mês e projeção', item: { format: 'stat', size: 'w', title: 'Consumo', bar: false, slots: [S1('brunos.power_w', { spark: true }), S1('brunos.energy_meter', { label: '' }), S1('brunos.energy_today', { label: 'Hoje' }), S1('brunos.cost_month', { label: 'Mês até agora' }), S1('brunos.cost_projection', { label: 'Projeção' })], click: { kind: 'window', target: 'power' } } },
+    { id: 'energy-chart', name: 'Consumo 24 h', desc: 'Gráfico do consumo com mínimo, máximo e média', item: { format: 'chart', size: 'w', title: 'Consumo', slots: [S1('brunos.power_w')], chart: { type: 'line', range: '24h', stats: true }, click: { kind: 'window', target: 'power' } } },
+    { id: 'cost', name: 'Gasto do mês', desc: 'Quanto o servidor gastou de luz no mês e a projeção', item: { format: 'stat', size: 's', title: 'Luz do servidor', bar: false, slots: [S1('brunos.cost_month'), S1('brunos.cost_projection', { label: 'projeção do mês' })], click: { kind: 'window', target: 'power' } } },
+    { id: 'updates', name: 'Atualizações', desc: 'Apps com atualização, Linux e reinício necessário', item: { format: 'grid', title: 'Atualizações', caption: false, layout: 'rows', slots: [S1('brunos.apps_updates', { label: 'Apps' }), S1('brunos.os_updates', { label: 'Linux' }), S1('brunos.os_reboot', { label: 'Reiniciar' })], click: { kind: 'window', target: 'settings' } } },
     { id: 'clock', name: 'Relógio', desc: 'Hora grande com a data', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'digital', seconds: false, date: true, tz: '' } } },
     { id: 'clock-analog', name: 'Relógio de ponteiros', desc: 'Relógio analógico', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'analog', seconds: true, date: false, tz: '' } } },
     { id: 'notes', name: 'Bloco de notas', desc: 'Texto livre, salvo sozinho no servidor', item: { format: 'notes', size: 't', title: 'Notas', notes: { mode: 'text' } } },
@@ -536,7 +566,8 @@ export function autoClick(item) {
   if (m.startsWith('brunos.')) {
     if (m.startsWith('brunos.battery')) return { kind: 'window', target: 'battery' };
     if (m.startsWith('brunos.net_')) return { kind: 'window', target: 'internet' };
-    if (m.startsWith('brunos.apps')) return { kind: 'none' };
+    if (m.startsWith('brunos.apps') || m.startsWith('brunos.os_')) return { kind: 'none' };
+    if (/^brunos\.(power_w|energy_|cost_)/.test(m)) return { kind: 'window', target: 'power' };
     return { kind: 'window', target: 'live' };
   }
   const iid = m.split('.')[0];

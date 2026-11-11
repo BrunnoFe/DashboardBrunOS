@@ -117,6 +117,14 @@ O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `gola
 
 Na janela *Widgets* há os modelos Relógio (digital ou de ponteiros, com fuso horário), Bloco de notas e Lista de tarefas (escritos direto na tela inicial e iguais em todos os aparelhos) e, cadastrando a integração *Clima* com o nome da sua cidade, temperatura, ícone do tempo e previsão dos próximos dias.
 
+## Consumo, saúde dos discos e atualizações
+
+A janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mês, com projeção) pela tarifa que você informa. O consumo vem de uma tomada inteligente Tuya (integração *Tomada Tuya*, pela rede de casa, sem nuvem), da bateria durante as quedas de energia ou de uma estimativa que o BrunOS aprende.
+
+A lista de discos do *Uso ao vivo* mostra a saúde de cada disco (SMART) e avisa no sino quando um disco começa a falhar; discos em gavetas USB também passam a mostrar a temperatura. Uma vez por dia o BrunOS confere se há versão nova dos apps nas lojas do Runtipi (seta no ícone) e atualizações do Linux (em *Configurações → Sistema*).
+
+Esses recursos usam a versão 4 do script do servidor: em *Configurações → Energia*, copie os comandos de atualização e cole no servidor uma vez (para o SMART, instale também o `smartmontools`).
+
 ## Energia e notificações
 
 O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.

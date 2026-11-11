@@ -76,6 +76,18 @@ Alerta para o sino que um Tipo de integração oferece, que o Bruno liga, deslig
 "aparelho novo na rede").
 _Evite_: regra, alerta personalizado, gatilho
 
+## Energia
+
+**Medidor**:
+De onde vem o consumo do servidor (em watts): Automático, uma tomada inteligente, a bateria
+descarregando, o processador (RAPL) ou a estimativa calibrada. O custo em R$ é calculado sobre ele.
+_Evite_: fonte (que é quem fornece Métricas), sensor, origem
+
+**Estimativa calibrada**:
+Consumo do servidor inteiro calculado pelo processador mais o "resto da máquina" que o BrunOS aprende
+comparando com a bateria quando ela está descarregando.
+_Evite_: consumo aproximado, chute
+
 ## Acesso
 
 **Sessão**:

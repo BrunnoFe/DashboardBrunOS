@@ -75,6 +75,8 @@ type Collector struct {
 	disks   []Disk
 	disksAt time.Time
 	temps   map[string]*diskTemp // temperatura por disco (sda, nvme0n1)
+	extMu   sync.Mutex
+	ext     map[string]diskTemp // temperatura vinda do SMART (discos USB, sem drivetemp)
 	wake    chan struct{}
 
 	// OnSample recebe cada amostra (para o histórico de 24 h / 7 dias). dt = segundos desde a anterior.

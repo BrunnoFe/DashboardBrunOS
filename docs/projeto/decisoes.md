@@ -167,3 +167,18 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     irmão com terminal, e o grupo em primeiro plano do terminal diz se há algo rodando. Roda só ao
     fechar, no fim do tempo sem ninguém olhando e a cada 1 min com Aba minimizada rodando algo — nada
     contínuo, nada instalado no servidor. Falhou (não é Linux, sem `ps`) → "não sei" → pergunta.
+42. **Medidor com Automático e tomada local** (0.11.0, escolhas do Bruno). O consumo tem várias
+    origens possíveis e o Bruno escolhe (ou deixa no Automático: tomada → bateria → estimativa). Na
+    queda de energia a tomada lê 0 W e o Automático passa para a bateria. A tomada Tuya é lida pelo
+    protocolo local (sem nuvem: privado, rápido, funciona sem internet); a chave local é tirada uma vez
+    com o tinytuya e fica cifrada como as outras credenciais. O RAPL só lê o processador e exige root
+    desde 2020 (ataque Platypus): vai pelo script, e só quando o Medidor precisa; não deixamos o arquivo
+    legível para todos. A estimativa calibrada aprende o "resto da máquina" durante as quedas.
+43. **SMART e temperatura dos discos USB pelo smartctl, sem Scrutiny** (0.11.0). O Scrutiny seria outro
+    container com banco (100–200 MB) para dados que mudam pouco. `smartctl -n standby` não acorda HD
+    parado; adaptadores USB (ASM225 e similares) não deixam o drivetemp passar, mas o `-d sat` costuma
+    passar, então a temperatura deles vem do SMART a cada 20 min.
+44. **Atualizações (apps e Linux) só avisam** (0.11.0). Apps: a cópia instalada (`apps/`) contra a loja
+    baixada (`repos/`), pelo `tipi_version`, sem tocar no Postgres do Runtipi. Linux: `apt-check` e
+    `reboot-required` pelo script. O BrunOS não atualiza nada sozinho: abre o Runtipi ou digita o
+    comando no Terminal para o Bruno confirmar.

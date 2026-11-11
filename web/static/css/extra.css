@@ -1231,6 +1231,41 @@ i.wn-box { font-style: normal; }
   .tc-name, .tc-user { width: 100% !important; }
 }
 
+/* ── 0.11.0: consumo, SMART e atualizações ───────────────────── */
+.en-box { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.en-box > .s-row { padding: 6px 0; border-top: 1px solid rgba(255,255,255,.06); }
+.en-box > .s-row.dim { opacity: .5; }
+.en-now { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.en-big { display: flex; flex-direction: column; min-width: 130px; }
+.en-big b { font-size: 34px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.en-big small { font-size: 12px; font-weight: 600; opacity: .6; margin-top: 4px; }
+.en-cells { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-width: 260px; }
+.en-cells .cell { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+.en-cells .k { font-size: 11px; font-weight: 600; opacity: .55; }
+.en-cells .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.en-cells small { font-size: 11px; opacity: .5; font-weight: 600; }
+.en-chart-h { display: flex; justify-content: flex-end; }
+.en-chart { height: 120px; display: grid; place-items: center; }
+.en-chart svg { width: 100%; height: 100%; }
+.en-tariff { width: 86px !important; }
+.en-note { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(255,200,80,.1); color: #ffd98a; }
+.en-note span { flex: 1; }
+.smart-badge { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; margin-left: 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .01em; vertical-align: 2px; cursor: pointer; }
+.smart-badge.ok { background: rgba(95,211,138,.16); color: #8ff0b1; }
+.smart-badge.warn { background: rgba(255,190,70,.18); color: #ffd27a; }
+.smart-badge.bad { background: rgba(255,90,90,.2); color: #ffb3b3; }
+.smart-row .pill-btn { flex: none; }
+.smart-card .kv.bad span:last-child { color: #ffb3b3; font-weight: 700; }
+.app-upd { position: absolute; left: -4px; top: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: #fff; background: var(--brand); box-shadow: 0 2px 6px rgba(0,0,0,.35), 0 0 0 2px rgba(255,255,255,.85); z-index: 2; }
+.app-upd .svg { stroke-width: 2.6; }
+.ai-update { display: flex; align-items: center; gap: 10px; margin: 2px 0 6px; padding: 10px 12px; border-radius: 14px; background: var(--brand-soft); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.ai-update > .svg { font-size: 18px; }
+.ai-update span { display: flex; flex-direction: column; }
+.ai-update small { font-size: 12px; opacity: .7; }
+.os-reboot { color: #ffd27a; }
+.os-pkgs { max-height: 220px; overflow: auto; }
+@media (max-width: 640px) { .en-cells { grid-template-columns: 1fr 1fr; } }
+
 /* ── Clima: escolher a cidade ────────────────────────────────── */
 .wcity { position: relative; display: block; }
 .wcity-ok { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: #8ff0b1; pointer-events: none; }

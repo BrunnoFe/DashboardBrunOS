@@ -16,7 +16,7 @@ SSH embutido e configurações sincronizadas no servidor.
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.10.1 em 10/11/2026)
+- Versão atual: veja `VERSION` (0.11.0 em 10/11/2026)
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -71,6 +71,10 @@ internal/terminal/          terminal SSH (x/crypto/ssh, Abas, SSE, fim da tela p
                             por canal exec com ps, tempo sem ninguém olhando configurável)
 internal/termkey/           Chave do Terminal: ED25519 cifrada com chave derivada da senha do BrunOS (só na memória)
 internal/notes/             texto dos widgets de Notas (/data/notes.json) + aviso "nota mudou" pelo SSE
+internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa calibrada), kWh e R$ (/data/energy.json)
+internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
+internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux, 1×/dia (/data/updates.json)
+etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 4)
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
 internal/events/            central de notificações (sino), /data/events.json
 internal/hostcmd/           chave SSH própria + comando forçado no servidor (desligamento)
@@ -78,7 +82,8 @@ internal/power/             quedas de energia e desligamento seguro (máquina de
 internal/diskhist/          uso diário dos discos e previsão de disco cheio
 internal/logins/            aparelhos conhecidos (aviso de login novo)
 internal/secret/            AES-GCM com chave em /data/secret.key (credenciais das integrações)
-internal/integrations/      Tipos de integração (adguard.go, speedtest.go...), store cifrado, Hub (coleta
+internal/integrations/      Tipos de integração (adguard.go, speedtest.go, weather.go, tuya.go = protocolo local
+                            Tuya 3.3/3.4/3.5 validado contra o tinytuya...), store cifrado, Hub (coleta
                             só do que os widgets usam), séries em segundo plano, rotas /api/integrations
 watch.go                    bateria para o power; vigia de discos (desmontado, quente, cheio); avisos de login
 web/web.go                  serve web/static com gzip + ETag
@@ -91,6 +96,7 @@ web/static/js/battery.js    widget e janela da bateria
 web/static/js/terminal.js   janela Terminal (xterm.js): Abas, minimizar, Conexões salvas, Comandos salvos, ⚙ da chave
 web/static/js/lockscreen.js Tela de bloqueio (com senha no servidor ou só visual) e bloqueio por inatividade
 web/static/js/notes.js      widget de Notas (texto livre ou lista de tarefas, salvo no servidor)
+web/static/js/energy.js     seção Consumo e custo da janela Energia e os comandos do script do servidor
 web/static/js/notifications.js  sino e painel de avisos
 web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
 web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)

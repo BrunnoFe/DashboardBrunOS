@@ -23,21 +23,61 @@ export function forecastText(f) {
   return `+${fmtBytes(f.perDay)}/dia · cheio ${when}`;
 }
 
-export function diskRowsHTML(disks, forecast = []) {
+// SMART (D3): sda1 → sda, nvme0n1p2 → nvme0n1
+const baseDev = (dev) => String(dev || '').replace('/dev/', '').replace(/^(nvme\d+n\d+)p\d+$/, '$1').replace(/^([a-z]+)\d+$/, '$1');
+const HEALTH = { ok: ['OK', 'ok'], atencao: ['Atenção', 'warn'], falhando: ['Falhando', 'bad'] };
+function smartBadge(s) {
+  const h = s && HEALTH[s.health];
+  return h ? `<button class="smart-badge ${h[1]}" data-smart="${esc(s.dev)}" title="Saúde do disco (SMART): clique para os detalhes">${h[0]}</button>` : '';
+}
+
+export function diskRowsHTML(disks, forecast = [], smart = null) {
   if (!disks.length) return '<div class="empty-note">Nenhum disco encontrado</div>';
   const fc = Object.fromEntries(forecast.map((f) => [f.name, f]));
+  const sm = Object.fromEntries((smart?.disks || []).map((s) => [s.dev, s]));
   const rows = disks.map((k) => {
     const f = fc[k.name], ft = forecastText(f), soon = f?.daysLeft != null && f.daysLeft <= 30;
     return `<div class="disk-row">
       <span class="disk-ico">${svg(k.system ? 'cpu' : 'disk')}</span>
-      <span class="disk-name"><b>${esc(k.name)}${tempHTML(k)}</b><small>${esc(k.device.replace('/dev/', ''))}${k.model ? ' · ' + esc(k.model) : ''} · ${k.rotational ? 'HD' : 'SSD'}</small>${ft ? `<small class="disk-fc ${soon ? 'soon' : ''}">${esc(ft)}</small>` : ''}</span>
+      <span class="disk-name"><b>${esc(k.name)}${tempHTML(k)}${smartBadge(sm[baseDev(k.device)])}</b><small>${esc(k.device.replace('/dev/', ''))}${k.model ? ' · ' + esc(k.model) : ''} · ${k.rotational ? 'HD' : 'SSD'}</small>${ft ? `<small class="disk-fc ${soon ? 'soon' : ''}">${esc(ft)}</small>` : ''}</span>
       <span class="track"><i style="width:${(k.used / k.total) * 100}%" class="${k.used / k.total > 0.9 ? 'warn' : ''}"></i></span>
       <span class="disk-val">${fmtBytes(k.used)} <small>/ ${fmtBytes(k.total)}</small></span></div>`;
   }).join('');
   // HD sem temperatura: o driver drivetemp não está carregado no servidor
   const hint = disks.some((k) => k.rotational && k.temp == null)
     ? `<div class="disk-hint">${svg('info')}<span>Para ver a temperatura dos HDs, ative o sensor no servidor.</span><button class="pill-btn" data-disk="temp-help">Como ativar</button></div>` : '';
-  return rows + hint;
+  // saúde dos discos: quando foi lida, "Ler agora" e o que falta instalar
+  const when = smart?.checkedAt ? new Date(smart.checkedAt * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const smartRow = smart ? `<div class="disk-hint smart-row">${svg('shield')}<span>${smart.err ? esc(smart.err) : when ? `Saúde dos discos (SMART) lida em ${esc(when)}. HD parado não é acordado: fica para a próxima.` : 'A saúde dos discos (SMART) é lida a cada 6 horas.'}</span>
+    ${/script do servidor|smartmontools/.test(smart.err || '') ? `<button class="pill-btn" data-disk="script">Mostrar comandos</button>` : ''}<button class="pill-btn" data-disk="smart-now">${svg('refresh')}Ler agora</button></div>` : '';
+  return rows + hint + smartRow;
+}
+
+const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
+/** Detalhes do SMART de um disco. */
+export function smartDialog(s) {
+  const [label, cls] = HEALTH[s.health] || ['—', ''];
+  const row = (k, v, bad) => `<div class="kv ${bad ? 'bad' : ''}"><span>${k}</span><span>${v}</span></div>`;
+  const years = s.powerOnHours != null ? ` (${(s.powerOnHours / 8766).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} anos)` : '';
+  const text = { ok: 'O disco não relata problemas.', atencao: 'Apareceram setores com problema. Não é falha imediata, mas é o sinal clássico de que o disco começou a se desgastar: confira o backup do que está nele.', falhando: 'O próprio disco avisa que está falhando. Copie o que está nele para outro lugar o quanto antes.' }[s.health] || '';
+  const d = openDialog(`<h2>${svg('shield')}Saúde de ${esc(s.dev)}</h2>
+    <p class="dlg-text"><span class="smart-badge ${cls}">${label}</span> ${esc(s.model || '')}${s.serial ? ` · série ${esc(s.serial)}` : ''}</p>
+    <p class="dlg-text">${esc(text)}</p>
+    <div class="card smart-card">
+      ${row('Temperatura', s.temp != null ? `${Math.round(s.temp)} °C` : '—')}
+      ${row('Horas ligado', `${fmtN(s.powerOnHours)}${years}`)}
+      ${row('Vezes ligado', fmtN(s.powerCycles))}
+      ${row('Setores realocados', fmtN(s.reallocated), s.reallocated > 0)}
+      ${row('Setores pendentes', fmtN(s.pending), s.pending > 0)}
+      ${row('Setores incorrigíveis', fmtN(s.uncorrectable), s.uncorrectable > 0)}
+      ${row('Erros de cabo (CRC)', fmtN(s.crcErrors))}
+      ${s.percentUsed != null ? row('Desgaste (NVMe)', `${s.percentUsed}%`, s.percentUsed >= 90) + row('Erros de mídia (NVMe)', fmtN(s.mediaErrors), s.mediaErrors > 0) : ''}
+      ${row('Última leitura completa', s.checkedAt ? new Date(s.checkedAt * 1000).toLocaleString('pt-BR') : '—')}
+    </div>
+    ${(s.history || []).length > 1 ? `<p class="dlg-text"><small>Mudanças: ${s.history.map((h) => `${new Date(h.at * 1000).toLocaleDateString('pt-BR')}: ${h.reallocated} realocados, ${h.pending} pendentes`).map(esc).join(' · ')}</small></p>` : ''}
+    <p class="dlg-text"><small>Erros de cabo (CRC) costumam ser cabo ou adaptador USB ruim, não o disco.</small></p>
+    <div class="dlg-actions"><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 480 });
+  d.el.addEventListener('click', (e) => { if (e.target.closest('[data-c="ok"]')) d.close(); });
 }
 
 const TEMP_CMDS = 'sudo modprobe drivetemp\necho drivetemp | sudo tee /etc/modules-load.d/drivetemp.conf';

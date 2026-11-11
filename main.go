@@ -31,6 +31,7 @@ import (
 	"brunos/internal/auth"
 	"brunos/internal/diskhist"
 	"brunos/internal/dockerc"
+	"brunos/internal/energy"
 	"brunos/internal/events"
 	"brunos/internal/files"
 	"brunos/internal/history"
@@ -43,11 +44,13 @@ import (
 	"brunos/internal/procs"
 	"brunos/internal/runtipi"
 	"brunos/internal/secret"
+	"brunos/internal/smart"
 	"brunos/internal/sshknown"
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
 	"brunos/internal/terminal"
 	"brunos/internal/termkey"
+	"brunos/internal/updates"
 	"brunos/web"
 )
 
@@ -118,6 +121,9 @@ type server struct {
 	integ     *integrations.Hub
 	tkey      *termkey.Vault
 	notes     *notes.Store
+	energy    *energy.Monitor
+	smart     *smart.Monitor
+	updates   *updates.Checker
 	settingMu sync.Mutex
 
 	ctMu    sync.Mutex
@@ -225,7 +231,7 @@ func main() {
 	s.integ.ImageDir = filepath.Join(cfg.DataDir, "img-cache") // fotos do Immich e capas do Plex já mostradas
 	// Tailscale: lê pelo script do servidor, pela conexão SSH do desligamento seguro (só este pedido)
 	integrations.HostQuery = func(ctx context.Context, cmd string) ([]byte, error) {
-		if cmd != hostcmd.CmdTailscale {
+		if cmd != hostcmd.CmdTailscale { // integrações só podem pedir o Tailscale
 			return nil, errors.New("pedido não permitido")
 		}
 		return s.power.HostOutput(ctx, cmd)
@@ -235,6 +241,7 @@ func main() {
 		// chave nova (script brunos-host) e a da configuração antiga, só para desligar até atualizar
 		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key_v2"), filepath.Join(cfg.DataDir, "hostcmd_key"), known))
 	s.power.SuggestHost = func() string { _, info := s.tipi.Apps(); return info.InternalIP }
+	s.setupEtapa9(cfg.DataDir)
 	s.stats.SetDrain(s.power.DrainW())
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
 	if err := fsvc.LoadMapping(); err != nil {
@@ -349,6 +356,9 @@ func (s *server) routes() http.Handler {
 	s.hist.Register(mux, a)
 	s.netmon.Register(mux, a)
 	s.integ.Register(mux, a, s.integrationApps)
+	s.energy.Register(mux, a)
+	s.smart.Register(mux, a)
+	s.updates.Register(mux, a)
 	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
 	if s.term != nil {
 		s.term.Register(mux, a)
@@ -1047,11 +1057,12 @@ func (s *server) containers(ctx context.Context) ([]dockerc.Container, error) {
 
 type appOut struct {
 	runtipi.App
-	State      string   `json:"state"` // running | stopped | partial | unknown
-	Containers int      `json:"containers"`
-	Running    int      `json:"running"`
-	Health     string   `json:"health"`           // up | down | unknown (monitor de disponibilidade)
-	Uptime     *float64 `json:"uptime,omitempty"` // % das últimas 24 h
+	State      string          `json:"state"` // running | stopped | partial | unknown
+	Containers int             `json:"containers"`
+	Running    int             `json:"running"`
+	Health     string          `json:"health"`           // up | down | unknown (monitor de disponibilidade)
+	Uptime     *float64        `json:"uptime,omitempty"` // % das últimas 24 h
+	Update     *runtipi.Update `json:"update,omitempty"` // atualização na loja (conferida 1×/dia)
 }
 
 func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
@@ -1087,6 +1098,9 @@ func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
 		o.Health = healthName(s.appmon.Health(a.Project))
 		if pct, ok := s.appmon.Uptime(a.Project); ok {
 			o.Uptime = &pct
+		}
+		if u, ok := s.updates.For(a.URN); ok {
+			o.Update = &u
 		}
 		out = append(out, o)
 	}

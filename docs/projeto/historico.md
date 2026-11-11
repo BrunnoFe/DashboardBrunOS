@@ -229,5 +229,21 @@ Problemas encontrados no caminho:
   tela quebrava ao percorrer a lista. Listas vazias agora vão como `[]` (teste Go e da API) e a tela
   tolera lista ausente.
 
+## 0.11.0 (10/11/2026): consumo e custo, saúde dos discos e atualizações (etapa 9)
+Combinado numa sessão de perguntas (Medidor e Estimativa calibrada em `CONTEXT.md`, decisões 42–44).
+H4 (convidados) e I2 (Wake-on-LAN) foram para o futuro; B4 já existia.
+- **Consumo e custo**: Medidor (Automático: tomada → bateria nas quedas → estimativa calibrada), amostra
+  por minuto, kWh e R$ de hoje/mês/projeção com a tarifa, 24 h por minuto e 13 meses por dia; seção na
+  janela Energia, Métricas da fonte BrunOS e Modelos prontos.
+- **Tomada Tuya** (protocolo local 3.3/3.4/3.5, sem nuvem, só biblioteca padrão): a do Bruno é 3.5 e
+  mede ~17 W. O cliente Go foi validado contra uma tomada falsa feita com as funções do próprio
+  tinytuya 1.20 (negociação da chave de sessão, AES-ECB/HMAC e AES-GCM).
+- **Saúde dos discos (SMART)** pelo script do servidor: selo OK/Atenção/Falhando, detalhes, avisos;
+  temperatura dos discos em gavetas USB (o drivetemp não atravessa o adaptador) a cada 20 min.
+- **Atualizações**: apps (cópia instalada × loja baixada, sem Postgres), selo ↑ no ícone e "Atualizar
+  no Runtipi"; Linux (apt-check, reinício necessário) com "Atualizar no Terminal".
+- Script do servidor **versão 4** (energia, smart, temperatura, atualizacoes; só leitura).
+- Testes: pacotes energy/smart/updates/runtipi e Tuya; apitest 189 ok.
+
 ## Próximas
 Veja `roadmap.md`.

@@ -102,6 +102,13 @@ const real = {
     del: (id) => call('DELETE', `/api/notes/${encodeURIComponent(id)}`),
   },
   geocode: (name) => call('GET', `/api/integrations/geocode?${q({ q: name })}`),
+  energy: {
+    get: () => call('GET', '/api/energy'),
+    setConfig: (c) => call('PUT', '/api/energy/config', c),
+    history: () => call('GET', '/api/energy/history'),
+  },
+  smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}) },
+  updates: { get: () => call('GET', '/api/updates'), check: () => call('POST', '/api/updates/check', {}) },
   settings: () => call('GET', '/api/settings'),
   saveSettings: (s) => call('PUT', '/api/settings', s),
   wallpapers: () => call('GET', '/api/wallpapers'),
@@ -501,6 +508,13 @@ function makeDemo() {
     fields: [{ id: 'city', label: 'Cidade', type: 'city', placeholder: 'Digite o nome da cidade', required: true, help: 'Escreva o nome e escolha na lista' }, { id: 'lat', label: 'Latitude', type: 'hidden' }, { id: 'lon', label: 'Longitude', type: 'hidden' }],
     metrics: [M('temp', 'Temperatura agora', 'num', { unit: '°C', icon: 'temp' }), M('feels', 'Sensação térmica', 'num', { unit: '°C', icon: 'temp' }), M('cond', 'Condição', 'text', { icon: 'wx-partly' }), M('max', 'Máxima de hoje', 'num', { unit: '°C', icon: 'arrowUp' }), M('min', 'Mínima de hoje', 'num', { unit: '°C', icon: 'arrowDown' }), M('rain', 'Chance de chuva hoje', 'num', { unit: '%', icon: 'wx-rain' }), M('humidity', 'Umidade', 'num', { unit: '%', icon: 'wx-drop' }), M('wind', 'Vento', 'num', { unit: 'km/h', icon: 'wx-wind' }), M('forecast', 'Previsão (7 dias)', 'list', { icon: 'wx-partly' }), M('city', 'Cidade', 'text', { icon: 'home' })],
     alerts: [{ id: 'hot', name: 'Calor forte', desc: 'Avisa quando a temperatura passar disto', metric: 'temp', op: '>', default: 35, unit: '°C', level: 'info' }, { id: 'rain', name: 'Chuva provável hoje', desc: 'Avisa quando a chance de chuva hoje passar disto', metric: 'rain', op: '>', default: 70, unit: '%', level: 'info' }] });
+  demoKinds.push({ id: 'tuya', name: 'Tomada Tuya', desc: 'Consumo medido na tomada (W, V, A e kWh), pela rede de casa, sem nuvem', interval: 30, noUrl: true,
+    note: 'Precisa do IP, do ID e da chave local da tomada (tirados uma vez com o tinytuya). A chave fica guardada cifrada no BrunOS.',
+    fields: [{ id: 'host', label: 'IP da tomada', type: 'text', placeholder: '192.168.1.60', required: true }, { id: 'devid', label: 'ID da tomada (Device ID)', type: 'text', placeholder: 'bf12...', required: true },
+      { id: 'secret', label: 'Chave local (local key)', type: 'secret', required: true, help: 'No arquivo devices.json do tinytuya, campo "key" (16 caracteres)' }, { id: 'version', label: 'Versão do protocolo', type: 'text', placeholder: '3.5', help: 'Aparece no "tinytuya scan" (3.3, 3.4 ou 3.5). Vazio = 3.5' }],
+    metrics: [M('power', 'Potência agora', 'num', { unit: 'W', icon: 'bolt' }), M('voltage', 'Tensão', 'num', { unit: 'V', icon: 'bolt' }), M('current', 'Corrente', 'num', { unit: 'A', icon: 'bolt' }), M('energy', 'Energia somada pela tomada', 'num', { unit: 'kWh', icon: 'chart' }), M('on', 'Ligada (1 = sim)', 'num', { icon: 'power' })],
+    alerts: [{ id: 'down', name: 'Tomada sem responder', desc: 'Avisa quando a tomada para de responder por 5 minutos', op: 'down', level: 'info', fixed: true }] });
+  demoInteg.push({ id: 'tu1', kind: 'tuya', name: 'Tomada do servidor', url: '', hasSecret: true, interval: 30, alerts: {}, options: { host: '192.168.1.60', devid: 'bf12xxxxxxxx', version: '3.5' } });
   demoInteg.push({ id: 'wx1', kind: 'weather', name: 'Clima', url: '', hasSecret: false, interval: 900, alerts: {}, options: { city: 'Belo Horizonte, Minas Gerais', lat: '-19.92', lon: '-43.94' } });
   const WD = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const wxValues = () => {
@@ -509,7 +523,7 @@ function makeDemo() {
     return { temp: { n: 26.4 }, feels: { n: 27.9 }, cond: { t: 'Parcialmente nublado', i: night ? 'wx-partly-night' : 'wx-partly' }, max: { n: 29 }, min: { n: 18 }, rain: { n: 10 }, humidity: { n: 61 }, wind: { n: 12 }, city: { t: 'Belo Horizonte' },
       forecast: { l: days.map(([i, mx, mn, p], d) => ({ k: d ? WD[(new Date().getDay() + d) % 7] : 'Hoje', v: `${mx}° / ${mn}°${p >= 30 ? ` · ${p}%` : ''}`, i })) } };
   };
-  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues, transmission: trValues, syncthing: syValues, nextcloud: ncValues, weather: wxValues }[it.kind] || (() => ({})))();
+  const demoValues = (it) => ({ adguard: agValues, speedtest: stValues, immich: imValues, plex: pxValues, watchyourlan: wyValues, tailscale: tsValues, transmission: trValues, syncthing: syValues, nextcloud: ncValues, weather: wxValues, tuya: () => ({ power: { n: +(16.5 + Math.random()).toFixed(1) }, voltage: { n: 125.3 }, current: { n: 0.203 }, energy: { n: 0.09 }, on: { n: 1 } }) }[it.kind] || (() => ({})))();
   const demoViews = () => demoInteg.map((it) => ({ id: it.id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }));
   const nodeAt = (root, path) => {
     let n = tree[root];
@@ -543,6 +557,29 @@ function makeDemo() {
         put: (id, text) => { const m = all(); m[id] = { text, at: Date.now() }; put(m); return wait(m[id], 60); },
         del: (id) => { const m = all(); delete m[id]; put(m); return wait({ ok: true }); },
       };
+    })(),
+    // 0.11.0: consumo (tomada de ~17 W), SMART e atualizações simulados
+    energy: (() => {
+      let cfg = { meter: 'auto', plugId: '', tariff: 0.9 };
+      const t0 = Math.floor(Date.now() / 60000) * 60 - 1439 * 60;
+      const minutes = Array.from({ length: 1440 }, (_, i) => ({ t: t0 + i * 60, v: +(15 + Math.sin(i / 90) * 2 + (i % 240 < 30 ? 6 : 0) + Math.random()).toFixed(1) }));
+      const days = Array.from({ length: 30 }, (_, i) => { const d = new Date(Date.now() - (29 - i) * 86400e3); const k = +(0.38 + Math.random() * 0.08).toFixed(3); return { date: d.toISOString().slice(0, 10), kWh: k, cost: +(k * cfg.tariff).toFixed(2) }; });
+      const now = () => { const day = new Date().getDate(), month = days.slice(-day).reduce((s, d) => s + d.kWh, 0); return { w: +(16.5 + Math.random()).toFixed(1), meter: 'plug', todayKWh: 0.274, monthKWh: +month.toFixed(3), tariff: cfg.tariff, todayCost: +(0.274 * cfg.tariff).toFixed(2), monthCost: +(month * cfg.tariff).toFixed(2), projection: +(month / day * 30 * cfg.tariff).toFixed(2), offset: 7.2, at: Math.floor(Date.now() / 1000) }; };
+      return { get: () => wait({ config: cfg, now: now() }), setConfig: (c) => { cfg = { ...cfg, ...c }; return wait({ config: cfg, now: now() }); }, history: () => wait({ minutes, days }, 150) };
+    })(),
+    smart: (() => {
+      const disks = [
+        { dev: 'sda', model: 'ST1000LM035', health: 'ok', passed: true, temp: 36, powerOnHours: 21400, powerCycles: 2100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
+        { dev: 'sdb', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600, history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }] },
+        { dev: 'sdc', model: 'SSD 360GB', health: 'ok', passed: true, temp: 40, powerOnHours: 9100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
+        { dev: 'sdd', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, powerOnHours: 17200, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
+      ];
+      return { get: () => wait({ disks, checkedAt: now - 3600 }), refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900) };
+    })(),
+    updates: (() => {
+      const s = { apps: [{ urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' }],
+        os: { total: 12, security: 3, reboot: true, packages: ['linux-image-generic', 'linux-headers-generic', 'openssl', 'libssl3t64', 'tzdata', 'snapd', 'curl', 'libcurl4t64', 'python3.12', 'vim', 'git', 'docker-ce'], checkedAt: now - 7200 }, checkedAt: now - 7200 };
+      return { get: () => wait(s), check: () => wait({ ...s, checkedAt: Math.floor(Date.now() / 1000) }, 600) };
     })(),
     geocode: (q) => wait([['Belo Horizonte', 'Minas Gerais', -19.92, -43.94], ['São Paulo', 'São Paulo', -23.55, -46.63], ['Rio de Janeiro', 'Rio de Janeiro', -22.91, -43.17], ['Florianópolis', 'Santa Catarina', -27.6, -48.55], ['Lisboa', 'Lisboa', 38.72, -9.14]]
       .filter(([n]) => n.toLowerCase().includes(q.toLowerCase().slice(0, 3))).map(([name, region, lat, lon]) => ({ name, region, country: name === 'Lisboa' ? 'Portugal' : 'Brasil', lat, lon })), 200),
@@ -645,7 +682,7 @@ function makeDemo() {
       { pid: 1204, name: 'sshd', cmd: 'sshd: /usr/sbin/sshd -D [listener]', user: 'root', cpu: 0, mem: 8e6, memPct: 0.1, threads: 1 },
     ].map((p) => ({ ppid: 1, state: 'S', ...p })) }, 300),
     system: () => wait({ info: { hostname: 'server', os: 'Ubuntu 24.04 LTS', kernel: '6.8.0', cpuModel: 'Intel(R) Core(TM) i5 (demonstração)', cores: 2, arch: 'amd64' }, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false, version: 'demo', startedAt: now - 7200, maxUploadGB: 50 }),
-    apps: () => wait({ apps, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
+    apps: () => wait({ apps: apps.map((a) => ({ ...a, update: { 'plex:migrated': { urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, 'immich:migrated': { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' } }[a.urn] })), runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
     usage: () => wait([{ urn: '', name: 'Runtipi (sistema)', project: 'runtipi', cpu: 1.2 + Math.random(), memory: 420e6 }, ...apps.filter((a) => a.state === 'running').map((a) => ({ urn: a.urn, name: a.name, project: a.project, cpu: Math.random() * 3, memory: 20e6 + Math.random() * 600e6 }))].sort((a, b) => b.cpu - a.cpu), 200),
     restart: () => Promise.reject(new Error('Indisponível na demonstração')),
     app: (() => {

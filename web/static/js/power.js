@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { $, esc, html, svg, toast, toastError, openDialog, confirmDialog } from './ui.js';
 import { fmtMinutes } from './battery.js';
+import { mountEnergy } from './energy.js';
 
 const PHASE = {
   off: ['Desativado', 'off'], armed: ['Vigiando a bateria', 'ok'], countdown: ['Contagem regressiva', 'crit'],
@@ -70,6 +71,9 @@ export async function powerDialog({ openTerminal } = {}) {
   const d = openDialog(`<h2>${svg('bolt')}Energia</h2>
     <p class="pw-intro">O notebook é o servidor e a bateria é o nobreak. Se a energia cair e a bateria chegar ao limite, o BrunOS avisa, espera um pouco (dá para cancelar) e desliga o servidor com segurança, antes de a bateria acabar.</p>
     <div class="pw-state" data-state></div>
+    <div class="s-group-title">Consumo e custo</div>
+    <div class="s-group pw-group en-box" data-energy><div class="empty-note">Carregando…</div></div>
+    <div class="s-group-title">Desligamento seguro</div>
     <div class="s-group pw-group" data-cfg></div>
     <div class="s-group-title">Saúde da bateria</div>
     <div class="s-group pw-group" data-charge></div>
@@ -80,6 +84,7 @@ export async function powerDialog({ openTerminal } = {}) {
     <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button><button class="pill-btn primary" data-c="save" disabled>Salvar</button></div>`,
   { width: 620, closeBtn: false, onClose: () => { open = false; } });
 
+  mountEnergy($('[data-energy]', d.el));
   const tested = () => !!cfg.testedAt;
   const drawState = (st) => {
     const [label, cls] = PHASE[st.phase] || [st.phase, 'off'];

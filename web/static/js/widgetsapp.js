@@ -5,7 +5,7 @@ import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, time
 import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
-const KIND_GLYPH = { weather: 'wx-partly' }; // tipos sem ícone de app: um desenho próprio
+const KIND_GLYPH = { weather: 'wx-partly', tuya: 'plug' }; // tipos sem ícone de app: um desenho próprio
 
 // Clima: procura a cidade pelo nome (o servidor pergunta ao Open-Meteo) e mostra a lista para escolher
 let cityTimer = 0, citySeq = 0;

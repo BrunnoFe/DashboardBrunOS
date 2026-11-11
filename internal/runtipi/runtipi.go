@@ -89,6 +89,58 @@ type configJSON struct {
 	ShortDesc  string   `json:"short_desc"`
 	Categories []string `json:"categories"`
 	Version    string   `json:"version"`
+	Tipi       int      `json:"tipi_version"`
+}
+
+// Update é uma atualização disponível de um app (A1, decisão 44).
+type Update struct {
+	URN       string `json:"urn"`
+	ID        string `json:"id"`
+	Store     string `json:"store"`
+	Name      string `json:"name"`
+	Installed string `json:"installed"` // versão instalada
+	Available string `json:"available"` // versão na loja
+}
+
+// CheckUpdates compara a cópia instalada de cada app (apps/<loja>/<app>/config.json) com a loja que o
+// Runtipi baixou (repos/<loja>/apps/<app>/config.json), pelo tipi_version, que só sobe. Apps criados
+// à mão (_user) e o layout antigo, sem lojas, ficam de fora. Só lê arquivos (nada de Postgres).
+func (d *Discoverer) CheckUpdates() []Update {
+	out := []Update{}
+	if d.dir == "" {
+		return out
+	}
+	read := func(p string) (configJSON, bool) {
+		var c configJSON
+		b, err := os.ReadFile(p)
+		return c, err == nil && json.Unmarshal(b, &c) == nil
+	}
+	stores, _ := os.ReadDir(filepath.Join(d.dir, "apps"))
+	for _, s := range stores {
+		if !s.IsDir() || strings.HasPrefix(s.Name(), ".") || strings.HasPrefix(s.Name(), "_") {
+			continue
+		}
+		apps, _ := os.ReadDir(filepath.Join(d.dir, "apps", s.Name()))
+		for _, a := range apps {
+			if !a.IsDir() {
+				continue
+			}
+			inst, ok := read(filepath.Join(d.dir, "apps", s.Name(), a.Name(), "config.json"))
+			if !ok {
+				continue
+			}
+			repo, ok := read(filepath.Join(d.dir, "repos", s.Name(), "apps", a.Name(), "config.json"))
+			if !ok || repo.Tipi <= inst.Tipi || inst.Tipi == 0 {
+				continue
+			}
+			name := inst.Name
+			if name == "" {
+				name = a.Name()
+			}
+			out = append(out, Update{URN: a.Name() + ":" + s.Name(), ID: a.Name(), Store: s.Name(), Name: name, Installed: inst.Version, Available: repo.Version})
+		}
+	}
+	return out
 }
 
 func (d *Discoverer) scan() ([]App, Info) {

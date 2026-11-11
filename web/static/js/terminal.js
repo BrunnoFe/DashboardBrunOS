@@ -64,7 +64,9 @@ const mainConn = (list) => list.find((c) => c.main) || list[0] || null;
  * ctx: { settings, saveSetting(k, v), defaultHost, onTabs() }
  */
 export function terminalWindow(ctx) {
-  if (openWin) { openWin.focus(); return; }
+  // ctx.typeCmd: abre com um comando já digitado na Aba da frente (sem Enter), ex.: atualizar o Linux
+  if (openWin) { openWin.focus(); if (ctx.typeCmd) openWin.send({ cmd: ctx.typeCmd, run: false }); return; }
+  let pendingType = ctx.typeCmd || '';
   const st = ctx.settings;
   const conns = () => connections(st, ctx.saveSetting);
   if (!Array.isArray(st.termSnippets)) st.termSnippets = [];
@@ -193,6 +195,7 @@ export function terminalWindow(ctx) {
       onLocked: () => term?.write('\r\n\x1b[2m[tela bloqueada: a aba continua rodando no servidor]\x1b[0m\r\n'),
     });
     setTimeout(() => term?.focus(), 30);
+    if (pendingType) { const cmd = pendingType; pendingType = ''; setTimeout(() => sendSnippet({ cmd, run: false }), 900); }
   }
   function ended(t, msg, reattach = false) {
     if (!reattach) { t.ended = msg; setCount(); }

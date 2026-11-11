@@ -241,12 +241,13 @@ func TestHostScriptRefuses(t *testing.T) {
 	}
 	for _, bad := range []string{"", "rm -rf /", "limite", "limite 49", "limite 101", "limite 8O", "limite 80 90",
 		"limite 80; reboot", "limite $(id)", "limite *", "protecao talvez", "desligar agora", "versao x", "sh", "limite -1",
-		"tailscale up", "tailscale down", "tailscale status --json; reboot"} {
+		"tailscale up", "tailscale down", "tailscale status --json; reboot",
+		"smart /dev/sda", "smart; reboot", "temperatura sda", "energia 1", "atualizacoes sim", "apt upgrade"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 3") {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 4") {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 }

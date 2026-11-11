@@ -74,6 +74,30 @@ func (c *Collector) fillTemps(disks []Disk, now time.Time) {
 		if prev != nil {
 			v := prev.val
 			d.Temp, d.TempAt = &v, prev.at.Unix()
+		} else if e, ok := c.extTemp(base); ok { // sem drivetemp (ex.: gaveta USB): a do SMART
+			v := e.val
+			d.Temp, d.TempAt = &v, e.at.Unix()
 		}
 	}
+}
+
+// SetDiskTemp guarda a temperatura de um disco lida pelo SMART (ex.: "sda"). Só aparece quando o
+// drivetemp não tem leitura para ele; vale por até 24 h.
+func (c *Collector) SetDiskTemp(dev string, celsius float64, at time.Time) {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	if c.ext == nil {
+		c.ext = map[string]diskTemp{}
+	}
+	c.ext[dev] = diskTemp{val: round1(celsius), at: at}
+}
+
+func (c *Collector) extTemp(dev string) (diskTemp, bool) {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	e, ok := c.ext[dev]
+	if !ok || time.Since(e.at) > 24*time.Hour {
+		return diskTemp{}, false
+	}
+	return e, true
 }
