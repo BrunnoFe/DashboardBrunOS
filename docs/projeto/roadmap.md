@@ -46,6 +46,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | D3 | Saúde SMART | M | **feito (0.11.0)** (smartctl pelo script; temperatura dos discos USB) | Precisa de root: app Scrutiny (integração por API) **ou** `smartctl -j` via SSH restrito. |
 | D4 | Previsão de disco cheio | B | feito (0.5.0), **opcional e desligada por padrão** (pedido do Bruno: Configurações → Sistema → Previsão de disco cheio, preferência `diskForecast`) | Uso diário (gravado sempre) por disco em `/data/disk-history.json` (180 dias), regressão linear sobre 30 dias. Avisos: "vai encher em ≤ 30 dias" e "≥ 90% ocupado" (este é o "disco > 90%" do C1). |
 | D5 | Mapa do espaço (treemap) no gerenciador | M | feito (0.6.0) | Varredura limitada (tempo/entradas) em segundo plano, cache por pasta; desenho em canvas/SVG. |
+| D6 | Correção do SMART ("context deadline exceeded") | M | **feito (0.11.2)** | Um disco por vez, SATA primeiro nos USB, modo guardado por número de série, "sem SMART" depois de travar uma vez (decisão 46). Script 5. |
 
 ## E. Apps
 
@@ -56,6 +57,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | E3 | Pastas na tela inicial | M | feito (0.7.0) | Preferência `folders: [{id,name,apps:[...]}]`; arrastar app sobre app cria pasta; janela da pasta estilo iOS/Umbrel. |
 | E4 | Páginas na tela inicial | M | feito (0.7.0) | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
 | E5 | Uso por app ao longo do tempo | M | feito (0.7.0) | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
+| E6 | Botão de atualizações ao lado do sino + frequência + atualizar pela interface | M–A | a fazer (0.12.0) | Clique abre o painel e já confere; frequência 6 h/12 h/diária/semanal/manual; `apt upgrade` e `runtipi-cli app update` pelo script (`systemd-run`), com confirmação e andamento (decisão 47). Script 6. |
 
 ## F. Arquivos
 
@@ -84,6 +86,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | H2 | Sessões ativas com "encerrar" | B | adiado | `sessions.json` já guarda ip/userAgent/criação; listar e revogar. |
 | H3 | Aviso de login novo | B | feito (0.5.0) | `internal/logins`: navegador + sistema + rede (rede local conta como um lugar só; internet por faixa /24 ou /48), `/data/logins.json`. Também avisa quando um endereço é bloqueado por errar a senha (no máximo 1 aviso a cada 6 h por endereço). |
 | H4 | Contas de convidado (família) | A | **futuro** (adiado em 10/11/2026) | Papéis (admin/convidado), permissões por recurso (arquivos, terminal, configurações, apps visíveis). Muda auth e todas as rotas. |
+| H5 | Revisão de segurança dos acessos e do script do servidor | M | **futuro** (pedido em 11/11/2026) | "No futuro vamos fazer um checagem de segurança antes e podemos rever esses detalhes de acesso e excução de scripts." Revisar os pedidos do brunos-host (desligar, limite, leituras, atualizar Linux/apps). |
 
 ## I. Rede da casa
 
@@ -100,6 +103,9 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | J1 | Tela de bloqueio com relógio grande | B | **feito (0.10.0)** | Com senha (padrão, vale no servidor: 423) ou só visual; Ctrl+Shift+L, busca, botão direito e inatividade (5/15/30/60 min ou nunca). Decisão 39. |
 | J2 | Papel de parede por horário | B | feito (0.9.2), lista livre de horários | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
 | J3 | Widgets de relógio, clima e bloco de notas | B | **feito (0.10.0)** | Clima = Tipo de integração (Open-Meteo, ícones próprios); Relógio e Notas = Formatos novos; notas em `/data/notes.json` com aviso pelo SSE. |
+| J4 | Configurações sem a aba "Tudo" | B | a fazer (0.12.0) | Abre na última aba; a pesquisa procura em todas. |
+| J5 | Terminal sempre no dock | B | a fazer (0.12.0) | Desmarcável em "Apps no dock". |
+| J6 | Tela inicial nova: Disposições, Medidas, posição e Tamanho livres, arrastar novo | A | a fazer (0.13.0) | Decisão 48; detalhes em `plano-etapa10.md`. Celular: Área compacta e Página com widgets e apps em duas telas. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
 ## K. Terminal
@@ -129,8 +135,11 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 7c | 0.9.3 | Transmission · Syncthing · Nextcloud (pedidos do Bruno em 08/11/2026) — **feito (0.9.3), aguardando teste no servidor**. Vaultwarden **adiado** ("Vamos sem integração com Vaultwarden nesse momento. Deixe para o futuro."): sem token só daria no ar, versão e cadastro aberto; com o ADMIN_TOKEN, usuários (decidir no futuro) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 — **feito (0.10.0), aguardando teste no servidor** |
 | 9 | 0.11.0 | A1 · B3 · D3 — **feito (0.11.0), aguardando teste no servidor** (B4 já feito na 0.8.1; H4 e I2 adiados em 10/11/2026: "Vamos deixar H4 e I2 para o futuro") |
+| 10a | 0.11.2 | D6 (SMART) — **feito (0.11.2), aguardando teste no servidor** |
+| 10b | 0.12.0 | J4 · J5 · E6 — a fazer |
+| 10c | 0.13.0 | J6 — a fazer |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
-| — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) |
+| — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) · H5 (revisão de segurança) |
 
 Em 08/11/2026 o Bruno escolheu o **CodeMirror 6** para o editor (F2), em vez de um editor leve feito à
 mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob demanda.
@@ -139,6 +148,14 @@ mão: bundle vendorizado em `web/static/vendor/codemirror/`, carregado sob deman
 tokens~~ (decidido em 08/11/2026: cifrados com chave em arquivo, decisão 33); ~~F2 qual editor~~; J1
 bloqueio só visual ou com senha; K3 riscos de lembrar a chave SSH; H4 quais permissões; A1 como saber a
 versão instalada sem tocar no Postgres.
+
+### Etapa 10 (0.11.2 → 0.13.0) combinada em 11/11/2026
+
+Sessão de perguntas uma a uma; resumo aprovado ("Correto. Pode seguir."). Plano completo em
+`plano-etapa10.md`; termos novos em `CONTEXT.md` (Disposição, Área de apps, Medida, Tamanho livre);
+porquês nas decisões 46–48. Três versões separadas: SMART primeiro ("Pode ser separado"), depois os itens
+pequenos com as atualizações, depois a tela inicial. O celular volta a contar: "Futuramente o acesso ao
+dashboard no celular será muito importante" — testar sempre em tamanho de celular.
 
 ### Etapa 9 (0.11.0) combinada em 10/11/2026
 

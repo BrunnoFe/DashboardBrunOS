@@ -35,7 +35,7 @@ export async function mountEnergy(box, ctx = {}) {
           <span class="cell"><span class="k">Mês até agora</span><span class="v">${brl(n.monthCost)}</span><small>${fmt(n.monthKWh, 1)} kWh</small></span>
           <span class="cell"><span class="k">Projeção do mês</span><span class="v">${n.projection ? brl(n.projection) : '—'}</span><small>pelo ritmo até agora</small></span>
         </div></div>
-      ${script ? `<div class="en-note">${svg('info')}<span>Para o processador e a estimativa, atualize o script do servidor (versão 4).</span><button class="pill-btn sm" data-en="script">Mostrar comandos</button></div>` : ''}
+      ${script ? `<div class="en-note">${svg('info')}<span>Para o processador e a estimativa, atualize o script do servidor (versão 5).</span><button class="pill-btn sm" data-en="script">Mostrar comandos</button></div>` : ''}
       <div class="en-chart-h"><div class="seg seg-sm"><button class="${view === 'day' ? 'on' : ''}" data-en-view="day">24 horas</button><button class="${view === 'month' ? 'on' : ''}" data-en-view="month">30 dias</button></div></div>
       <div class="en-chart">${chart}</div>
       <div class="s-row"><span class="s-ico">${svg('activity')}</span><span class="s-text"><b>Medidor</b><small>${esc(METERS.find(([k]) => k === c.meter)?.[2] || '')}</small></span>
@@ -63,12 +63,12 @@ export async function mountEnergy(box, ctx = {}) {
   const timer = setInterval(async () => { if (!box.isConnected) { clearInterval(timer); return; } try { await load(); draw(); } catch { /* tenta de novo */ } }, 60000);
 }
 
-/** Comandos de atualização do script do servidor (versão 4: consumo, SMART e atualizações). */
+/** Comandos de atualização do script do servidor (versão 5: consumo, SMART um disco por vez e atualizações). */
 export async function scriptDialog() {
   let cmds = '';
   try { cmds = (await api.power.setup()).updateCommands; } catch (e) { toastError(e, 'Não deu para gerar os comandos'); return; }
   const d = openDialog(`<h2>${svg('terminal')}Atualizar o script do servidor</h2>
-    <p class="dlg-text">A versão 4 do script <code>brunos-host</code> traz pedidos novos, todos só de leitura: consumo do processador, saúde dos discos (SMART) e atualizações do Linux. Cole estes comandos no servidor uma vez (por exemplo no Terminal do BrunOS). Para a saúde dos discos, instale também o <code>smartmontools</code>.</p>
+    <p class="dlg-text">A versão 5 do script <code>brunos-host</code> tem só pedidos de leitura além do desligamento: consumo do processador, saúde dos discos (SMART, agora um disco de cada vez e do jeito certo para cada case USB) e atualizações do Linux. Cole estes comandos no servidor uma vez (por exemplo no Terminal do BrunOS). A primeira linha instala o <code>smartmontools</code>, que lê a saúde dos discos.</p>
     <pre class="pw-cmds" tabindex="0">${esc(`sudo apt install -y smartmontools\n${cmds}`)}</pre>
     <div class="dlg-actions"><button class="pill-btn" data-c="copy">${svg('copy')}Copiar</button><button class="pill-btn primary" data-c="ok">Pronto</button></div>`, { width: 640 });
   d.el.addEventListener('click', async (e) => {

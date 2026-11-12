@@ -403,6 +403,9 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
   /* celular: a barra de uso desce para a linha de baixo e o nome ganha espaço */
   .disk-row { flex-wrap: wrap; row-gap: 6px; }
   .disk-row .track { order: 5; flex: 1 1 100%; width: auto; margin-left: 42px; }
+  /* nome, temperatura e selo do SMART quebram linha em vez de cortar o selo */
+  .disk-name b { flex-wrap: wrap; row-gap: 4px; white-space: normal; }
+  .disk-name b .smart-badge { margin-left: 0; }
   .proc .mem { display: none; }
 }
 

@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -55,8 +56,8 @@ const (
 	// desligando com a chave nova e só recusa os pedidos que não conhece.
 	SetupVersion = 2
 	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2; 4 = "energia", "smart",
-	// "temperatura" e "atualizacoes", 0.11.0).
-	ScriptVersion = 4
+	// "temperatura" e "atualizacoes", 0.11.0; 5 = "discos" e SMART um disco por vez com o modo, 0.11.2).
+	ScriptVersion = 5
 	maxOutput     = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
 	dialTimeout   = 10 * time.Second
 	keyComment    = "brunos-power"
@@ -67,15 +68,44 @@ const (
 	CmdShutdown  = "desligar"
 	CmdVersion   = "versao"
 	CmdTailscale = "tailscale" // só lê: tailscale status --json (script 3)
-	// script 4 (0.11.0), todos só leitura:
+	// script 4 (0.11.0) e 5 (0.11.2), todos só leitura:
 	CmdEnergy  = "energia"      // contador do RAPL (energy_uj) e o limite dele
-	CmdSmart   = "smart"        // smartctl -j -a -n standby de cada disco
-	CmdTemps   = "temperatura"  // smartctl -j -A -n standby de cada disco (temperatura)
 	CmdUpdates = "atualizacoes" // apt-check, reboot-required e a lista de pacotes
+	// script 5 (0.11.2), só leitura:
+	CmdDisks = "discos"      // lsblk: nome, transporte (usb, sata, nvme) e número de série de cada disco
+	CmdSmart = "smart"       // "smart <disco> <sat|auto>": smartctl -j -n standby -H -i -A de UM disco
+	CmdTemps = "temperatura" // "temperatura <disco> <sat|auto>": smartctl -j -n standby -A de UM disco
+)
+
+// Modos de leitura do SMART: sat = "-d sat" (disco SATA atrás de um adaptador USB); auto = o smartctl
+// decide pelo próprio banco de adaptadores (inclusive as pontes USB de NVMe).
+const (
+	ModeSAT  = "sat"
+	ModeAuto = "auto"
 )
 
 // ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
-var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true}
+var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true}
+
+var diskRe = regexp.MustCompile(`^(sd[a-z]{1,2}|nvme[0-9]n1)$`)
+
+// ValidDisk diz se o nome é um disco que o script aceita (sda, sdab, nvme0n1).
+func ValidDisk(dev string) bool { return diskRe.MatchString(dev) }
+
+// ReadAllowed confere um pedido de leitura inteiro, com os argumentos (o script confere de novo).
+func ReadAllowed(cmd string) bool {
+	f := strings.Fields(cmd)
+	if len(f) == 0 || !ReadCmds[f[0]] {
+		return false
+	}
+	if f[0] == CmdSmart || f[0] == CmdTemps {
+		return len(f) == 3 && ValidDisk(f[1]) && (f[2] == ModeSAT || f[2] == ModeAuto)
+	}
+	return len(f) == 1
+}
+
+// DiskCmd monta "smart sdb sat" / "temperatura sdb auto".
+func DiskCmd(kind, dev, mode string) string { return kind + " " + dev + " " + mode }
 
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
 func CmdLimit(pct int) string { return fmt.Sprintf("limite %d", pct) }
@@ -89,10 +119,10 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 4: o único programa que a chave do BrunOS pode rodar neste servidor.
-# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | smart |
-# temperatura | atualizacoes | versao. Recusa todo o resto. Fora desligar/limite/protecao, só lê.
-# Instalado pelos comandos de Configurações -> Energia do BrunOS.
+# brunos-host 5: o único programa que a chave do BrunOS pode rodar neste servidor.
+# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
+# discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | versao. Recusa todo o resto.
+# Fora desligar/limite/protecao, só lê. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -103,19 +133,28 @@ if [ "$(id -u)" -ne 0 ]; then
   set +f
 fi
 falha() { echo "$1" >&2; exit "${2:-2}"; }
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then falha "pedido inválido"; fi
+if [ $# -lt 1 ] || [ $# -gt 3 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
+modo=${3:-}
 case "$acao" in
-  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 4"; exit 0 ;;
-  desligar|tailscale|energia|smart|temperatura|atualizacoes) [ $# -eq 1 ] || falha "pedido inválido" ;;
-  limite) case "$valor" in [5-9][0-9]|100) ;; *) falha "limite inválido (use de 50 a 100)" ;; esac ;;
-  protecao) case "$valor" in on|off) ;; *) falha "valor inválido (use on ou off)" ;; esac ;;
+  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 5"; exit 0 ;;
+  desligar|tailscale|energia|atualizacoes|discos) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  smart|temperatura)
+    [ $# -eq 3 ] || falha "pedido inválido"
+    case "$valor" in sd[a-z]|sd[a-z][a-z]|nvme[0-9]n1) ;; *) falha "disco inválido" ;; esac
+    case "$modo" in sat|auto) ;; *) falha "modo inválido (use sat ou auto)" ;; esac ;;
+  limite)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    case "$valor" in [5-9][0-9]|100) ;; *) falha "limite inválido (use de 50 a 100)" ;; esac ;;
+  protecao)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    case "$valor" in on|off) ;; *) falha "valor inválido (use on ou off)" ;; esac ;;
   *) falha "pedido inválido" ;;
 esac
 if [ "$(id -u)" -ne 0 ]; then
-  if [ -n "$valor" ]; then exec sudo -n /usr/local/sbin/brunos-host "$acao" "$valor"; fi
-  exec sudo -n /usr/local/sbin/brunos-host "$acao"
+  # o pedido já foi conferido acima: só palavras da lista, sem espaços nem curingas
+  exec sudo -n /usr/local/sbin/brunos-host "$@"
 fi
 # daqui para baixo roda como root (pelo sudo), com o pedido já conferido duas vezes
 baterias() {
@@ -138,17 +177,17 @@ case "$acao" in
       fi
     done
     falha "este processador não tem medidor de energia (RAPL)" 3 ;;
+  discos)
+    # só o que o Linux já sabe (udev): não fala com o disco
+    exec lsblk -dnP -o NAME,TRAN,SERIAL ;;
   smart|temperatura)
     command -v smartctl >/dev/null 2>&1 || falha "o smartmontools não está instalado (sudo apt install smartmontools)" 3
-    if [ "$acao" = smart ]; then o=-a; else o=-A; fi
-    for d in /dev/sd? /dev/sd?? /dev/nvme?n1; do
-      [ -b "$d" ] || continue
-      echo "=== $d"
-      # -n standby: não acorda HD parado; adaptador USB desconhecido: tenta de novo com -d sat
-      r=$(smartctl -j -n standby $o "$d" 2>/dev/null || true)
-      case "$r" in *"Unknown USB bridge"*|*"specify device type"*) r=$(smartctl -j -n standby $o -d sat "$d" 2>/dev/null || true) ;; esac
-      echo "$r"
-    done
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    # um disco por pedido; só o que o BrunOS usa (saúde, identificação e atributos)
+    # -n standby: não acorda HD parado; sat = disco SATA atrás de um adaptador USB
+    if [ "$acao" = smart ]; then o="-H -i -A"; else o="-A"; fi
+    if [ "$modo" = sat ]; then o="$o -d sat"; fi
+    smartctl -j -n standby $o "/dev/$valor" 2>/dev/null || true
     exit 0 ;;
   atualizacoes)
     if [ -x /usr/lib/update-notifier/apt-check ]; then

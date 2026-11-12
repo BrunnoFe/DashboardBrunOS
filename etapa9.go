@@ -14,10 +14,10 @@ import (
 )
 
 // setupEtapa9 liga o consumo e custo (B3), a saúde dos discos (D3) e as atualizações de apps e do
-// Linux (A1). Os três leem o servidor pelo script brunos-host 4 (só leitura) quando precisam de root.
+// Linux (A1). Os três leem o servidor pelo script brunos-host 5 (só leitura) quando precisam de root.
 func (s *server) setupEtapa9(dataDir string) {
 	host := func(ctx context.Context, cmd string) ([]byte, error) {
-		if !hostcmd.ReadCmds[cmd] {
+		if !hostcmd.ReadAllowed(cmd) {
 			return nil, errors.New("pedido não permitido")
 		}
 		return s.power.HostOutput(ctx, cmd)

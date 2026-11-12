@@ -261,5 +261,20 @@ integrações sobreviveram (outro arquivo).
   15 s (50 s para o Medidor), mais uma tentativa após 2 s, mensagem própria para "recusou a conexão"
   e o erro de verdade no log.
 
+## 0.11.2 (11/11/2026): SMART um disco por vez (etapa 10a)
+O SMART dava "context deadline exceeded". Diagnóstico com o Bruno no servidor: o case JMicron JMS583 do
+sdb (chip de NVMe com HD SATA dentro) fazia o `smartctl` adivinhar NVMe; o adaptador não respondia e o
+kernel reiniciava o USB do disco montado (`uas_eh_device_reset_handler` no `dmesg`, também nas leituras
+automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
+- **Script do servidor versão 5**: `discos` (lsblk) e `smart|temperatura <disco> <sat|auto>`, um disco por
+  pedido, só `-H -i -A`.
+- **Um disco por vez** com limite próprio; USB tenta SATA e depois o automático (NVMe em case); o modo fica
+  guardado pelo número de série. Travou ou veio sem dados uma vez → **"sem SMART"** (etiqueta vermelha,
+  aviso descritivo no sino, nunca mais lido sozinho) e "Tentar de novo" testa o outro modo (decisão 46).
+- "Ler agora" em segundo plano ("Lendo…" até terminar); mensagens em português no lugar do erro cru.
+- Celular: o selo do SMART quebra a linha em vez de ser cortado na lista de discos.
+- Testes: `internal/smart` refeito (casos do servidor do Bruno com um script falso que trava), conferência
+  do script com pedidos novos; apitest 191 ok. O smoke.sh fica para o CI (Docker Desktop desligado aqui).
+
 ## Próximas
 Veja `roadmap.md`.

@@ -197,6 +197,8 @@ check('consumo: energy.json só para o dono', oct(os.stat(FIX+'/data/energy.json
 s,b,_=req('GET','/api/energy/history'); h=json.loads(b); check('consumo: histórico de 24 h por minuto', s==200 and len(h['minutes'])==1440 and isinstance(h['days'],list), (s, len(h.get('minutes',[]))))
 s,b,_=req('GET','/api/smart'); check('smart: responde lista de discos', s==200 and isinstance(json.loads(b)['disks'],list), b)
 s,b,_=req('POST','/api/smart/refresh',{}); check('smart: sem conexão com o servidor → erro amigável', s==502 and 'Energia' in json.loads(b)['error'], b)
+s,b,_=req('POST','/api/smart/retry',{}); check('smart: tentar de novo sem dizer o disco → 400', s==400, b)
+s,b,_=req('POST','/api/smart/retry',{'key':'NAO-EXISTE'}); check('smart: tentar de novo disco desconhecido → 404', s==404 and 'disco' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/updates/check',{}); u=json.loads(b); check('atualizações: apps sem atualização e Linux pede a conexão do servidor', s==200 and u['apps']==[] and 'Energia' in u['os'].get('err',''), b)
 s,b,_=req('GET','/api/updates'); check('atualizações: estado guardado', s==200 and json.loads(b)['checkedAt']>0, b)
 check('integrações: Tomada Tuya existe e não pede endereço', 'tuya' in ks)

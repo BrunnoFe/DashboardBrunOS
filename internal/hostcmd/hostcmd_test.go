@@ -242,12 +242,41 @@ func TestHostScriptRefuses(t *testing.T) {
 	for _, bad := range []string{"", "rm -rf /", "limite", "limite 49", "limite 101", "limite 8O", "limite 80 90",
 		"limite 80; reboot", "limite $(id)", "limite *", "protecao talvez", "desligar agora", "versao x", "sh", "limite -1",
 		"tailscale up", "tailscale down", "tailscale status --json; reboot",
-		"smart /dev/sda", "smart; reboot", "temperatura sda", "energia 1", "atualizacoes sim", "apt upgrade"} {
+		"smart /dev/sda", "smart; reboot", "temperatura sda", "energia 1", "atualizacoes sim", "apt upgrade",
+		"smart", "smart sda", "smart sda xyz", "smart ../sda sat", "smart /dev/sda sat", "smart sda sat x",
+		"smart sda1 sat", "smart nvme0n1p1 auto", "smart sdabc sat", "smart SDA sat", "smart sd* sat",
+		"temperatura sda -d", "temperatura sda sat;reboot", "discos sda", "discos; reboot", "protecao on off",
+		"desligar agora já"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 4") {
+	// pedidos válidos passam da conferência (como usuário comum vão para o sudo, que falha aqui)
+	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off"} {
+		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
+			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
+		}
+	}
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 5") {
 		t.Fatalf("versao: %d %q", code, out)
+	}
+	if strings.Contains(HostScript, "\t") {
+		t.Fatal("o script não pode ter tabs (colado no terminal, vira autocompletar)")
+	}
+}
+
+func TestReadAllowed(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"discos": true, "smart sda sat": true, "smart nvme0n1 auto": true, "temperatura sdab sat": true,
+		"tailscale": true, "atualizacoes": true, "energia": true,
+		"smart": false, "smart sda": false, "smart sda -a": false, "smart /dev/sda sat": false, "smart sda1 sat": false,
+		"discos sda": false, "desligar": false, "limite 80": false, "": false, "tailscale up": false,
+	} {
+		if got := ReadAllowed(cmd); got != want {
+			t.Errorf("ReadAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
+	}
+	if DiskCmd(CmdSmart, "sdb", ModeSAT) != "smart sdb sat" {
+		t.Fatal(DiskCmd(CmdSmart, "sdb", ModeSAT))
 	}
 }

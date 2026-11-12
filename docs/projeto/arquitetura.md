@@ -122,6 +122,18 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   0.8.0, que forçava `shutdown -h +1`; usada só para desligar até o servidor ser atualizado). Servidor não
   atualizado recusa a chave nova na autenticação, então nunca roda o comando antigo por engano.
   `SetupVersion` (hoje 2) sobe quando o que se cola no servidor muda. Só aceita servidor já confirmado.
+  Script **versão 5** (0.11.2, `ScriptVersion`): pedidos de leitura `tailscale`, `energia`, `atualizacoes`,
+  `discos` (`lsblk -dnP -o NAME,TRAN,SERIAL`) e `smart|temperatura <disco> <sat|auto>` (um disco por pedido,
+  `smartctl -j -n standby -H -i -A`/`-A`, `-d sat` no modo sat). `ReadAllowed` confere o pedido inteiro
+  antes de mandar; o script confere de novo (até 3 palavras, disco `sd[a-z]{1,2}`/`nvme[0-9]n1`).
+- **`internal/smart`** (0.11.0, refeito na 0.11.2): `/data/smart.json` versão 2
+  (`{"v":2,"checkedAt","err","disks":{"<série>":{key,dev,tran,mode,noSmart,noSmartWhy,noSmartAt,failMode,gone,
+  model,serial,health,passed,temp,...,history}}}`; a versão 1 era por nome do disco e migra sozinha). Pede
+  `discos`, depois um disco por vez (limite de 50 s; temperatura 30 s): USB tenta `sat` e, se vier sem dados,
+  `auto`; o modo que funcionou fica guardado. Estourou o limite ou nada deu dados → `noSmart` (decisão 46),
+  aviso `disk-smart-unsupported` (Key `smart-unsupported:<série>`) e nunca mais é lido sozinho. Rotas:
+  `GET /api/smart` (com `running`), `POST /api/smart/refresh` e `POST /api/smart/retry {key}` (tenta o
+  outro modo); as duas rodam em segundo plano e respondem 200/erro se terminarem em 1,5 s, senão 202.
 - **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
   Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown,seen,off}]}`,
   100 quedas); na bateria grava a cada minuto (`seen`), e se o servidor apagar a queda fecha em `seen`

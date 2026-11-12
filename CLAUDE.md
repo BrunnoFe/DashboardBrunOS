@@ -74,7 +74,7 @@ internal/notes/             texto dos widgets de Notas (/data/notes.json) + avis
 internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa calibrada), kWh e R$ (/data/energy.json)
 internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
 internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux, 1×/dia (/data/updates.json)
-etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 4)
+etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 5)
 settings.go                 preferências (/data/settings.json): erro de leitura ≠ vazio, trava contra gravar o
                             padrão por cima (409), cópia diária em /data/settings-backup (14 dias) e restaurar
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd

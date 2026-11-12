@@ -123,7 +123,7 @@ A janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mê
 
 A lista de discos do *Uso ao vivo* mostra a saúde de cada disco (SMART) e avisa no sino quando um disco começa a falhar; discos em gavetas USB também passam a mostrar a temperatura. Uma vez por dia o BrunOS confere se há versão nova dos apps nas lojas do Runtipi (seta no ícone) e atualizações do Linux (em *Configurações → Sistema*).
 
-Esses recursos usam a versão 4 do script do servidor: em *Configurações → Energia*, copie os comandos de atualização e cole no servidor uma vez (para o SMART, instale também o `smartmontools`).
+Esses recursos usam a versão 5 do script do servidor: em *Configurações → Energia*, copie os comandos de atualização e cole no servidor uma vez (para o SMART, instale também o `smartmontools`). O SMART lê um disco de cada vez e descobre sozinho o jeito certo de falar com cada gaveta USB; uma gaveta que não deixa o SMART passar aparece com a etiqueta *sem SMART* e não é mais incomodada.
 
 ## Energia e notificações
 

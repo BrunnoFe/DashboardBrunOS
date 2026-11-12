@@ -23,27 +23,48 @@ Lugar de um Formato que recebe uma Métrica, com rótulo, unidade, ícone e core
 _Evite_: slot, campo, célula
 
 **Tamanho**:
-Quanto um Widget ocupa na Área de widgets: Pequeno, Largo, Alto, Grande ou Faixa.
-_Evite_: dimensão, span
+Quanto um Widget ocupa na Área de widgets: largura × altura em Quadros, de 1 × 1 até a Medida da Área.
+Alguns têm nome: Pequeno (1 × 1), Largo (2 × 1), Alto (1 × 2) e Grande (2 × 2). Cada Formato tem um
+Tamanho mínimo.
+_Evite_: dimensão, span, Faixa (virou só um Widget com a largura da Área)
 
 **Quadro**:
 A unidade de Tamanho (o tamanho de um Widget Pequeno).
 _Evite_: célula, unidade de grade
 
 **Área de widgets**:
-O espaço de Widgets no topo de uma Página, separado dos ícones dos apps; tem um número de colunas
-(em Quadros) escolhido para a Página ou automático.
+O espaço de Widgets de uma Página, separado da Área de apps; onde ela fica na Página depende da
+Disposição. É uma grade de Quadros com a Medida escolhida; cada Widget fica num lugar fixo dela (pode
+sobrar Quadro vazio) e dois Widgets nunca dividem um Quadro.
 _Evite_: fileira de widgets, board, painel
+
+**Área de apps**:
+O espaço dos ícones dos apps (e das pastas) de uma Página, com a sua própria Medida.
+_Evite_: grade de apps, grade de ícones (Grade é um Formato)
+
+**Medida**:
+Quantas colunas por quantas linhas tem uma Área: em Quadros na Área de widgets (até 6 × 4), em ícones
+na Área de apps (até 16 × 6, ou Automática: quantos couberem). É o máximo: linhas vazias no fim não
+ocupam espaço na tela. Telas estreitas demais mostram a Área compacta (menos colunas, na ordem de
+leitura) sem mudar a Medida guardada.
+_Evite_: grade, conformação, tamanho (Tamanho é de um Widget)
 
 ## Tela inicial
 
 **Página**:
-Uma tela da tela inicial, montada pelo Bruno, com a sua Área de widgets e os apps colocados nela; pode
-ser só de widgets, só de apps ou mista.
+Uma tela da tela inicial, montada pelo Bruno, com a sua Área de widgets e os apps colocados nela,
+arrumados conforme a Disposição dela.
 _Evite_: aba, tela, desktop
 
+**Disposição**:
+Como uma Página arruma a Área de widgets e os apps: widgets em cima, apps em cima, widgets à esquerda,
+widgets à direita, só widgets ou só apps. Cada Página tem a sua. Widgets e apps nunca se misturam na
+mesma área.
+_Evite_: layout (o arranjo de dentro de um Widget é o Formato), estilo, tema, modelo de página
+
 **Página de continuação**:
-Página criada sozinha logo depois de uma Página cujos apps não cabem na tela; conta como a mesma Página.
+Tela criada sozinha logo depois de uma Página cujos apps não cabem na tela, ou, no celular, a tela com os
+apps de uma Página que também tem widgets; conta como a mesma Página.
 _Evite_: página extra, página automática
 
 **App solto**:

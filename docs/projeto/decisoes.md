@@ -190,3 +190,30 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     dia (e não por salvamento) porque a interface salva a cada mudança pequena; 14 cópias de ~20 KB.
     Tomada Tuya: uma conexão por vez por tomada (fila + leitura reaproveitada), sem conexão persistente
     por enquanto (mais simples; reavaliar se a fila não bastar).
+46. **SMART um disco por vez, SATA primeiro nos discos USB e "basta uma vez"** (0.11.2, combinado em
+    11/11/2026; corrige a 43). No servidor do Bruno, o case JMicron JMS583 (chip de NVMe com um HD SATA
+    dentro) fazia o `smartctl` adivinhar NVMe: o adaptador não respondia, o kernel reiniciava o USB do
+    disco montado (`uas_eh_device_reset_handler`) e a leitura de todos os discos estourava os 2 min
+    ("context deadline exceeded"). Com `-d sat` o mesmo disco respondeu em 2,5 s. O chip do case não diz
+    o que tem dentro e o `vpd_pg89` só aparece nos discos internos, então: disco USB tenta SATA; se
+    recusar na hora, o automático (que conhece as pontes NVMe); o modo que funcionou fica guardado pelo
+    número de série. Travou uma vez → "sem SMART" e nunca mais é lido sozinho (cada tentativa pode
+    reiniciar o USB de um disco montado); "Tentar de novo" testa o outro modo. Um limite de tempo por
+    disco não interrompe o `smartctl` (ele fica preso esperando o kernel), por isso a regra é não
+    insistir, e não esperar mais.
+47. **Atualizar Linux e apps pela interface** (0.12.0, escolha do Bruno: opção A; substitui a 44). Pedidos
+    fixos novos no script do servidor: `apt-get update && upgrade` sem perguntas (mantém os arquivos de
+    configuração) e `runtipi-cli app update <app>:<loja>` com nome validado. Rodam pelo `systemd-run`,
+    soltos da conexão SSH: se a atualização reiniciar o Docker (e o BrunOS junto), ela continua, e o
+    BrunOS retoma o andamento quando volta. Sempre com confirmação, um de cada vez, aviso no fim;
+    reiniciar o servidor continua manual. O risco somado é pequeno (quem tem a senha do BrunOS já
+    desliga o servidor e abre o Terminal); fica anotada uma revisão de segurança do script para o futuro.
+48. **Widgets com posição livre, apps em fila, e as duas Áreas nunca misturadas** (0.13.0, combinado em
+    11/11/2026). Cada Página tem uma Disposição (onde ficam a Área de widgets e a Área de apps) e uma
+    Medida para cada Área. Widgets guardam lugar (coluna, linha) e Tamanho (largura × altura em
+    Quadros), com buracos permitidos, porque o Bruno quer montar painéis com liberdade (ex.: um 2×1 no
+    meio da última linha). Apps continuam em fila (ordem + Página): buraco numa grade de ícones parece
+    erro e a fila deixa o arrastar simples. Misturar ícones e widgets numa grade só (como no iPhone)
+    foi descartado: obrigaria o ícone a ser uma fração exata do Quadro (≈110 px × 240 px), complicaria
+    o arrastar e bagunçaria o celular. Em tela estreita a Área fica compacta (ordem de leitura, menos
+    colunas) sem mudar o que está guardado.

@@ -1,27 +1,37 @@
-// Package smart acompanha a saúde dos discos pelo SMART (D3, decisão 43).
+// Package smart acompanha a saúde dos discos pelo SMART (D3, decisões 43 e 46).
 //
-// O BrunOS não tem root: pede ao script do servidor (brunos-host 4) o "smart" (smartctl -j -a) a cada
-// 6 h e a "temperatura" (smartctl -j -A) a cada 20 min, sempre com -n standby: HD parado não é
-// acordado e fica para a próxima. Adaptadores USB (que o drivetemp não atravessa) são lidos com
-// -d sat; a temperatura deles vai para a lista de discos do Uso ao vivo.
+// O BrunOS não tem root: pede ao script do servidor (brunos-host 5) a lista de discos ("discos", pelo
+// lsblk, que não fala com o disco) e depois UM disco por pedido: "smart <disco> <modo>" a cada 6 h e
+// "temperatura <disco> <modo>" a cada 20 min, sempre com -n standby (HD parado não é acordado).
+//
+// Modo: disco USB tenta primeiro "sat" (-d sat, disco SATA atrás do adaptador) e, se o adaptador
+// recusar na hora, "auto" (o smartctl decide, e conhece as pontes USB de NVMe). O chip do case não diz
+// o que tem dentro: o JMicron JMS583 é de NVMe e pode ter um HD SATA, e aí o "auto" trava. O modo que
+// funcionou fica guardado pelo número de série (as letras sda, sdb mudam ao reiniciar).
+//
+// "Basta uma vez": um disco que travou (o adaptador não responde e o kernel reinicia o USB do disco
+// montado) ou que não devolveu dados vira "sem SMART" e nunca mais é lido sozinho. Um limite de tempo
+// não interrompe o smartctl preso esperando o kernel, então a regra é não insistir. "Tentar de novo"
+// (Retry) testa o outro modo.
 //
 // Selo: OK, Atenção (setores realocados/pendentes/incorrigíveis, erros de mídia no NVMe) ou Falhando
 // (o próprio disco diz que falhou). Avisos no sino uma vez por mudança. Estado em /data/smart.json.
 package smart
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"brunos/internal/events"
+	"brunos/internal/hostcmd"
 	"brunos/internal/store"
 )
 
@@ -29,6 +39,14 @@ const (
 	fullEvery = 6 * time.Hour
 	tempEvery = 20 * time.Minute
 	maxHist   = 30
+	maxGone   = 16 // discos que sumiram e continuam lembrados (o "sem SMART" não se perde)
+)
+
+// Limites de cada pedido (variáveis só para os testes encurtarem).
+var (
+	listWait = 30 * time.Second // pedido "discos"
+	fullWait = 50 * time.Second // leitura completa de um disco
+	tempWait = 30 * time.Second // temperatura de um disco
 )
 
 // Selos.
@@ -36,6 +54,12 @@ const (
 	HealthOK   = "ok"
 	HealthWarn = "atencao"
 	HealthFail = "falhando"
+)
+
+// Por que um disco ficou sem SMART.
+const (
+	WhyStuck  = "travou"    // o adaptador não respondeu dentro do limite
+	WhyNoData = "sem-dados" // respondeu, mas sem nenhum dado do SMART
 )
 
 // Change é um momento em que os números importantes mudaram.
@@ -48,7 +72,16 @@ type Change struct {
 
 // Disk é o que se sabe de um disco.
 type Disk struct {
-	Dev           string   `json:"dev"` // sda, nvme0n1
+	Key           string   `json:"key"`            // número de série do lsblk (ou "dev:sda" sem número)
+	Dev           string   `json:"dev"`            // sda, nvme0n1 (pode mudar ao reiniciar)
+	Tran          string   `json:"tran,omitempty"` // usb, sata, nvme
+	Mode          string   `json:"mode,omitempty"` // modo que funcionou (sat ou auto)
+	NoSmart       bool     `json:"noSmart,omitempty"`
+	NoSmartWhy    string   `json:"noSmartWhy,omitempty"`
+	NoSmartAt     int64    `json:"noSmartAt,omitempty"`
+	FailMode      string   `json:"failMode,omitempty"` // modo que travou (o Retry tenta o outro)
+	Force         string   `json:"force,omitempty"`    // modo pedido pelo Retry (uma vez)
+	Gone          bool     `json:"gone,omitempty"`     // não apareceu na última lista de discos
 	Model         string   `json:"model,omitempty"`
 	Serial        string   `json:"serial,omitempty"`
 	Health        string   `json:"health"`
@@ -68,9 +101,11 @@ type Disk struct {
 	History       []Change `json:"history,omitempty"`
 }
 
+const stateVersion = 2
+
 type state struct {
 	Version   int              `json:"v"`
-	Disks     map[string]*Disk `json:"disks"`
+	Disks     map[string]*Disk `json:"disks"` // por Key (na versão 1, por Dev)
 	CheckedAt int64            `json:"checkedAt"`
 	Err       string           `json:"err,omitempty"`
 }
@@ -87,13 +122,14 @@ type Monitor struct {
 
 	mu       sync.Mutex
 	st       state
+	base     context.Context // contexto do Run (leituras em segundo plano)
 	lastFull time.Time
 	lastTemp time.Time
 	running  bool
 }
 
 func New(file string, q Query, ev *events.Store) *Monitor {
-	m := &Monitor{File: file, Query: q, Events: ev, Now: time.Now, st: state{Version: 1, Disks: map[string]*Disk{}}}
+	m := &Monitor{File: file, Query: q, Events: ev, Now: time.Now, st: state{Version: stateVersion, Disks: map[string]*Disk{}}}
 	if file != "" {
 		if _, err := store.ReadJSON(file, &m.st); err != nil {
 			slog.Warn("smart: estado ilegível, começando do zero", "erro", err)
@@ -101,6 +137,15 @@ func New(file string, q Query, ev *events.Store) *Monitor {
 	}
 	if m.st.Disks == nil {
 		m.st.Disks = map[string]*Disk{}
+	}
+	if m.st.Version < stateVersion { // versão 1: chave = nome do disco; vira "dev:<nome>" até a lista dizer o número
+		old := m.st.Disks
+		m.st.Disks = map[string]*Disk{}
+		for dev, d := range old {
+			d.Dev, d.Key = dev, "dev:"+dev
+			m.st.Disks[d.Key] = d
+		}
+		m.st.Version = stateVersion
 	}
 	if m.st.CheckedAt > 0 {
 		m.lastFull = time.Unix(m.st.CheckedAt, 0)
@@ -110,6 +155,9 @@ func New(file string, q Query, ev *events.Store) *Monitor {
 
 // Run confere a cada minuto se é hora de ler (6 h o SMART completo, 20 min a temperatura).
 func (m *Monitor) Run(ctx context.Context) {
+	m.mu.Lock()
+	m.base = ctx
+	m.mu.Unlock()
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	select { // espera o servidor subir antes da primeira leitura
@@ -135,89 +183,378 @@ func (m *Monitor) Run(ctx context.Context) {
 // ErrBusy: já há uma leitura em andamento.
 var ErrBusy = errors.New("já estou lendo os discos, espere um pouco")
 
-// Refresh lê o SMART completo agora.
-func (m *Monitor) Refresh(ctx context.Context) error {
+// ErrNoDisk: o disco pedido não existe na lista.
+var ErrNoDisk = errors.New("esse disco não está na lista")
+
+// begin marca uma leitura em andamento (uma por vez: o mesmo adaptador USB não recebe dois pedidos).
+func (m *Monitor) begin() bool {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.running {
-		m.mu.Unlock()
-		return ErrBusy
+		return false
 	}
 	m.running = true
+	return true
+}
+
+func (m *Monitor) end() { m.mu.Lock(); m.running = false; m.mu.Unlock() }
+
+func (m *Monitor) bg() context.Context {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.base != nil {
+		return m.base
+	}
+	return context.Background()
+}
+
+// Start lê em segundo plano ("Ler agora"). O canal recebe o resultado quando terminar.
+func (m *Monitor) Start() <-chan error {
+	done := make(chan error, 1)
+	if !m.begin() {
+		done <- ErrBusy
+		return done
+	}
+	go func() { done <- m.refresh(m.bg()) }()
+	return done
+}
+
+// Refresh lê o SMART completo agora (espera terminar).
+func (m *Monitor) Refresh(ctx context.Context) error {
+	if !m.begin() {
+		return ErrBusy
+	}
+	return m.refresh(ctx)
+}
+
+func (m *Monitor) refresh(ctx context.Context) error {
+	defer m.end()
 	now := m.Now()
+	m.mu.Lock()
 	m.lastFull, m.lastTemp = now, now
 	m.mu.Unlock()
-	defer func() { m.mu.Lock(); m.running = false; m.mu.Unlock() }()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	out, err := m.Query(ctx, "smart")
+
+	keys, err := m.listDisks(ctx, now)
+	if err == nil {
+		var notify []events.Event
+		for _, k := range keys {
+			if ctx.Err() != nil {
+				err = ctx.Err()
+				break
+			}
+			evs, e := m.readFull(ctx, k, now)
+			notify = append(notify, evs...)
+			if e != nil {
+				err = e
+				break
+			}
+		}
+		m.emit(notify)
+	}
 	m.mu.Lock()
 	if err != nil {
 		m.st.Err = friendly(err)
-		msg := m.st.Err
-		m.mu.Unlock()
-		m.save()
+	} else {
+		m.st.Err, m.st.CheckedAt = "", now.Unix()
+	}
+	msg := m.st.Err
+	m.mu.Unlock()
+	m.save()
+	if err != nil {
 		return errors.New(msg)
 	}
-	m.st.Err = ""
-	m.st.CheckedAt = now.Unix()
-	var notify []events.Event
-	for _, r := range ParseBlocks(out) {
-		d := m.st.Disks[r.dev]
-		if d == nil {
-			d = &Disk{Dev: r.dev}
-			m.st.Disks[r.dev] = d
-		}
-		if r.standby {
-			d.Standby = true
-			continue
-		}
-		if r.data == nil {
-			continue
-		}
-		prev := *d
-		apply(d, r.data, now, true)
-		notify = append(notify, changes(prev, d)...)
-		if d.Temp != nil && m.SetTemp != nil {
-			m.SetTemp(d.Dev, *d.Temp, now)
-		}
-	}
-	m.mu.Unlock()
-	if m.Events != nil {
-		for _, e := range notify {
-			m.Events.Emit(e)
-		}
-	}
-	m.save()
 	return nil
 }
 
-// readTemps lê só a temperatura (discos parados ficam com a última medida).
-func (m *Monitor) readTemps(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	now := m.Now()
-	m.mu.Lock()
-	m.lastTemp = now
-	m.mu.Unlock()
-	out, err := m.Query(ctx, "temperatura")
-	if err != nil {
-		return
+// Retry tira o "sem SMART" de um disco e tenta o modo que ainda não foi testado, em segundo plano.
+func (m *Monitor) Retry(key string) <-chan error {
+	done := make(chan error, 1)
+	if !m.begin() {
+		done <- ErrBusy
+		return done
 	}
 	m.mu.Lock()
+	d := m.st.Disks[key]
+	if d == nil || d.Gone {
+		m.mu.Unlock()
+		m.end()
+		done <- ErrNoDisk
+		return done
+	}
+	d.NoSmart, d.NoSmartWhy, d.NoSmartAt, d.Mode = false, "", 0, ""
+	d.Force = otherMode(d.FailMode)
+	m.mu.Unlock()
+	go func() {
+		defer m.end()
+		ctx := m.bg()
+		evs, err := m.readFull(ctx, key, m.Now())
+		m.emit(evs)
+		m.mu.Lock()
+		if err != nil {
+			m.st.Err = friendly(err)
+		}
+		m.mu.Unlock()
+		m.save()
+		done <- err
+	}()
+	return done
+}
+
+func otherMode(failed string) string {
+	if failed == hostcmd.ModeSAT {
+		return hostcmd.ModeAuto
+	}
+	return hostcmd.ModeSAT
+}
+
+// listed é uma linha do pedido "discos".
+type listed struct{ name, tran, serial string }
+
+var pairRe = regexp.MustCompile(`([A-Z]+)="([^"]*)"`)
+
+// parseDisks lê a saída do "lsblk -dnP -o NAME,TRAN,SERIAL".
+func parseDisks(out []byte) []listed {
+	var res []listed
+	for _, line := range strings.Split(string(out), "\n") {
+		var l listed
+		for _, p := range pairRe.FindAllStringSubmatch(line, -1) {
+			switch p[1] {
+			case "NAME":
+				l.name = p[2]
+			case "TRAN":
+				l.tran = strings.ToLower(p[2])
+			case "SERIAL":
+				l.serial = strings.TrimSpace(p[2])
+			}
+		}
+		if hostcmd.ValidDisk(l.name) {
+			res = append(res, l)
+		}
+	}
+	return res
+}
+
+// listDisks pede a lista e atualiza quem é quem. Devolve as chaves dos discos a ler.
+func (m *Monitor) listDisks(ctx context.Context, now time.Time) ([]string, error) {
+	qctx, cancel := context.WithTimeout(ctx, listWait)
+	out, err := m.Query(qctx, hostcmd.CmdDisks)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	list := parseDisks(out)
+	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, r := range ParseBlocks(out) {
-		if r.standby || r.data == nil {
-			continue
+	seen := map[string]bool{}
+	var keys []string
+	for _, l := range list {
+		key := l.serial
+		if key == "" {
+			key = "dev:" + l.name
 		}
-		d := m.st.Disks[r.dev]
+		d := m.st.Disks[key]
 		if d == nil {
-			d = &Disk{Dev: r.dev}
-			m.st.Disks[r.dev] = d
+			// estado da versão 1 (por nome) ou disco sem número que ganhou um: aproveita o histórico
+			if old := m.st.Disks["dev:"+l.name]; old != nil && key != "dev:"+l.name {
+				delete(m.st.Disks, "dev:"+l.name)
+				d = old
+				d.Mode = ""
+			} else {
+				d = &Disk{}
+			}
+			d.Key = key
+			m.st.Disks[key] = d
 		}
-		apply(d, r.data, now, false)
+		d.Dev, d.Tran, d.Gone = l.name, l.tran, false
+		seen[key] = true
+		if !d.NoSmart {
+			keys = append(keys, key)
+		}
+	}
+	// a mesma letra não pode ficar com dois discos: quem não veio na lista sumiu (desligado, outro case)
+	var gone []*Disk
+	for k, d := range m.st.Disks {
+		if !seen[k] {
+			d.Gone = true
+			gone = append(gone, d)
+		}
+	}
+	if len(gone) > maxGone {
+		sort.Slice(gone, func(i, j int) bool { return gone[i].CheckedAt < gone[j].CheckedAt })
+		for _, d := range gone[:len(gone)-maxGone] {
+			delete(m.st.Disks, d.Key)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool { return m.st.Disks[keys[i]].Dev < m.st.Disks[keys[j]].Dev })
+	return keys, nil
+}
+
+// modesFor: o modo pedido pelo Retry, o que já funcionou, ou a ordem de tentativa.
+func modesFor(d *Disk) []string {
+	switch {
+	case d.Force != "":
+		return []string{d.Force}
+	case d.Mode != "":
+		return []string{d.Mode}
+	case d.Tran == "usb":
+		return []string{hostcmd.ModeSAT, hostcmd.ModeAuto}
+	}
+	return []string{hostcmd.ModeAuto}
+}
+
+// stuck: o pedido estourou o limite dele (e não foi o BrunOS que desligou).
+func stuck(err error, parent context.Context) bool {
+	return errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil
+}
+
+// diskOnly: erro só daquele disco (sumiu entre a lista e o pedido): pula sem parar os outros.
+func diskOnly(err error) bool { return strings.Contains(err.Error(), "não existe") }
+
+// readFull lê um disco. Erro devolvido = problema geral (script antigo, sem conexão): para a rodada.
+func (m *Monitor) readFull(ctx context.Context, key string, now time.Time) ([]events.Event, error) {
+	m.mu.Lock()
+	d := m.st.Disks[key]
+	if d == nil {
+		m.mu.Unlock()
+		return nil, nil
+	}
+	dev, modes := d.Dev, modesFor(d)
+	m.mu.Unlock()
+	last := modes[len(modes)-1]
+	for _, mode := range modes {
+		qctx, cancel := context.WithTimeout(ctx, fullWait)
+		out, err := m.Query(qctx, hostcmd.DiskCmd(hostcmd.CmdSmart, dev, mode))
+		cancel()
+		if err != nil {
+			if stuck(err, ctx) {
+				return m.markNoSmart(key, WhyStuck, mode, now), nil
+			}
+			if diskOnly(err) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		r := parseOne(out)
+		m.mu.Lock()
+		d.Force = ""
+		if r.standby {
+			d.Standby = true
+			m.mu.Unlock()
+			return nil, nil
+		}
+		if r.data == nil {
+			m.mu.Unlock()
+			last = mode
+			continue // o adaptador recusou: tenta o próximo modo
+		}
+		prev := *d
+		d.Mode = mode
+		apply(d, r.data, now, true)
+		evs := changes(prev, d)
 		if d.Temp != nil && m.SetTemp != nil {
 			m.SetTemp(d.Dev, *d.Temp, now)
 		}
+		m.mu.Unlock()
+		if m.Events != nil { // voltou a funcionar: um próximo "sem SMART" avisa de novo
+			m.Events.Resolve("smart-unsupported:"+key, nil)
+		}
+		return evs, nil
+	}
+	return m.markNoSmart(key, WhyNoData, last, now), nil
+}
+
+// markNoSmart: basta uma vez. O disco não é mais lido sozinho; o aviso explica o que fazer.
+func (m *Monitor) markNoSmart(key, why, mode string, now time.Time) []events.Event {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d := m.st.Disks[key]
+	if d == nil {
+		return nil
+	}
+	d.NoSmart, d.NoSmartWhy, d.NoSmartAt, d.FailMode, d.Force, d.Mode = true, why, now.Unix(), mode, "", ""
+	slog.Warn("smart: disco sem SMART", "disco", d.Dev, "motivo", why, "modo", mode)
+	return []events.Event{unsupportedEvent(d)}
+}
+
+func unsupportedEvent(d *Disk) events.Event {
+	name := d.Dev
+	if d.Model != "" {
+		name = fmt.Sprintf("%s (%s)", d.Dev, d.Model)
+	}
+	var b strings.Builder
+	if d.NoSmartWhy == WhyStuck {
+		b.WriteString("O adaptador deste disco não respondeu ao pedido da saúde do disco (SMART). Quando isso acontece, o Linux costuma reiniciar a conexão USB do disco, o que não faz bem a um disco montado e em uso.")
+	} else {
+		b.WriteString("O adaptador deste disco respondeu ao pedido da saúde do disco (SMART), mas sem nenhum dado: ele não deixa o SMART passar.")
+	}
+	b.WriteString(" O disco em si não tem problema nenhum por causa disso: ler e gravar arquivos continua normal. Para não forçar o adaptador, o BrunOS parou de perguntar a este disco (nem a saúde, nem a temperatura).")
+	if d.Tran == "usb" {
+		b.WriteString(" Isso é comum em cases USB: o chip do case nem sempre aceita os comandos do SMART. O que dá para fazer: em Uso ao vivo, abra os detalhes do disco e use \"Tentar de novo\" (o BrunOS tenta do outro jeito; pode reiniciar a conexão USB do disco por alguns segundos, então faça com o disco parado), ou troque o case por um com chip ASMedia, que costuma funcionar.")
+	} else {
+		b.WriteString(" Em Uso ao vivo, nos detalhes do disco, \"Tentar de novo\" tenta do outro jeito.")
+	}
+	return events.Event{Kind: "disk-smart-unsupported", Level: events.Info, Key: "smart-unsupported:" + d.Key,
+		Title: "Sem SMART: " + name, Body: b.String()}
+}
+
+// readTemps lê só a temperatura dos discos com modo conhecido (discos parados ficam com a última medida).
+func (m *Monitor) readTemps(ctx context.Context) {
+	if !m.begin() {
+		return
+	}
+	defer m.end()
+	now := m.Now()
+	type job struct{ key, dev, mode string }
+	var jobs []job
+	m.mu.Lock()
+	m.lastTemp = now
+	for k, d := range m.st.Disks {
+		if !d.Gone && !d.NoSmart && d.Mode != "" {
+			jobs = append(jobs, job{k, d.Dev, d.Mode})
+		}
+	}
+	m.mu.Unlock()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].dev < jobs[j].dev })
+	var notify []events.Event
+	for _, j := range jobs {
+		qctx, cancel := context.WithTimeout(ctx, tempWait)
+		out, err := m.Query(qctx, hostcmd.DiskCmd(hostcmd.CmdTemps, j.dev, j.mode))
+		cancel()
+		if err != nil {
+			if stuck(err, ctx) {
+				notify = append(notify, m.markNoSmart(j.key, WhyStuck, j.mode, now)...)
+				continue
+			}
+			if diskOnly(err) {
+				continue
+			}
+			break // sem conexão, script antigo: fica para a próxima
+		}
+		r := parseOne(out)
+		if r.standby || r.data == nil {
+			continue
+		}
+		m.mu.Lock()
+		if d := m.st.Disks[j.key]; d != nil {
+			apply(d, r.data, now, false)
+			if d.Temp != nil && m.SetTemp != nil {
+				m.SetTemp(d.Dev, *d.Temp, now)
+			}
+		}
+		m.mu.Unlock()
+	}
+	m.emit(notify)
+	if len(notify) > 0 {
+		m.save()
+	}
+}
+
+func (m *Monitor) emit(list []events.Event) {
+	if m.Events == nil {
+		return
+	}
+	for _, e := range list {
+		m.Events.Emit(e)
 	}
 }
 
@@ -251,13 +588,17 @@ type Snapshot struct {
 	Disks     []Disk `json:"disks"`
 	CheckedAt int64  `json:"checkedAt"`
 	Err       string `json:"err,omitempty"`
+	Running   bool   `json:"running,omitempty"`
 }
 
 func (m *Monitor) Snapshot() Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := Snapshot{CheckedAt: m.st.CheckedAt, Err: m.st.Err, Disks: []Disk{}}
+	out := Snapshot{CheckedAt: m.st.CheckedAt, Err: m.st.Err, Running: m.running, Disks: []Disk{}}
 	for _, d := range m.st.Disks {
+		if d.Gone {
+			continue
+		}
 		cp := *d
 		cp.History = append([]Change(nil), d.History...)
 		out.Disks = append(out.Disks, cp)
@@ -288,6 +629,10 @@ func friendly(err error) string {
 		return "o smartmontools não está instalado no servidor: rode sudo apt install smartmontools"
 	case strings.Contains(msg, "script do servidor é antigo") || strings.Contains(msg, "pedido inválido"):
 		return "o script do servidor é antigo: em Configurações → Energia, copie os comandos de atualização e cole no servidor"
+	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(msg, "deadline exceeded"):
+		return "o servidor demorou demais para responder: tente de novo daqui a pouco"
+	case errors.Is(err, context.Canceled):
+		return "a leitura foi interrompida (o BrunOS reiniciou): fica para a próxima"
 	}
 	return msg
 }
@@ -295,7 +640,6 @@ func friendly(err error) string {
 // ── leitura da saída do smartctl ─────────────────────────────────
 
 type block struct {
-	dev     string
 	standby bool
 	data    *smartJSON
 }
@@ -336,39 +680,26 @@ type smartJSON struct {
 	} `json:"nvme_smart_health_information_log"`
 }
 
-// ParseBlocks separa a saída do script ("=== /dev/sda" + JSON do smartctl) por disco.
-func ParseBlocks(out []byte) []block {
-	var res []block
-	parts := bytes.Split(out, []byte("=== /dev/"))
-	for _, p := range parts[1:] {
-		nl := bytes.IndexByte(p, '\n')
-		if nl < 0 {
-			continue
-		}
-		dev := strings.TrimSpace(string(p[:nl]))
-		if dev == "" || strings.ContainsAny(dev, "/ ") || len(dev) > 16 {
-			continue
-		}
-		b := block{dev: dev}
-		body := bytes.TrimSpace(p[nl+1:])
-		var s smartJSON
-		if len(body) > 0 && json.Unmarshal(body, &s) == nil {
-			for _, msg := range s.Smartctl.Messages {
-				u := strings.ToUpper(msg.String)
-				if strings.Contains(u, "STANDBY") || strings.Contains(u, "SLEEP") {
-					b.standby = true
-				}
-			}
-			if !b.standby && (s.SmartStatus != nil || s.ATA != nil || s.NVMe != nil || s.Temperature != nil) {
-				b.data = &s
-			}
-		}
-		res = append(res, b)
+// parseOne lê o JSON do smartctl de um disco: parado, com dados, ou nada (o adaptador recusou).
+func parseOne(out []byte) block {
+	var b block
+	var s smartJSON
+	if json.Unmarshal(out, &s) != nil {
+		return b
 	}
-	return res
+	for _, msg := range s.Smartctl.Messages {
+		u := strings.ToUpper(msg.String)
+		if strings.Contains(u, "STANDBY") || strings.Contains(u, "SLEEP") {
+			b.standby = true
+		}
+	}
+	if !b.standby && (s.SmartStatus != nil || s.ATA != nil || s.NVMe != nil || s.Temperature != nil) {
+		b.data = &s
+	}
+	return b
 }
 
-// apply copia os números para o disco. full = leitura completa (-a), senão só temperatura (-A).
+// apply copia os números para o disco. full = leitura completa (-H -i -A), senão só temperatura (-A).
 func apply(d *Disk, s *smartJSON, now time.Time, full bool) {
 	d.Standby = false
 	if s.Model != "" {

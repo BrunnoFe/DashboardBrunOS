@@ -27,6 +27,7 @@ export function forecastText(f) {
 const baseDev = (dev) => String(dev || '').replace('/dev/', '').replace(/^(nvme\d+n\d+)p\d+$/, '$1').replace(/^([a-z]+)\d+$/, '$1');
 const HEALTH = { ok: ['OK', 'ok'], atencao: ['Atenção', 'warn'], falhando: ['Falhando', 'bad'] };
 function smartBadge(s) {
+  if (s?.noSmart) return `<button class="smart-badge bad" data-smart="${esc(s.dev)}" title="O adaptador deste disco não deixa ler a saúde (SMART): clique para os detalhes">sem SMART</button>`;
   const h = s && HEALTH[s.health];
   return h ? `<button class="smart-badge ${h[1]}" data-smart="${esc(s.dev)}" title="Saúde do disco (SMART): clique para os detalhes">${h[0]}</button>` : '';
 }
@@ -48,14 +49,39 @@ export function diskRowsHTML(disks, forecast = [], smart = null) {
     ? `<div class="disk-hint">${svg('info')}<span>Para ver a temperatura dos HDs, ative o sensor no servidor.</span><button class="pill-btn" data-disk="temp-help">Como ativar</button></div>` : '';
   // saúde dos discos: quando foi lida, "Ler agora" e o que falta instalar
   const when = smart?.checkedAt ? new Date(smart.checkedAt * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-  const smartRow = smart ? `<div class="disk-hint smart-row">${svg('shield')}<span>${smart.err ? esc(smart.err) : when ? `Saúde dos discos (SMART) lida em ${esc(when)}. HD parado não é acordado: fica para a próxima.` : 'A saúde dos discos (SMART) é lida a cada 6 horas.'}</span>
-    ${/script do servidor|smartmontools/.test(smart.err || '') ? `<button class="pill-btn" data-disk="script">Mostrar comandos</button>` : ''}<button class="pill-btn" data-disk="smart-now">${svg('refresh')}Ler agora</button></div>` : '';
+  const text = smart?.running ? 'Lendo a saúde dos discos (SMART), um de cada vez…' : smart?.err ? esc(smart.err)
+    : when ? `Saúde dos discos (SMART) lida em ${esc(when)}. HD parado não é acordado: fica para a próxima.` : 'A saúde dos discos (SMART) é lida a cada 6 horas.';
+  const smartRow = smart ? `<div class="disk-hint smart-row">${svg('shield')}<span>${text}</span>
+    ${/script do servidor|smartmontools/.test(smart.err || '') && !smart.running ? `<button class="pill-btn" data-disk="script">Mostrar comandos</button>` : ''}<button class="pill-btn ${smart.running ? 'busy' : ''}" data-disk="smart-now" ${smart.running ? 'disabled' : ''}>${svg('refresh')}${smart.running ? 'Lendo…' : 'Ler agora'}</button></div>` : '';
   return rows + hint + smartRow;
 }
 
 const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
+
+/** Disco sem SMART: o que aconteceu e "Tentar de novo" (onRetry devolve uma Promise). */
+function noSmartDialog(s, onRetry) {
+  const usb = s.tran === 'usb';
+  const why = s.noSmartWhy === 'travou'
+    ? 'O adaptador deste disco não respondeu ao pedido da saúde do disco (SMART). Quando isso acontece, o Linux costuma reiniciar a conexão USB do disco.'
+    : 'O adaptador deste disco respondeu, mas sem nenhum dado da saúde do disco (SMART).';
+  const when = s.noSmartAt ? new Date(s.noSmartAt * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const d = openDialog(`<h2>${svg('shield')}Saúde de ${esc(s.dev)}</h2>
+    <p class="dlg-text"><span class="smart-badge bad">sem SMART</span> ${esc(s.model || '')}${when ? ` · desde ${esc(when)}` : ''}</p>
+    <p class="dlg-text">${esc(why)} O disco em si não tem problema por causa disso: ler e gravar arquivos continua normal. Para não forçar o adaptador, o BrunOS parou de perguntar a este disco.</p>
+    ${usb ? '<p class="dlg-text">Isso é comum em cases USB: o chip do case nem sempre aceita os comandos do SMART. Um case com chip <b>ASMedia</b> costuma funcionar.</p>' : ''}
+    <p class="dlg-text"><small>"Tentar de novo" pede do outro jeito (${s.failMode === 'sat' ? 'automático' : 'como disco SATA'}). Se o adaptador também não aceitar, ele pode reiniciar a conexão USB do disco por alguns segundos: faça com o disco parado (nada copiando nem tocando).</small></p>
+    <div class="dlg-actions"><button class="pill-btn" data-c="retry">${svg('refresh')}Tentar de novo</button><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 480 });
+  d.el.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-c]'); if (!c) return;
+    if (c.dataset.c === 'ok') { d.close(); return; }
+    c.disabled = true; c.classList.add('busy'); c.lastChild.textContent = 'Tentando…';
+    try { await onRetry(s); d.close(); } catch { c.disabled = false; c.classList.remove('busy'); c.lastChild.textContent = 'Tentar de novo'; }
+  });
+}
+
 /** Detalhes do SMART de um disco. */
-export function smartDialog(s) {
+export function smartDialog(s, onRetry) {
+  if (s.noSmart) { noSmartDialog(s, onRetry); return; }
   const [label, cls] = HEALTH[s.health] || ['—', ''];
   const row = (k, v, bad) => `<div class="kv ${bad ? 'bad' : ''}"><span>${k}</span><span>${v}</span></div>`;
   const years = s.powerOnHours != null ? ` (${(s.powerOnHours / 8766).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} anos)` : '';

@@ -107,7 +107,7 @@ const real = {
     setConfig: (c) => call('PUT', '/api/energy/config', c),
     history: () => call('GET', '/api/energy/history'),
   },
-  smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}) },
+  smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}), retry: (key) => call('POST', '/api/smart/retry', { key }) },
   updates: { get: () => call('GET', '/api/updates'), check: () => call('POST', '/api/updates/check', {}) },
   settings: () => call('GET', '/api/settings'),
   saveSettings: (s) => call('PUT', '/api/settings', s),
@@ -571,12 +571,12 @@ function makeDemo() {
     })(),
     smart: (() => {
       const disks = [
-        { dev: 'sda', model: 'ST1000LM035', health: 'ok', passed: true, temp: 36, powerOnHours: 21400, powerCycles: 2100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
-        { dev: 'sdb', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600, history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }] },
-        { dev: 'sdc', model: 'SSD 360GB', health: 'ok', passed: true, temp: 40, powerOnHours: 9100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
-        { dev: 'sdd', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, powerOnHours: 17200, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
+        { key: 'D-SDA', dev: 'sda', tran: 'usb', mode: 'sat', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600, history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }] },
+        { key: 'D-SDB', dev: 'sdb', tran: 'usb', model: 'JMicron Tech', health: '', noSmart: true, noSmartWhy: 'travou', noSmartAt: now - 7200, failMode: 'sat', reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: 0 },
+        { key: 'D-SDC', dev: 'sdc', tran: 'sata', mode: 'auto', model: 'SSD 360GB', health: 'ok', passed: true, temp: 40, powerOnHours: 9100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
+        { key: 'D-SDD', dev: 'sdd', tran: 'sata', mode: 'auto', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, powerOnHours: 17200, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
       ];
-      return { get: () => wait({ disks, checkedAt: now - 3600 }), refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900) };
+      return { get: () => wait({ disks, checkedAt: now - 3600 }), refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900), retry: () => wait({ disks, checkedAt: now - 3600 }, 1500) };
     })(),
     updates: (() => {
       const s = { apps: [{ urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' }],

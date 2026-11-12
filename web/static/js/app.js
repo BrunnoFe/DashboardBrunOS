@@ -1568,7 +1568,22 @@ function liveUsageDialog() {
     if (rows !== lastDisks) { $('.disk-list', d.el).innerHTML = rows; lastDisks = rows; } // não refaz à toa (o botão perderia o clique)
   };
   if (set().diskForecast) api.disks.forecast().then((r) => { forecast = r.disks || []; if (liveOpen) drawDisks(); }).catch(() => { /* sem previsão: só não mostra */ });
-  api.smart.get().then((r) => { smart = r; if (liveOpen) drawDisks(); }).catch(() => { /* sem SMART: só não mostra */ });
+  // a leitura roda em segundo plano no servidor: acompanha a cada 2 s até terminar
+  const showSmart = (r) => { smart = r; lastDisks = ''; if (liveOpen) drawDisks(); };
+  const followSmart = async (r) => {
+    showSmart(r);
+    for (let i = 0; r.running && i < 150 && liveOpen; i++) { await new Promise((ok) => setTimeout(ok, 2000)); r = await api.smart.get(); showSmart(r); }
+    return r;
+  };
+  const retrySmart = async (s) => {
+    try {
+      const r = await followSmart(await api.smart.retry(s.key));
+      const d = r.disks.find((x) => x.key === s.key);
+      if (d?.noSmart) toast(`${s.dev}: continua sem SMART`, 'O adaptador também não aceitou do outro jeito.');
+      else toast(`${s.dev}: SMART funcionando`, 'O BrunOS volta a ler a saúde deste disco.');
+    } catch (err) { toastError(err, 'Não deu para tentar de novo'); throw err; }
+  };
+  api.smart.get().then((r) => (r.running ? followSmart(r) : showSmart(r))).catch(() => { /* sem SMART: só não mostra */ });
   const drawProcs = async () => {
     const r = await api.processes();
     if (!liveOpen || listMode !== 'procs') return;
@@ -1606,14 +1621,15 @@ function liveUsageDialog() {
   };
   d.el.addEventListener('click', (e) => {
     if (e.target.closest('[data-disk="temp-help"]')) { driveTempHelp(); return; }
-    const sb = e.target.closest('[data-smart]'); if (sb) { const s = smart?.disks.find((x) => x.dev === sb.dataset.smart); if (s) smartDialog(s); return; }
+    const sb = e.target.closest('[data-smart]'); if (sb) { const s = smart?.disks.find((x) => x.dev === sb.dataset.smart); if (s) smartDialog(s, retrySmart); return; }
     if (e.target.closest('[data-disk="script"]')) { import('./energy.js').then((m) => m.scriptDialog()); return; }
     const sn = e.target.closest('[data-disk="smart-now"]');
     if (sn) {
       sn.disabled = true; sn.classList.add('busy');
-      api.smart.refresh().then((r) => { smart = r; lastDisks = ''; drawDisks(); toast('Discos lidos', 'Os que estavam parados ficam para a próxima.'); })
-        .catch((err) => { toastError(err, 'Não deu para ler os discos'); api.smart.get().then((r) => { smart = r; lastDisks = ''; drawDisks(); }).catch(() => {}); })
-        .finally(() => { sn.disabled = false; sn.classList.remove('busy'); });
+      api.smart.refresh().then(followSmart).then((r) => {
+        if (r.err) toast('Não deu para ler os discos', r.err, null, { error: true });
+        else toast('Discos lidos', r.disks.some((x) => x.noSmart) ? 'Discos com "sem SMART" não são lidos (clique na etiqueta para os detalhes).' : 'Os que estavam parados ficam para a próxima.');
+      }).catch((err) => { toastError(err, 'Não deu para ler os discos'); api.smart.get().then(showSmart).catch(() => {}); });
       return;
     }
     const pa = e.target.closest('[data-proc-app]'); if (pa) { openAppDetails(appById(pa.dataset.procApp)); return; }
