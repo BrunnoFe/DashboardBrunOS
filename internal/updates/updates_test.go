@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"brunos/internal/events"
+	"brunos/internal/hostcmd"
 	"brunos/internal/runtipi"
 )
 
@@ -28,6 +29,62 @@ func TestParseOS(t *testing.T) {
 	}
 	if o := ParseOS([]byte("=== pacotes\na/x 1\nb/y 2\n")); o.Total != 2 || o.Reboot {
 		t.Fatalf("sem apt-check: %+v", o)
+	}
+	// o caso do servidor do Bruno depois de atualizar: o apt-check diz 0 (desconta a liberação gradual do
+	// Ubuntu) e a lista ainda traz os 5 segurados; antes, a lista virava "5 atualizações"
+	phased := "apt 0;0\n=== pacotes\ndistro-info/resolute-updates 1.15ubuntu0.1 amd64\npython3-distro-info/x 1\npython3-software-properties/x 1\nsnapd/x 2\nsoftware-properties-common/x 1\n"
+	if o := ParseOS([]byte(phased)); o.Total != 0 || o.Phased != 5 || len(o.Packages) != 5 {
+		t.Fatalf("liberação gradual: %+v", o)
+	}
+}
+
+func TestCheckPart(t *testing.T) {
+	var mu sync.Mutex
+	var acts, queries []string
+	have := "brunos-host 8"
+	c := New("")
+	c.Apps = func() []runtipi.Update { return []runtipi.Update{{URN: "plex:migrated", Name: "Plex"}} }
+	c.Query = func(_ context.Context, cmd string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		queries = append(queries, cmd)
+		if cmd == "versao" {
+			return []byte(have), nil
+		}
+		return []byte("apt 3;1\n"), nil
+	}
+	c.Act = func(_ context.Context, cmd string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		acts = append(acts, cmd)
+		return []byte("lojas atualizadas\n"), nil
+	}
+	// só os apps: não pergunta do Linux; script 8 ainda não sabe atualizar as lojas
+	if err := c.CheckPart(context.Background(), PartApps); err != nil {
+		t.Fatal(err)
+	}
+	if s := c.Snapshot(); len(s.Apps) != 1 || s.OS.CheckedAt != 0 || len(acts) != 0 || strings.Contains(strings.Join(queries, ","), "atualizacoes") {
+		t.Fatalf("só apps: %+v acts=%v queries=%v", s, acts, queries)
+	}
+	// script 9: atualiza as lojas do Runtipi antes de conferir os apps
+	have = "brunos-host 9"
+	_ = c.CheckPart(context.Background(), PartApps)
+	if s := c.Snapshot(); len(acts) != 1 || acts[0] != "atualizar-lojas" || s.StoresAt == 0 || s.StoresErr != "" {
+		t.Fatalf("lojas: %+v acts=%v", s, acts)
+	}
+	// só o Linux: não mexe nas lojas nem nos apps
+	_ = c.CheckPart(context.Background(), PartLinux)
+	if s := c.Snapshot(); s.OS.Total != 3 || len(acts) != 1 {
+		t.Fatalf("só Linux: %+v acts=%v", s, acts)
+	}
+	if err := c.CheckPart(context.Background(), "tudo"); !errors.Is(err, ErrPart) {
+		t.Fatalf("parte inválida: %v", err)
+	}
+	// loja que falha: o aviso aparece, e os apps são conferidos mesmo assim
+	c.Act = func(context.Context, string) ([]byte, error) { return nil, errors.New("o Runtipi não respondeu") }
+	_ = c.CheckPart(context.Background(), PartApps)
+	if s := c.Snapshot(); !strings.Contains(s.StoresErr, "lojas do Runtipi") || len(s.Apps) != 1 {
+		t.Fatalf("loja falhou: %+v", s)
 	}
 }
 
@@ -160,20 +217,20 @@ func TestCheckScript(t *testing.T) {
 	c.UpgradeScript = func(context.Context) error { upgraded++; return nil }
 	// script 6 ainda não sabe se atualizar sozinho: fica para o Terminal
 	c.CheckScript(context.Background())
-	if s := c.Snapshot().Script; s.Have != 6 || s.Want != 8 || !s.Auto || upgraded != 0 {
+	if s := c.Snapshot().Script; s.Have != 6 || s.Want != hostcmd.ScriptVersion || !s.Auto || upgraded != 0 {
 		t.Fatalf("script 6: %+v (trocas %d)", s, upgraded)
 	}
-	// script 7 já sabe se atualizar: troca sozinho pelo 8
+	// script 7 já sabe se atualizar: troca sozinho pelo desta versão
 	ver = "brunos-host 7"
 	c.CheckScript(context.Background())
-	if s := c.Snapshot().Script; s.Have != 8 || s.From != 7 || upgraded != 1 || s.Err != "" {
-		t.Fatalf("script 7 → 8: %+v (trocas %d)", s, upgraded)
+	if s := c.Snapshot().Script; s.Have != hostcmd.ScriptVersion || s.From != 7 || upgraded != 1 || s.Err != "" {
+		t.Fatalf("script 7 → atual: %+v (trocas %d)", s, upgraded)
 	}
 	// em dia: nada a fazer
-	ver = "brunos-host 8"
+	ver = fmt.Sprintf("brunos-host %d", hostcmd.ScriptVersion)
 	c.CheckScript(context.Background())
-	if s := c.Snapshot().Script; s.Have != 8 || upgraded != 1 {
-		t.Fatalf("script 8: %+v", s)
+	if s := c.Snapshot().Script; s.Have != hostcmd.ScriptVersion || upgraded != 1 {
+		t.Fatalf("script em dia: %+v", s)
 	}
 	// a troca falhou: o erro aparece e o sino avisa
 	ver = "brunos-host 7"

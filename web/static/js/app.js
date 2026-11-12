@@ -1411,7 +1411,7 @@ async function backupsDialog() {
 function osUpdatesDialog() {
   const o = S.updates?.os; if (!o) return;
   const d = openDialog(`<h2>${svg('refresh')}Atualizações do Linux</h2>
-    <p class="dlg-text">${o.total} ${o.total === 1 ? 'pacote' : 'pacotes'} para atualizar${o.security ? `, ${o.security} de segurança` : ''}.${o.reboot ? ' <b>O servidor precisa reiniciar</b> para valer uma atualização já instalada.' : ''}</p>
+    <p class="dlg-text">${o.total} ${o.total === 1 ? 'pacote' : 'pacotes'} para atualizar${o.security ? `, ${o.security} de segurança` : ''}.${o.phased ? ` Mais ${o.phased} ${o.phased === 1 ? 'aparece' : 'aparecem'} na lista, mas ${o.phased === 1 ? 'está segurado' : 'estão segurados'} pela liberação gradual do Ubuntu (ele libera aos poucos; entram sozinhos numa próxima atualização).` : ''}${o.reboot ? ' <b>O servidor precisa reiniciar</b> para valer uma atualização já instalada.' : ''}</p>
     <pre class="pw-cmds os-pkgs">${esc((o.packages || []).join('\n') || '—')}</pre>
     <p class="dlg-text"><small>Para instalar, use "Atualizar" no botão de atualizações (ao lado do sino): o servidor atualiza sozinho e mostra o andamento. Se preferir acompanhar tudo, o Terminal abre com o comando já digitado.</small></p>
     <div class="dlg-actions"><button class="pill-btn" data-c="no">Fechar</button>${S.terminal !== false ? `<button class="pill-btn primary" data-c="term">${svg('terminal')}Atualizar no Terminal</button>` : ''}</div>`, { width: 520 });

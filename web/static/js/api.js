@@ -109,7 +109,8 @@ const real = {
   },
   smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}), retry: (key) => call('POST', '/api/smart/retry', { key }) },
   updates: {
-    get: () => call('GET', '/api/updates'), check: () => call('POST', '/api/updates/check', {}),
+    get: () => call('GET', '/api/updates'),
+    check: (part = '') => call('POST', `/api/updates/check${part ? `?${q({ part })}` : ''}`, {}),
     setEvery: (every) => call('PUT', '/api/updates/config', { every }),
     run: (kind, urn, backup = false) => call('POST', '/api/updates/run', { kind, urn, backup }),
     backupSize: (urn) => call('GET', `/api/updates/backup-size?${q({ urn })}`),
@@ -600,12 +601,17 @@ function makeDemo() {
         if (j.backup) j.phase = n < BKLOG.length ? 'backup' : 'atualizando';
         if (n >= lines.length) {
           Object.assign(j, { running: false, ok: true, finishedAt: Math.floor(Date.now() / 1000) });
-          if (j.kind === 'linux') s.os = { ...s.os, total: 0, security: 0, packages: [] }; else s.apps = s.apps.filter((a) => a.urn !== j.target);
+          if (j.kind === 'linux') s.os = { ...s.os, total: 0, security: 0, phased: 2, packages: ['snapd', 'distro-info'] }; else s.apps = s.apps.filter((a) => a.urn !== j.target);
         }
       };
       return {
         get: () => { tick(); return wait(s); },
-        check: () => { s.checkedAt = Math.floor(Date.now() / 1000); return wait(s, 1200); },
+        check: (part) => {
+          const t = Math.floor(Date.now() / 1000);
+          s.checkedAt = t;
+          if (part !== 'linux') { s.appsAt = t; s.storesAt = t; }
+          return wait(s, part ? 900 : 1500);
+        },
         setEvery: (every) => { s.every = every; return wait(s); },
         run: (kind, urn, backup) => {
           if (s.job?.running) return Promise.reject(Object.assign(new Error('já tem uma atualização rodando: espere ela terminar'), { status: 409 }));

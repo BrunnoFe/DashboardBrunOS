@@ -325,6 +325,18 @@ automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
   até o fim; e o **script 8** manda sempre a primeira linha antes do fim do registro.
 - **Primeira versão assinada pelo CI**: o script do servidor deve passar do 7 para o 8 sozinho ao ligar
   o BrunOS 0.12.2 (primeiro teste real da decisão 49).
+- Pegadinha: o segredo cadastrado pelo PowerShell (`wsl cat | gh secret set`) veio com CRLF e o
+  `ssh-keygen` recusou ("Couldn't load public key"); o CI agora tira CR/BOM antes de assinar.
+- No servidor (12/11): **o script passou sozinho do 7 para o 8** (decisão 49 funcionando de verdade).
+
+## 0.12.3 (12/11/2026): liberação gradual do Ubuntu, "Conferir" por seção, lojas do Runtipi
+- **"5 atualizações" que não somem**: eram os pacotes segurados pela liberação gradual (phasing) do
+  Ubuntu (`deferred due to phasing`). O `apt-check` já os descontava (0), mas o BrunOS trocava o 0 pela
+  lista do `apt list` (5). Agora conta só o que dá para instalar e mostra "N aguardando a liberação
+  gradual do Ubuntu" à parte. Conferido no servidor pelo acesso de diagnóstico.
+- **"Conferir" em cada seção** do painel (Apps e Sistema), além do "Conferir tudo" e da rotina.
+- **Lojas do Runtipi atualizadas antes de conferir os apps** (script **9**, pedido `atualizar-lojas` =
+  `runtipi-cli appstore update`); falha na loja vira aviso no painel e os apps são conferidos mesmo assim.
 
 ## Próximas
 Veja `roadmap.md`.

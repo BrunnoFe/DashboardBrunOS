@@ -140,7 +140,8 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 10a | 0.11.2 | D6 (SMART) — **feito (0.11.2)**; testado no servidor em 11/11 |
 | 10b | 0.12.0 | J4 · J5 · E6 — **feito (0.12.0)**; testado no servidor em 12/11 |
 | 10b+ | 0.12.1 | E7 (script que se atualiza sozinho) · E8 (backup antes de atualizar) · apt tolerante · acesso de diagnóstico — **feito (0.12.1)** |
-| 10b++ | 0.12.2 | andamento de atualizações compridas (script 8, primeira troca automática do script) — **feito (0.12.2), aguardando teste no servidor** |
+| 10b++ | 0.12.2 | andamento de atualizações compridas (script 8, primeira troca automática do script) — **feito (0.12.2)**; troca 7 → 8 conferida no servidor |
+| 10b+++ | 0.12.3 | liberação gradual do Ubuntu · "Conferir" por seção · lojas do Runtipi atualizadas antes de conferir (script 9) — **feito (0.12.3), aguardando teste no servidor** |
 | 10c | 0.13.0 | J6 — a fazer |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) · H5 (revisão de segurança) |

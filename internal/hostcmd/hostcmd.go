@@ -62,8 +62,8 @@ const (
 	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0;
 	// 7 = backup antes de atualizar app, "tamanho-backup", repositório quebrado vira aviso e
 	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1; 8 = o andamento manda a
-	// primeira linha do registro, 0.12.2).
-	ScriptVersion = 8
+	// primeira linha do registro, 0.12.2; 9 = "atualizar-lojas" (runtipi-cli appstore update), 0.12.3).
+	ScriptVersion = 9
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -153,6 +153,8 @@ const (
 	CmdUpdateOS     = "atualizar-linux"    // apt-get update + upgrade sem perguntas
 	CmdUpdateApp    = "atualizar-app"      // "atualizar-app <app>:<loja> <sim|nao>": backup (sim) + runtipi-cli app update
 	CmdUpdateStatus = "atualizacao-estado" // rodando|parado + as últimas linhas do registro
+	// script 9 (0.12.3): o "atualizar lojas" do Runtipi, antes de conferir as versões dos apps
+	CmdRefreshStores = "atualizar-lojas"
 )
 
 var appRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}:[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -165,7 +167,7 @@ func ActAllowed(cmd string) bool {
 	f := strings.Fields(cmd)
 	switch {
 	case len(f) == 1:
-		return f[0] == CmdUpdateOS || f[0] == CmdUpdateStatus
+		return f[0] == CmdUpdateOS || f[0] == CmdUpdateStatus || f[0] == CmdRefreshStores
 	case len(f) == 3:
 		return f[0] == CmdUpdateApp && ValidApp(f[1]) && (f[2] == "sim" || f[2] == "nao")
 	}
@@ -195,9 +197,9 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 8: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 9: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
-# discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-linux |
+# discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
 # atualizar-script <assinatura> | versao. Recusa todo o resto.
 # As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
@@ -206,7 +208,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=8
+VERSAO=9
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 if [ "$(id -u)" -ne 0 ]; then
   # chamado pelo SSH (usuário brunos-power): o pedido vem em SSH_ORIGINAL_COMMAND
@@ -228,7 +230,7 @@ modo=${3:-}
 extra=${4:-}
 case "$acao" in
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
-  desligar|tailscale|energia|atualizacoes|discos|atualizar-linux|atualizacao-estado) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  desligar|tailscale|energia|atualizacoes|discos|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   atualizar-app)
     [ $# -eq 3 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido"
@@ -357,6 +359,16 @@ case "$acao" in
     fi
     echo "fim $s"
     exit "$s" ;;
+  atualizar-lojas)
+    # o mesmo "atualizar lojas" das configurações do Runtipi: baixa a lista nova de apps de cada loja
+    d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+    cd "$d"
+    if ! r=$(timeout 150 ./runtipi-cli appstore update 2>&1); then
+      echo "$r" | tail -n 3 >&2
+      exit 1
+    fi
+    echo "lojas atualizadas"
+    exit 0 ;;
   tamanho-backup)
     d=$(pasta_runtipi) || falha "não achei a pasta do Runtipi" 3
     id=${valor%%:*}

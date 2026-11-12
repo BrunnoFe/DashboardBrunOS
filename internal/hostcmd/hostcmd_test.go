@@ -252,7 +252,8 @@ func TestHostScriptRefuses(t *testing.T) {
 		"atualizar-app immich:migrated;reboot", "atualizar-app immich:migrated x", "atualizar-linux agora",
 		"atualizacao-estado x", "atualizar-app $(id):x", "atualizar-app immich:migrated", "atualizar-app immich:migrated talvez",
 		"tamanho-backup", "tamanho-backup ../x:y", "tamanho-backup immich", "tamanho-backup immich:migrated x",
-		"atualizar-script", "atualizar-script abc;def", "atualizar-script a b", "atualizar-script $(id)"} {
+		"atualizar-script", "atualizar-script abc;def", "atualizar-script a b", "atualizar-script $(id)",
+		"atualizar-lojas x", "atualizar-lojas; reboot"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
@@ -260,12 +261,12 @@ func TestHostScriptRefuses(t *testing.T) {
 	// pedidos válidos passam da conferência (como usuário comum vão para o sudo, que falha aqui)
 	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off",
 		"atualizar-linux", "atualizar-app immich:migrated sim", "atualizar-app nextcloud_mini:brunnofe-store nao", "atualizacao-estado",
-		"tamanho-backup immich:migrated", "atualizar-script QUJDRA=="} {
+		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 8") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 9") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
@@ -296,7 +297,7 @@ func TestReadAllowed(t *testing.T) {
 		t.Fatal(DiskCmd(CmdSmart, "sdb", ModeSAT))
 	}
 	for cmd, want := range map[string]bool{
-		"atualizar-linux": true, "atualizacao-estado": true, "atualizar-app immich:migrated sim": true,
+		"atualizar-linux": true, "atualizacao-estado": true, "atualizar-app immich:migrated sim": true, "atualizar-lojas": true, "atualizar-lojas x": false,
 		"atualizar-app nextcloud_mini:brunnofe-store nao": true, "atualizar-app immich:migrated": false, "atualizar-app immich:migrated x": false,
 		"atualizar-app": false, "atualizar-app immich": false,
 		"atualizar-app Immich:x": false, "atualizar-app a:b:c": false, "atualizar-linux x": false, "executar atualizar-linux": false,

@@ -659,6 +659,13 @@ body.reduce-motion .upd-btn.busy::after { animation-duration: 3s; }
 .upd-body > * { flex: none; } /* as linhas não encolhem: a lista rola */
 .upd-sec-title { display: flex; align-items: center; gap: 6px; padding: 10px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
 .upd-sec-title span { font-variant-numeric: tabular-nums; }
+.upd-sec-title .np-btn, .upd-sec-title .upd-sec-busy { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.upd-sec-title .np-btn { height: 22px; opacity: .8; }
+.upd-sec-busy { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 11px; }
+.upd-sec-busy .upd-spin { width: 11px; height: 11px; }
+.upd-none { display: flex; align-items: center; gap: 8px; padding: 4px 10px 6px; opacity: .55; font-size: 12px; }
+.upd-none .svg { width: 14px; height: 14px; color: #8ff0b1; }
+.upd-stores { display: block; padding: 0 10px 4px; font-size: 11px; opacity: .4; }
 .upd-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 8px; border-radius: 13px; }
 .upd-row:hover { background: rgba(255,255,255,.04); }
 .upd-app { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; }

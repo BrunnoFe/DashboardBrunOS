@@ -74,10 +74,11 @@ export function openUpdates() {
   schedulePoll();
 }
 
-async function check() {
+// part: 'apps' (atualiza as lojas do Runtipi e confere os apps), 'linux' ou '' (tudo)
+async function check(part = '') {
   if (checking) return;
-  checking = true; paintUpdates();
-  try { ctx.set(await api.updates.check()); ctx.reloadApps?.(); }
+  checking = part || 'all'; paintUpdates();
+  try { ctx.set(await api.updates.check(part)); if (part !== 'linux') ctx.reloadApps?.(); }
   catch (err) { toastError(err, 'Não deu para conferir as atualizações'); }
   checking = false; paintUpdates();
 }
@@ -131,6 +132,8 @@ async function onClick(e) {
   const b = e.target.closest('[data-up]'); if (!b) return;
   const a = b.dataset.up;
   if (a === 'check') check();
+  else if (a === 'check-apps') check('apps');
+  else if (a === 'check-linux') check('linux');
   else if (a === 'freq') { closeUpdates(); ctx.openSettings(); }
   else if (a === 'linux') run('linux');
   else if (a === 'app') run('app', b.dataset.urn);
@@ -170,7 +173,7 @@ function drawPanel() {
   if (!panel) return;
   const s = snap() || {}, n = counts(s), run = jobRunning(s), o = s.os;
   $('.upd-when', panel).textContent = s.checkedAt ? `conferido ${timeAgo(s.checkedAt)}` : '';
-  const chk = $('[data-up="check"]', panel); chk.disabled = checking || run; chk.textContent = checking ? 'Conferindo…' : 'Conferir agora';
+  const chk = $('[data-up="check"]', panel); chk.disabled = !!checking || run; chk.textContent = checking === 'all' ? 'Conferindo…' : 'Conferir tudo';
   // atualizar apps pede o script 7 (backup); o Linux funciona desde o 6
   const sc = s.script || {}, known = sc.have > 0;
   const disApp = run || (known && sc.have < 7) ? 'disabled' : '', disOS = run || (known && sc.have < 6) ? 'disabled' : '';
@@ -178,14 +181,25 @@ function drawPanel() {
       <button class="upd-app" data-up="open-app" data-urn="${esc(u.urn)}" title="Detalhes do app">${ctx.appIcon(u.urn)}<span class="upd-txt"><b>${esc(u.name)}</b><small>${esc(u.installed || '?')} → ${esc(u.available || '?')}</small></span></button>
       <button class="pill-btn sm" data-up="app" data-urn="${esc(u.urn)}" ${disApp}>Atualizar</button></div>`).join('');
   const script = /script do servidor/.test(o?.err || '');
-  const linux = !o ? '' : o.err
+  // Linux: o que dá para instalar agora, os segurados pela liberação gradual do Ubuntu e o reinício
+  const phased = o?.phased ? `<span title="O Ubuntu libera algumas atualizações aos poucos, para uma parte dos computadores de cada vez. Elas entram sozinhas numa próxima atualização.">${o.phased} aguardando a liberação gradual do Ubuntu</span>` : '';
+  const osText = !o ? 'Ainda não conferido' : [
+    o.total ? `${o.total} ${o.total === 1 ? 'atualização' : 'atualizações'}${o.security ? ` · <span class="upd-sec">${o.security} de segurança</span>` : ''}` : 'Tudo instalado',
+    phased, o.reboot ? '<b class="os-reboot">reinício necessário</b>' : '',
+  ].filter(Boolean).join(' · ');
+  const linux = o?.err
     ? `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${esc(o.err)}</small></span></span>${script ? '<button class="pill-btn sm" data-up="script">Mostrar comandos</button>' : ''}</div>`
-    : o.total || o.reboot ? `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${o.total ? `${o.total} ${o.total === 1 ? 'atualização' : 'atualizações'}${o.security ? ` · <span class="upd-sec">${o.security} de segurança</span>` : ''}` : 'tudo instalado'}${o.reboot ? ' · <b class="os-reboot">reinício necessário</b>' : ''}</small></span></span>
-      ${o.total ? `<button class="np-btn" data-up="os-list">Ver lista</button><button class="pill-btn sm" data-up="linux" ${disOS}>Atualizar</button>` : ''}</div>` : '';
-  const checkingHTML = checking ? '<div class="upd-checking"><span class="upd-spin"></span>Conferindo os apps e o Linux…</div>' : '';
-  const body = !n.total && !linux
-    ? `<div class="np-empty">${svg('check')}<span>Tudo em dia.<br><small>${checking ? 'Conferindo de novo…' : 'Nenhum app nem pacote do Linux para atualizar.'}</small></span></div>`
-    : `${apps ? `<div class="upd-sec-title">Apps <span>${n.apps}</span></div>${apps}` : ''}${linux ? `<div class="upd-sec-title">Sistema</div>${linux}` : ''}`;
+    : `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${osText}</small></span></span>
+      ${o?.total || o?.phased ? '<button class="np-btn" data-up="os-list">Ver lista</button>' : ''}${o?.total ? `<button class="pill-btn sm" data-up="linux" ${disOS}>Atualizar</button>` : ''}</div>`;
+  // cada seção com o seu "Conferir" (Apps também atualiza as lojas do Runtipi)
+  const busy = (p) => checking === p || checking === 'all';
+  const secBtn = (p) => busy(p) ? '<span class="upd-sec-busy"><span class="upd-spin"></span>conferindo…</span>' : `<button class="np-btn" data-up="check-${p}" ${checking || run ? 'disabled' : ''}>Conferir</button>`;
+  const stores = s.storesErr ? `<div class="upd-note warn"><span>${svg('info')}</span><small>${esc(s.storesErr)}</small></div>`
+    : s.storesAt ? `<small class="upd-stores">Lojas do Runtipi atualizadas ${esc(timeAgo(s.storesAt))}</small>` : '';
+  const body = `<div class="upd-sec-title">Apps <span>${n.apps || ''}</span>${secBtn('apps')}</div>
+    ${apps || `<div class="upd-none">${svg('check')}<small>${s.appsAt || s.checkedAt ? 'Todos os apps em dia' : 'Ainda não conferido'}</small></div>`}${stores}
+    <div class="upd-sec-title">Sistema${secBtn('linux')}</div>${linux}`;
+  const checkingHTML = '';
   // erro ao começar uma atualização: fica no painel (não só numa mensagem que some)
   const failHTML = failure ? `<div class="upd-job bad"><div class="upd-job-head">${svg('info')}<b>Não deu para começar</b><button class="np-btn" data-up="dismiss-fail" aria-label="Dispensar">${svg('x')}</button></div><small>${esc(failure)}</small>${/script do servidor/.test(failure) ? '<span class="upd-note-acts"><button class="pill-btn sm" data-up="script-term">Atualizar o script pelo Terminal</button></span>' : ''}</div>` : '';
   $('.upd-body', panel).innerHTML = checkingHTML + scriptHTML(sc) + failHTML + jobHTML(s.job) + body;

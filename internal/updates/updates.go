@@ -47,6 +47,7 @@ var (
 // OS é o que se sabe das atualizações do Linux.
 type OS struct {
 	Total     int      `json:"total"`
+	Phased    int      `json:"phased,omitempty"` // na lista, mas segurados pela liberação gradual do Ubuntu
 	Security  int      `json:"security"`
 	Reboot    bool     `json:"reboot"`
 	Packages  []string `json:"packages"`
@@ -92,6 +93,9 @@ type state struct {
 	Every     string           `json:"every,omitempty"`
 	Job       *Job             `json:"job,omitempty"`
 	Script    Script           `json:"script"`
+	AppsAt    int64            `json:"appsAt,omitempty"`    // última conferência dos apps
+	StoresAt  int64            `json:"storesAt,omitempty"`  // última vez que as lojas do Runtipi foram atualizadas
+	StoresErr string           `json:"storesErr,omitempty"` // não deu para atualizar as lojas
 }
 
 // Checker faz as conferências e acompanha as atualizações.
@@ -110,6 +114,7 @@ type Checker struct {
 	st        state
 	base      context.Context
 	running   bool
+	part      string // o que está sendo conferido ("" = tudo)
 	following bool
 }
 
@@ -254,43 +259,86 @@ func (c *Checker) SetEvery(v string) error {
 	return nil
 }
 
-// Check confere agora ("Conferir agora", o botão ao lado do sino e a rotina).
-func (c *Checker) Check(ctx context.Context) {
+// Partes que dá para conferir separadas (o "Conferir" de cada linha do painel).
+const (
+	PartAll   = ""
+	PartApps  = "apps"
+	PartLinux = "linux"
+)
+
+// ErrPart: parte desconhecida.
+var ErrPart = errors.New("parte inválida (use apps ou linux)")
+
+// Check confere tudo agora (o "Conferir agora" geral, o botão ao lado do sino e a rotina).
+func (c *Checker) Check(ctx context.Context) { _ = c.CheckPart(ctx, PartAll) }
+
+// CheckPart confere só os apps, só o Linux ou tudo. Antes dos apps, atualiza as lojas do Runtipi
+// (script 9+), para a versão nova de um app aparecer sem abrir as configurações do Runtipi.
+func (c *Checker) CheckPart(ctx context.Context, part string) error {
+	if part != PartAll && part != PartApps && part != PartLinux {
+		return ErrPart
+	}
 	c.mu.Lock()
 	if c.running {
 		c.mu.Unlock()
-		return
+		return nil
 	}
-	c.running = true
+	c.running, c.part = true, part
 	c.mu.Unlock()
-	defer func() { c.mu.Lock(); c.running = false; c.mu.Unlock() }()
+	defer func() { c.mu.Lock(); c.running, c.part = false, ""; c.mu.Unlock() }()
 	c.CheckScript(ctx)
 	now := c.Now()
-	var apps []runtipi.Update
-	if c.Apps != nil {
-		apps = c.Apps()
-	}
-	if apps == nil {
-		apps = []runtipi.Update{}
-	}
-	osu := OS{CheckedAt: now.Unix(), Packages: []string{}}
-	if c.Query != nil {
-		qctx, cancel := context.WithTimeout(ctx, time.Minute)
-		out, err := c.Query(qctx, hostcmd.CmdUpdates)
-		cancel()
-		if err != nil {
-			osu.Err = friendly(err)
-		} else {
-			osu = ParseOS(out)
-			osu.CheckedAt = now.Unix()
-		}
-	}
 	c.mu.Lock()
 	prev := c.st
-	c.st.Apps, c.st.OS, c.st.CheckedAt = apps, osu, now.Unix()
+	have := c.st.Script.Have
 	c.mu.Unlock()
-	c.notify(prev, apps, osu)
+	if part != PartLinux {
+		storesErr, storesAt := prev.StoresErr, prev.StoresAt
+		if c.Act != nil && have >= 9 {
+			sctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			_, err := c.Act(sctx, hostcmd.CmdRefreshStores)
+			cancel()
+			if err != nil {
+				storesErr = "não deu para atualizar as lojas do Runtipi: " + friendly(err)
+			} else {
+				storesErr, storesAt = "", now.Unix()
+			}
+		}
+		var apps []runtipi.Update
+		if c.Apps != nil {
+			apps = c.Apps()
+		}
+		if apps == nil {
+			apps = []runtipi.Update{}
+		}
+		c.mu.Lock()
+		c.st.Apps, c.st.AppsAt, c.st.StoresErr, c.st.StoresAt = apps, now.Unix(), storesErr, storesAt
+		c.mu.Unlock()
+		c.notifyApps(apps)
+	}
+	if part != PartApps {
+		osu := OS{CheckedAt: now.Unix(), Packages: []string{}}
+		if c.Query != nil {
+			qctx, cancel := context.WithTimeout(ctx, time.Minute)
+			out, err := c.Query(qctx, hostcmd.CmdUpdates)
+			cancel()
+			if err != nil {
+				osu.Err = friendly(err)
+			} else {
+				osu = ParseOS(out)
+				osu.CheckedAt = now.Unix()
+			}
+		}
+		c.mu.Lock()
+		c.st.OS = osu
+		c.mu.Unlock()
+		c.notifyOS(prev.OS, osu)
+	}
+	c.mu.Lock()
+	c.st.CheckedAt = now.Unix()
+	c.mu.Unlock()
 	c.save()
+	return nil
 }
 
 func (c *Checker) save() {
@@ -309,24 +357,25 @@ func (c *Checker) save() {
 	}
 }
 
-func (c *Checker) notify(prev state, apps []runtipi.Update, osu OS) {
-	if c.Events == nil {
+func (c *Checker) notifyApps(apps []runtipi.Update) {
+	if c.Events == nil || (c.NotifyApps != nil && !c.NotifyApps()) {
 		return
 	}
-	if c.NotifyApps == nil || c.NotifyApps() {
-		for _, a := range apps {
-			c.Events.Emit(events.Event{Kind: "app-update", Level: "info", Key: "app-update:" + a.URN + ":" + a.Available,
-				Title: fmt.Sprintf("%s: atualização para %s", a.Name, a.Available),
-				Body:  fmt.Sprintf("Instalada: %s. Atualize pelo botão de atualizações (ao lado do sino) ou pela página do app no Runtipi.", a.Installed)})
-		}
+	for _, a := range apps {
+		c.Events.Emit(events.Event{Kind: "app-update", Level: "info", Key: "app-update:" + a.URN + ":" + a.Available,
+			Title: fmt.Sprintf("%s: atualização para %s", a.Name, a.Available),
+			Body:  fmt.Sprintf("Instalada: %s. Atualize pelo botão de atualizações (ao lado do sino) ou pela página do app no Runtipi.", a.Installed)})
 	}
-	if osu.Err != "" {
+}
+
+func (c *Checker) notifyOS(prev, osu OS) {
+	if c.Events == nil || osu.Err != "" {
 		return // sem leitura do Linux: não mexe nos avisos dele
 	}
 	if osu.Reboot {
 		c.Events.Emit(events.Event{Kind: "os-reboot", Level: "aviso", Key: "os-reboot",
 			Title: "O servidor precisa reiniciar", Body: "Uma atualização do Linux (normalmente do kernel) só vale depois de reiniciar o servidor."})
-	} else if prev.OS.Reboot {
+	} else if prev.Reboot {
 		c.Events.Resolve("os-reboot", nil)
 	}
 	if osu.Security > 0 {
@@ -654,7 +703,7 @@ func ParseStatus(out []byte, startedAt int64, seen bool) Status {
 func ParseOS(out []byte) OS {
 	o := OS{Packages: []string{}}
 	sc := bufio.NewScanner(bytes.NewReader(out))
-	pkgs := false
+	pkgs, counted := false, false
 	for sc.Scan() {
 		ln := strings.TrimSpace(sc.Text())
 		switch {
@@ -664,6 +713,7 @@ func ParseOS(out []byte) OS {
 			if ok {
 				o.Total, _ = strconv.Atoi(strings.TrimSpace(a))
 				o.Security, _ = strconv.Atoi(strings.TrimSpace(b))
+				counted = true
 			}
 		case ln == "reiniciar":
 			o.Reboot = true
@@ -676,8 +726,12 @@ func ParseOS(out []byte) OS {
 			}
 		}
 	}
-	if o.Total == 0 && len(o.Packages) > 0 { // sem apt-check: conta pela lista
+	switch {
+	case !counted: // sem apt-check: conta pela lista
 		o.Total = len(o.Packages)
+	case len(o.Packages) > o.Total:
+		// o apt-check já desconta a liberação gradual (phasing); a lista do apt mostra tudo
+		o.Phased = len(o.Packages) - o.Total
 	}
 	return o
 }
@@ -689,14 +743,19 @@ type Snapshot struct {
 	CheckedAt int64            `json:"checkedAt"`
 	Every     string           `json:"every"`
 	Checking  bool             `json:"checking,omitempty"`
+	Part      string           `json:"part,omitempty"` // o que está sendo conferido ("" = tudo)
 	Job       *Job             `json:"job,omitempty"`
 	Script    Script           `json:"script"`
+	AppsAt    int64            `json:"appsAt,omitempty"`
+	StoresAt  int64            `json:"storesAt,omitempty"`
+	StoresErr string           `json:"storesErr,omitempty"`
 }
 
 func (c *Checker) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := Snapshot{Apps: append([]runtipi.Update{}, c.st.Apps...), OS: c.st.OS, CheckedAt: c.st.CheckedAt, Every: c.st.Every, Checking: c.running, Script: c.st.Script}
+	s := Snapshot{Apps: append([]runtipi.Update{}, c.st.Apps...), OS: c.st.OS, CheckedAt: c.st.CheckedAt, Every: c.st.Every, Checking: c.running, Part: c.part,
+		Script: c.st.Script, AppsAt: c.st.AppsAt, StoresAt: c.st.StoresAt, StoresErr: c.st.StoresErr}
 	s.Script.Want, s.Script.Auto = hostcmd.ScriptVersion, c.UpgradeScript != nil
 	s.OS.Packages = append([]string{}, c.st.OS.Packages...)
 	if c.st.Job != nil {
