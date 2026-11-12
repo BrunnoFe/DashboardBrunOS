@@ -67,6 +67,20 @@ type Job struct {
 	FinishedAt int64    `json:"finishedAt,omitempty"`
 	OK         bool     `json:"ok"`
 	Err        string   `json:"err,omitempty"`
+	Backup     bool     `json:"backup,omitempty"` // backup do Runtipi antes de atualizar o app
+	Phase      string   `json:"phase,omitempty"`  // backup | atualizando
+	Warn       string   `json:"warn,omitempty"`   // terminou bem, mas com aviso (repositório quebrado)
+}
+
+// Script é a versão do script do servidor (brunos-host) e se ele se atualiza sozinho.
+type Script struct {
+	Have      int    `json:"have"`           // versão no servidor (0 = não deu para ler)
+	Want      int    `json:"want"`           // versão que este BrunOS traz
+	Auto      bool   `json:"auto"`           // esta compilação traz o script assinado
+	CheckedAt int64  `json:"checkedAt"`      // última conferência
+	Err       string `json:"err,omitempty"`  // não deu para conferir ou para atualizar
+	At        int64  `json:"at,omitempty"`   // última atualização automática
+	From      int    `json:"from,omitempty"` // de qual versão veio
 }
 
 type state struct {
@@ -76,17 +90,20 @@ type state struct {
 	CheckedAt int64            `json:"checkedAt"`
 	Every     string           `json:"every,omitempty"`
 	Job       *Job             `json:"job,omitempty"`
+	Script    Script           `json:"script"`
 }
 
 // Checker faz as conferências e acompanha as atualizações.
 type Checker struct {
-	File       string
-	Apps       func() []runtipi.Update
-	Query      func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (leitura)
-	Act        func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (atualizar)
-	Events     *events.Store
-	NotifyApps func() bool // aviso de versão nova de app (Configurações → Apps)
-	Now        func() time.Time
+	File  string
+	Apps  func() []runtipi.Update
+	Query func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (leitura)
+	Act   func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (atualizar)
+	// UpgradeScript troca o script do servidor pelo desta versão (assinado). nil = sem assinatura.
+	UpgradeScript func(ctx context.Context) error
+	Events        *events.Store
+	NotifyApps    func() bool // aviso de versão nova de app (Configurações → Apps)
+	Now           func() time.Time
 
 	mu        sync.Mutex
 	st        state
@@ -108,7 +125,77 @@ func New(file string) *Checker {
 	if _, ok := everyOpts[c.st.Every]; !ok {
 		c.st.Every = defaultEvery
 	}
+	c.st.Script.Want = hostcmd.ScriptVersion
 	return c
+}
+
+// CheckScript lê a versão do script do servidor e, se ele já souber se atualizar (7+) e esta
+// compilação trouxer o script assinado, troca pelo novo sozinho. Avisa no sino quando troca e
+// quando não consegue.
+func (c *Checker) CheckScript(ctx context.Context) {
+	if c.Query == nil {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	out, err := c.Query(qctx, hostcmd.CmdVersion)
+	cancel()
+	now := c.Now().Unix()
+	c.mu.Lock()
+	sc := &c.st.Script
+	sc.Want, sc.Auto, sc.CheckedAt, sc.Err = hostcmd.ScriptVersion, c.UpgradeScript != nil, now, ""
+	if err != nil {
+		sc.Have, sc.Err = 0, friendly(err)
+		c.mu.Unlock()
+		c.save()
+		return
+	}
+	have := hostcmd.ParseVersion(out)
+	sc.Have = have
+	auto := have >= hostcmd.SelfUpdateFrom && have < hostcmd.ScriptVersion && c.UpgradeScript != nil
+	c.mu.Unlock()
+	if auto {
+		uctx, cancel := context.WithTimeout(ctx, time.Minute)
+		uerr := c.UpgradeScript(uctx)
+		cancel()
+		c.mu.Lock()
+		if uerr != nil {
+			sc.Err = "não deu para atualizar o script do servidor sozinho: " + friendly(uerr)
+		} else {
+			sc.From, sc.Have, sc.At = have, hostcmd.ScriptVersion, now
+		}
+		c.mu.Unlock()
+		if c.Events != nil {
+			if uerr != nil {
+				c.Events.Emit(events.Event{Kind: "script-upgrade", Level: events.Aviso, Key: fmt.Sprintf("script-upgrade-fail:%d", hostcmd.ScriptVersion),
+					Title: "Não deu para atualizar o script do servidor", Body: friendly(uerr) + ". No botão de atualizações (ao lado do sino) dá para atualizar pelo Terminal."})
+			} else {
+				c.Events.Emit(events.Event{Kind: "script-upgrade", Level: events.Info, Key: fmt.Sprintf("script-upgrade:%d", hostcmd.ScriptVersion),
+					Title: fmt.Sprintf("Script do servidor atualizado (versão %d)", hostcmd.ScriptVersion),
+					Body:  fmt.Sprintf("O BrunOS trocou sozinho o script do servidor da versão %d para a %d. A troca só acontece com um script assinado pela publicação do BrunOS.", have, hostcmd.ScriptVersion)})
+			}
+		}
+	}
+	c.save()
+}
+
+// BackupSize mede o backup que o Runtipi faria do app (pasta do app + app-data) e o espaço livre.
+func (c *Checker) BackupSize(ctx context.Context, urn string) (size, free int64, err error) {
+	if c.Query == nil || !hostcmd.ValidApp(urn) {
+		return 0, 0, ErrNoUpdate
+	}
+	qctx, cancel := context.WithTimeout(ctx, 70*time.Second)
+	out, err := c.Query(qctx, hostcmd.CmdBackupSize+" "+urn)
+	cancel()
+	if err != nil {
+		return 0, 0, errors.New(friendly(err))
+	}
+	f := strings.Fields(string(out))
+	if len(f) != 4 || f[0] != "tamanho" || f[2] != "livre" {
+		return 0, 0, errors.New("resposta inesperada do servidor")
+	}
+	size, _ = strconv.ParseInt(f[1], 10, 64)
+	free, _ = strconv.ParseInt(f[3], 10, 64)
+	return size, free, nil
 }
 
 // Run confere ao ligar (se já passou o intervalo) e depois de hora em hora vê se está na hora.
@@ -126,6 +213,7 @@ func (c *Checker) Run(ctx context.Context) {
 		return
 	case <-time.After(45 * time.Second):
 	}
+	c.CheckScript(ctx) // ao ligar: script do servidor desatualizado é trocado sozinho (7+)
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
@@ -175,6 +263,7 @@ func (c *Checker) Check(ctx context.Context) {
 	c.running = true
 	c.mu.Unlock()
 	defer func() { c.mu.Lock(); c.running = false; c.mu.Unlock() }()
+	c.CheckScript(ctx)
 	now := c.Now()
 	var apps []runtipi.Update
 	if c.Apps != nil {
@@ -265,8 +354,9 @@ var (
 	ErrKind     = errors.New("tipo de atualização inválido")
 )
 
-// Start pede ao servidor para atualizar o Linux (kind "linux") ou um app (kind "app", urn).
-func (c *Checker) Start(ctx context.Context, kind, urn string) error {
+// Start pede ao servidor para atualizar o Linux (kind "linux") ou um app (kind "app", urn; backup =
+// o backup do Runtipi antes, e só atualiza se ele der certo).
+func (c *Checker) Start(ctx context.Context, kind, urn string, backup bool) error {
 	if c.Act == nil {
 		return errors.New("atualizar pela interface não está disponível")
 	}
@@ -291,8 +381,12 @@ func (c *Checker) Start(ctx context.Context, kind, urn string) error {
 			c.mu.Unlock()
 			return ErrNoUpdate
 		}
-		cmd = hostcmd.CmdUpdateApp + " " + urn
-		job.Target, job.Name, job.From, job.To = urn, found.Name, found.Installed, found.Available
+		flag := "nao"
+		if backup {
+			flag = "sim"
+		}
+		cmd = hostcmd.CmdUpdateApp + " " + urn + " " + flag
+		job.Target, job.Name, job.From, job.To, job.Backup = urn, found.Name, found.Installed, found.Available, backup
 	default:
 		c.mu.Unlock()
 		return ErrKind
@@ -368,7 +462,7 @@ func (c *Checker) poll(ctx context.Context) bool {
 	cancel()
 	if err != nil { // BrunOS ou Docker reiniciando, rede: tenta de novo até o limite
 		if now.Sub(time.Unix(started, 0)) > maxJob {
-			c.finish(false, "não consegui acompanhar a atualização até o fim: confira no servidor (/var/log/brunos-atualizar.log)", nil)
+			c.finish(false, "não consegui acompanhar a atualização até o fim: confira no servidor (/var/log/brunos-atualizar.log)", "", nil)
 			return true
 		}
 		return false
@@ -376,35 +470,60 @@ func (c *Checker) poll(ctx context.Context) bool {
 	st := ParseStatus(out, started)
 	switch {
 	case st.Done:
-		msg := ""
-		if st.Exit != 0 {
-			msg = fmt.Sprintf("a atualização terminou com erro (código %d)", st.Exit)
+		msg, warn := "", ""
+		switch {
+		case st.BackupFailed:
+			msg = "o backup do Runtipi falhou, então nada foi atualizado"
+		case st.Exit != 0:
+			msg = exitMessage(st.Exit, st.Lines)
+		case st.Warn:
+			warn = "um repositório extra do apt está com problema"
+			if st.Repo != "" {
+				warn += " (" + st.Repo + ")"
+			}
+			warn += "; o resto foi instalado"
 		}
-		c.finish(st.Exit == 0, msg, st.Lines)
+		c.finish(st.Exit == 0 && !st.BackupFailed, msg, warn, st.Lines)
 		return true
 	case !st.Running && !st.Started && now.Sub(time.Unix(started, 0)) > startGrace:
-		c.finish(false, "a atualização não começou no servidor", st.Lines)
+		c.finish(false, "a atualização não começou no servidor", "", st.Lines)
 		return true
 	case !st.Running && st.Started:
-		c.finish(false, "a atualização parou sem terminar (o servidor reiniciou?)", st.Lines)
+		c.finish(false, "a atualização parou sem terminar (o servidor reiniciou?)", "", st.Lines)
 		return true
 	}
 	c.mu.Lock()
 	if st.Started {
-		c.st.Job.Lines = st.Lines
+		c.st.Job.Lines, c.st.Job.Phase = st.Lines, st.Phase
 	}
 	c.mu.Unlock()
 	return false
 }
 
-func (c *Checker) finish(ok bool, msg string, lines []string) {
+// exitMessage explica em português os erros mais comuns do apt e do runtipi-cli.
+func exitMessage(code int, lines []string) string {
+	all := strings.Join(lines, "\n")
+	switch {
+	case strings.Contains(all, "Could not get lock") || strings.Contains(all, "is held by process"):
+		return "outra instalação está rodando no servidor (por exemplo, a atualização automática do Ubuntu): tente de novo daqui a alguns minutos"
+	case strings.Contains(all, "No space left on device"):
+		return "faltou espaço no disco do servidor"
+	case strings.Contains(all, "Temporary failure resolving") || strings.Contains(all, "Could not resolve"):
+		return "o servidor ficou sem internet durante a atualização"
+	case strings.Contains(all, "dpkg was interrupted"):
+		return "uma instalação anterior ficou pela metade: rode sudo dpkg --configure -a no Terminal"
+	}
+	return fmt.Sprintf("a atualização terminou com erro (código %d): veja as últimas linhas", code)
+}
+
+func (c *Checker) finish(ok bool, msg, warn string, lines []string) {
 	c.mu.Lock()
 	j := c.st.Job
 	if j == nil {
 		c.mu.Unlock()
 		return
 	}
-	j.Running, j.OK, j.Err, j.FinishedAt = false, ok, msg, c.Now().Unix()
+	j.Running, j.OK, j.Err, j.Warn, j.Phase, j.FinishedAt = false, ok, msg, warn, "", c.Now().Unix()
 	if lines != nil {
 		j.Lines = lines
 	}
@@ -416,8 +535,14 @@ func (c *Checker) finish(ok bool, msg string, lines []string) {
 		switch {
 		case ok && done.Kind == "linux":
 			ev.Title, ev.Body = "Linux atualizado", "As atualizações do Linux foram instaladas. Se aparecer \"reinício necessário\", reinicie o servidor quando puder."
+			if done.Warn != "" {
+				ev.Body += " Aviso: " + done.Warn + "."
+			}
 		case ok:
 			ev.Title, ev.Body = done.Name+" atualizado", fmt.Sprintf("%s foi atualizado de %s para %s.", done.Name, done.From, done.To)
+			if done.Backup {
+				ev.Body += " Antes, o Runtipi fez um backup do app (restaurável pela página dele no Runtipi)."
+			}
 		default:
 			ev.Level, ev.Title = events.Aviso, "Não deu para atualizar: "+done.Name
 			ev.Body = msg
@@ -432,12 +557,18 @@ func (c *Checker) finish(ok bool, msg string, lines []string) {
 
 // Status é a leitura do pedido "atualizacao-estado".
 type Status struct {
-	Running bool     // o serviço brunos-atualizar está ativo
-	Started bool     // o registro é desta atualização (começou depois de pedida)
-	Done    bool     // o registro tem a linha "fim"
-	Exit    int      // código de saída
-	Lines   []string // últimas linhas do registro, limpas
+	Running      bool     // o serviço brunos-atualizar está ativo
+	Started      bool     // o registro é desta atualização (começou depois de pedida)
+	Done         bool     // o registro tem a linha "fim"
+	Exit         int      // código de saída
+	Lines        []string // últimas linhas do registro, limpas
+	Phase        string   // backup | atualizando ("" = sem backup)
+	BackupFailed bool     // "backup-falhou": nada foi atualizado
+	Warn         bool     // "aviso-repositorio": instalou, mas um repositório falhou no apt update
+	Repo         string   // o repositório que falhou (da linha "E: The repository '...'")
 }
+
+var repoRe = regexp.MustCompile(`The repository '([^']+)'`)
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
@@ -469,11 +600,29 @@ func ParseStatus(out []byte, startedAt int64) Status {
 		if f := strings.Fields(ln); f[0] == "inicio" && len(f) >= 2 {
 			ts, _ := strconv.ParseInt(f[1], 10, 64)
 			s.Started, s.Done, s.Lines = ts >= startedAt-60, false, nil
+			s.Phase, s.BackupFailed, s.Warn, s.Repo = "", false, false, ""
 			continue
 		} else if f[0] == "fim" && len(f) == 2 && s.Started {
 			s.Done = true
 			s.Exit, _ = strconv.Atoi(f[1])
 			continue
+		}
+		switch {
+		case ln == "backup-inicio":
+			s.Phase = "backup"
+			continue
+		case ln == "backup-ok":
+			s.Phase = "atualizando"
+			continue
+		case strings.HasPrefix(ln, "backup-falhou"):
+			s.BackupFailed = true
+			continue
+		case ln == "aviso-repositorio":
+			s.Warn = true
+			continue
+		}
+		if m := repoRe.FindStringSubmatch(ln); m != nil && s.Repo == "" {
+			s.Repo = m[1]
 		}
 		if len(ln) > 200 {
 			ln = ln[:200] + "…"
@@ -532,12 +681,14 @@ type Snapshot struct {
 	Every     string           `json:"every"`
 	Checking  bool             `json:"checking,omitempty"`
 	Job       *Job             `json:"job,omitempty"`
+	Script    Script           `json:"script"`
 }
 
 func (c *Checker) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := Snapshot{Apps: append([]runtipi.Update{}, c.st.Apps...), OS: c.st.OS, CheckedAt: c.st.CheckedAt, Every: c.st.Every, Checking: c.running}
+	s := Snapshot{Apps: append([]runtipi.Update{}, c.st.Apps...), OS: c.st.OS, CheckedAt: c.st.CheckedAt, Every: c.st.Every, Checking: c.running, Script: c.st.Script}
+	s.Script.Want, s.Script.Auto = hostcmd.ScriptVersion, c.UpgradeScript != nil
 	s.OS.Packages = append([]string{}, c.st.OS.Packages...)
 	if c.st.Job != nil {
 		j := *c.st.Job

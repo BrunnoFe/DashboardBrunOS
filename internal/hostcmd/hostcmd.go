@@ -30,12 +30,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	_ "embed"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,11 +59,15 @@ const (
 	SetupVersion = 2
 	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2; 4 = "energia", "smart",
 	// "temperatura" e "atualizacoes", 0.11.0; 5 = "discos" e SMART um disco por vez com o modo, 0.11.2;
-	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0).
-	ScriptVersion = 6
-	maxOutput     = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
-	dialTimeout   = 10 * time.Second
-	keyComment    = "brunos-power"
+	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0;
+	// 7 = backup antes de atualizar app, "tamanho-backup", repositório quebrado vira aviso e
+	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1).
+	ScriptVersion = 7
+	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
+	SelfUpdateFrom = 7
+	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
+	dialTimeout    = 10 * time.Second
+	keyComment     = "brunos-power"
 )
 
 // Pedidos aceitos pelo script do servidor.
@@ -85,8 +91,38 @@ const (
 	ModeAuto = "auto"
 )
 
+// Script 7 (0.12.1).
+const (
+	CmdBackupSize   = "tamanho-backup"   // "tamanho-backup <app>:<loja>": bytes da pasta do app + app-data e o espaço livre
+	CmdUpdateScript = "atualizar-script" // "atualizar-script <assinatura base64>" + o script novo pela entrada padrão
+)
+
+// ReleasePublicKey é a chave pública de publicação: o script do servidor só se troca por outro assinado
+// pela chave privada correspondente, que fica só nos segredos do GitHub Actions (BRUNOS_SCRIPT_KEY).
+const ReleasePublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIGRDff29cdWSeHDGjTkfKLD4+N9hfuZrexuEp8Y7var"
+
+// assinatura.txt: assinatura (ssh-keygen -Y sign, namespace brunos-host) do HostScript, em base64.
+// Gerada pelo CI na publicação; vazia nas compilações locais (aí o script não se atualiza sozinho).
+//
+//go:embed assinatura.txt
+var scriptSig string
+
+// ScriptSignature devolve a assinatura do HostScript desta compilação ("" se não houver).
+func ScriptSignature() string { return strings.TrimSpace(scriptSig) }
+
 // ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
-var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true}
+var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true,
+	CmdVersion: true, CmdBackupSize: true}
+
+// ParseVersion lê "brunos-host 7" (0 se não der).
+func ParseVersion(out []byte) int {
+	f := strings.Fields(string(out))
+	if len(f) == 2 && f[0] == "brunos-host" {
+		n, _ := strconv.Atoi(f[1])
+		return n
+	}
+	return 0
+}
 
 var diskRe = regexp.MustCompile(`^(sd[a-z]{1,2}|nvme[0-9]n1)$`)
 
@@ -99,8 +135,11 @@ func ReadAllowed(cmd string) bool {
 	if len(f) == 0 || !ReadCmds[f[0]] {
 		return false
 	}
-	if f[0] == CmdSmart || f[0] == CmdTemps {
+	switch f[0] {
+	case CmdSmart, CmdTemps:
 		return len(f) == 3 && ValidDisk(f[1]) && (f[2] == ModeSAT || f[2] == ModeAuto)
+	case CmdBackupSize:
+		return len(f) == 2 && ValidApp(f[1])
 	}
 	return len(f) == 1
 }
@@ -111,7 +150,7 @@ func DiskCmd(kind, dev, mode string) string { return kind + " " + dev + " " + mo
 // Script 6 (0.12.0): atualizar pela interface (decisão 47). Rodam soltos no servidor (systemd-run).
 const (
 	CmdUpdateOS     = "atualizar-linux"    // apt-get update + upgrade sem perguntas
-	CmdUpdateApp    = "atualizar-app"      // "atualizar-app <app>:<loja>": runtipi-cli app update
+	CmdUpdateApp    = "atualizar-app"      // "atualizar-app <app>:<loja> <sim|nao>": backup (sim) + runtipi-cli app update
 	CmdUpdateStatus = "atualizacao-estado" // rodando|parado + as últimas linhas do registro
 )
 
@@ -126,10 +165,21 @@ func ActAllowed(cmd string) bool {
 	switch {
 	case len(f) == 1:
 		return f[0] == CmdUpdateOS || f[0] == CmdUpdateStatus
-	case len(f) == 2:
-		return f[0] == CmdUpdateApp && ValidApp(f[1])
+	case len(f) == 3:
+		return f[0] == CmdUpdateApp && ValidApp(f[1]) && (f[2] == "sim" || f[2] == "nao")
 	}
 	return false
+}
+
+var sigRe = regexp.MustCompile(`^[A-Za-z0-9+/=]+$`)
+
+// UpdateScriptCmd monta o pedido "atualizar-script <assinatura>" (vazio se não houver assinatura válida).
+func UpdateScriptCmd() string {
+	s := ScriptSignature()
+	if len(s) > 4000 || !sigRe.MatchString(s) {
+		return ""
+	}
+	return CmdUpdateScript + " " + s
 }
 
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
@@ -144,15 +194,19 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 6: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 7: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-linux |
-# atualizar-app <app>:<loja> | atualizacao-estado | versao. Recusa todo o resto.
+# atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
+# atualizar-script <assinatura> | versao. Recusa todo o resto.
 # As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
-# /var/log/brunos-atualizar.log. Instalado pelos comandos de Configurações -> Energia do BrunOS.
+# /var/log/brunos-atualizar.log. O script só se troca por outro assinado pela chave de publicação do
+# BrunOS (abaixo) e de versão maior. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
+VERSAO=7
+CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 if [ "$(id -u)" -ne 0 ]; then
   # chamado pelo SSH (usuário brunos-power): o pedido vem em SSH_ORIGINAL_COMMAND
   set -f
@@ -166,22 +220,34 @@ app_ok() {
   case "$1" in *[!a-z0-9._:-]*|*:*:*) return 1 ;; esac
   [ ${#1} -le 129 ]
 }
-if [ $# -lt 1 ] || [ $# -gt 3 ]; then falha "pedido inválido"; fi
+if [ $# -lt 1 ] || [ $# -gt 4 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
 modo=${3:-}
+extra=${4:-}
 case "$acao" in
-  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 6"; exit 0 ;;
+  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
   desligar|tailscale|energia|atualizacoes|discos|atualizar-linux|atualizacao-estado) [ $# -eq 1 ] || falha "pedido inválido" ;;
   atualizar-app)
+    [ $# -eq 3 ] || falha "pedido inválido"
+    app_ok "$valor" || falha "app inválido"
+    case "$modo" in sim|nao) ;; *) falha "pedido inválido" ;; esac ;;
+  tamanho-backup)
     [ $# -eq 2 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido" ;;
+  atualizar-script)
+    # a assinatura vem no pedido (base64, uma palavra só); o script novo vem pela entrada padrão
+    [ $# -eq 2 ] || falha "pedido inválido"
+    case "$valor" in *[!A-Za-z0-9+/=]*|"") falha "assinatura inválida" ;; esac
+    [ ${#valor} -le 4000 ] || falha "assinatura inválida" ;;
   executar)
     # só o próprio script, como root, rodando dentro do systemd (o systemd-run abaixo); nunca pelo SSH
     [ "$(id -u)" -eq 0 ] && [ -n "${INVOCATION_ID:-}" ] || falha "pedido inválido"
     case "$valor" in
       atualizar-linux) [ $# -eq 2 ] || falha "pedido inválido" ;;
-      atualizar-app) [ $# -eq 3 ] && app_ok "$modo" || falha "pedido inválido" ;;
+      atualizar-app)
+        [ $# -eq 4 ] && app_ok "$modo" || falha "pedido inválido"
+        case "$extra" in sim|nao) ;; *) falha "pedido inválido" ;; esac ;;
       *) falha "pedido inválido" ;;
     esac ;;
   smart|temperatura)
@@ -257,24 +323,68 @@ case "$acao" in
       pasta_runtipi >/dev/null || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
     fi
     # solta do SSH: se a atualização reiniciar o Docker (e o BrunOS junto), ela continua
-    systemd-run --unit=brunos-atualizar --collect --quiet --description="Atualização pedida pelo BrunOS" /usr/local/sbin/brunos-host executar "$acao" $valor
+    systemd-run --unit=brunos-atualizar --collect --quiet --description="Atualização pedida pelo BrunOS" /usr/local/sbin/brunos-host executar "$acao" $valor $modo
     echo "iniciado"
     exit 0 ;;
   executar)
     set +e
     exec >"$LOG" 2>&1
-    echo "inicio $(date +%s) $valor $modo"
+    echo "inicio $(date +%s) $valor $modo $extra"
     if [ "$valor" = atualizar-linux ]; then
       # sem perguntas; mantém os arquivos de configuração; needrestart só lista (não reinicia serviços)
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
-      apt-get update && apt-get -y --with-new-pkgs -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade
+      # um repositório extra quebrado não impede de instalar o resto (vira só um aviso)
+      apt-get update
+      u=$?
+      apt-get -y --with-new-pkgs -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade
       s=$?
+      if [ "$s" -eq 0 ] && [ "$u" -ne 0 ]; then echo "aviso-repositorio"; fi
     else
-      d=$(pasta_runtipi) && cd "$d" && ./runtipi-cli app update "$modo"
+      d=$(pasta_runtipi) && cd "$d"
+      s=$?
+      if [ "$s" -ne 0 ]; then echo "não achei o runtipi-cli"; echo "fim 3"; exit 3; fi
+      if [ "$extra" = sim ]; then
+        # o mesmo backup do painel do Runtipi (pasta do app + app-data, em runtipi/backups)
+        echo "backup-inicio"
+        ./runtipi-cli app backup "$modo"
+        b=$?
+        if [ "$b" -ne 0 ]; then echo "backup-falhou $b"; echo "fim $b"; exit "$b"; fi
+        echo "backup-ok"
+      fi
+      ./runtipi-cli app update "$modo"
       s=$?
     fi
     echo "fim $s"
     exit "$s" ;;
+  tamanho-backup)
+    d=$(pasta_runtipi) || falha "não achei a pasta do Runtipi" 3
+    id=${valor%%:*}
+    loja=${valor#*:}
+    t=0
+    for p in "$d/apps/$loja/$id" "$d/app-data/$loja/$id"; do
+      if [ -d "$p" ]; then
+        n=$(timeout 50 du -sb "$p" 2>/dev/null | cut -f1)
+        t=$((t + ${n:-0}))
+      fi
+    done
+    echo "tamanho $t livre $(df -B1 --output=avail "$d" | tail -n 1 | tr -d ' ')"
+    exit 0 ;;
+  atualizar-script)
+    command -v ssh-keygen >/dev/null 2>&1 || falha "falta o ssh-keygen no servidor (pacote openssh-client)" 3
+    t=$(mktemp -d)
+    trap 'rm -rf "$t"' EXIT
+    head -c 262145 >"$t/novo"
+    [ "$(wc -c <"$t/novo")" -le 262144 ] || falha "o script novo é grande demais" 3
+    printf '%s' "$valor" | base64 -d >"$t/novo.sig" 2>/dev/null || falha "assinatura ilegível" 3
+    printf 'brunos-release %s\n' "$CHAVE_ASSINATURA" >"$t/assinantes"
+    ssh-keygen -Y verify -f "$t/assinantes" -I brunos-release -n brunos-host -s "$t/novo.sig" <"$t/novo" >/dev/null 2>&1 || falha "assinatura inválida: este script não foi publicado pelo BrunOS" 3
+    nova=$(sed -n 's/^VERSAO=\([0-9][0-9]*\)$/\1/p' "$t/novo" | head -n 1)
+    [ -n "$nova" ] && [ "$nova" -gt "$VERSAO" ] || falha "o script recebido não é mais novo que o atual (versão $VERSAO)" 3
+    sh -n "$t/novo" || falha "o script novo tem erro de sintaxe" 3
+    install -m 755 -o root -g root "$t/novo" /usr/local/sbin/brunos-host.novo
+    mv -f /usr/local/sbin/brunos-host.novo /usr/local/sbin/brunos-host
+    echo "script atualizado para a versão $nova"
+    exit 0 ;;
   atualizacao-estado)
     if systemctl is-active --quiet brunos-atualizar; then echo "rodando"; else echo "parado"; fi
     echo "=== registro"
@@ -484,7 +594,7 @@ func (r *Runner) Test(ctx context.Context, t Target, trust string) error {
 // Só aceita servidor já confirmado. legacy = servidor ainda com a configuração antiga: usa a
 // chave antiga e só aceita CmdShutdown (lá, qualquer sessão desliga).
 func (r *Runner) Run(ctx context.Context, t Target, cmd string, legacy bool) (string, error) {
-	out, errOut, err := r.exec(ctx, t, cmd, legacy)
+	out, errOut, err := r.exec(ctx, t, cmd, legacy, nil)
 	text := strings.TrimSpace(string(out) + "\n" + errOut)
 	if len(text) > 2000 {
 		text = text[:2000]
@@ -505,7 +615,13 @@ var ErrOldScript = errors.New("o script do servidor é antigo: em Configuraçõe
 // Output faz um pedido de leitura (ex.: CmdTailscale) e devolve a saída inteira (até 1 MB), sem
 // misturar com os erros. Usa sempre a chave atual.
 func (r *Runner) Output(ctx context.Context, t Target, cmd string) ([]byte, error) {
-	out, errOut, err := r.exec(ctx, t, cmd, false)
+	return r.OutputInput(ctx, t, cmd, nil)
+}
+
+// OutputInput é o Output mandando input pela entrada padrão do script (o script novo no
+// "atualizar-script").
+func (r *Runner) OutputInput(ctx context.Context, t Target, cmd string, input []byte) ([]byte, error) {
+	out, errOut, err := r.exec(ctx, t, cmd, false, input)
 	if err != nil {
 		var exit *ssh.ExitError
 		if errors.As(err, &exit) {
@@ -540,7 +656,7 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (r *Runner) exec(ctx context.Context, t Target, cmd string, legacy bool) ([]byte, string, error) {
+func (r *Runner) exec(ctx context.Context, t Target, cmd string, legacy bool, input []byte) ([]byte, string, error) {
 	var signer ssh.Signer
 	var err error
 	if legacy {
@@ -567,6 +683,9 @@ func (r *Runner) exec(ctx context.Context, t Target, cmd string, legacy bool) ([
 	// buffers separados: as duas cópias rodam ao mesmo tempo
 	stdout, stderr := &limitedBuffer{max: maxOutput}, &limitedBuffer{max: 8 << 10}
 	sess.Stdout, sess.Stderr = stdout, stderr
+	if input != nil {
+		sess.Stdin = bytes.NewReader(input)
+	}
 	done := make(chan error, 1)
 	go func() { done <- sess.Run(cmd) }() // vira o SSH_ORIGINAL_COMMAND que o script confere
 	select {

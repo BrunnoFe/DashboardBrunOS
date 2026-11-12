@@ -294,6 +294,25 @@ automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
 - Testes: `internal/updates` (iniciar, acompanhar, erro, duas ao mesmo tempo, registro antigo),
   conferência do script 6 (inclui "executar" recusado fora do systemd), linha do `/etc/brunos-host.conf`
   com caminhos estranhos recusados; apitest 196 ok.
+- No servidor (12/11): o "Atualizar" não fazia nada porque o script ainda era o 5 (faltava colar os
+  comandos); com o 6, o Linux parou no `apt update` por um repositório quebrado (Ookla speedtest-cli,
+  404) e terminou com "código 100".
+
+## 0.12.1 (12/11/2026): script que se atualiza sozinho, backup antes de atualizar, apt mais tolerante
+- **Script do servidor versão 7** que se troca sozinho por um assinado (decisão 49): o BrunOS confere a
+  versão ao ligar e no "Conferir"; com o 7+ instalado e a assinatura na imagem, atualiza sem comandos.
+  Do 6 para o 7 ainda é manual (uma vez), agora com "Pelo Terminal" no painel.
+- **Backup do Runtipi antes de atualizar app** (decisão 50), caixinha sempre marcada, tamanho medido na
+  confirmação, andamento em duas etapas ("1. Backup → 2. Atualizar"); backup que falha não atualiza.
+- **apt**: um repositório extra quebrado não impede mais de instalar (vira aviso com o nome dele);
+  mensagens em português para trava do dpkg, disco cheio, sem internet e instalação pela metade.
+- **Painel**: erro ao começar fica no painel (não só numa mensagem que some); faixa "Script do servidor
+  desatualizado" com "Atualizar agora"/"Pelo Terminal"/"Ver comandos"; botões desligados quando o script
+  não sabe fazer aquilo.
+- **Acesso de diagnóstico só de leitura** (decisão 51): `tools/diagnostico/brunos-diag`.
+- Testes: `tests/script-selfupdate.sh` (como root num contêiner, no CI), `internal/updates` (backup,
+  aviso do repositório, mensagens, versão do script), conferência do script 7; apitest 199 ok. A
+  assinatura com a chave real foi conferida localmente com os mesmos passos do CI.
 
 ## Próximas
 Veja `roadmap.md`.

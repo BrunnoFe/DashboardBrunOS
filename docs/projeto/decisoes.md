@@ -217,3 +217,27 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     foi descartado: obrigaria o ícone a ser uma fração exata do Quadro (≈110 px × 240 px), complicaria
     o arrastar e bagunçaria o celular. Em tela estreita a Área fica compacta (ordem de leitura, menos
     colunas) sem mudar o que está guardado.
+49. **O script do servidor se atualiza sozinho, só com assinatura** (0.12.1, escolha do Bruno: "Pode
+    ser"). Colar comandos a cada versão do script era o maior atrito. A partir do script 7, o pedido
+    `atualizar-script <assinatura>` recebe o script novo pela entrada padrão e só o instala se: a
+    assinatura (`ssh-keygen -Y verify`, namespace `brunos-host`, já vem no Ubuntu) bater com a chave
+    pública que está dentro do script atual, a `VERSAO=` for maior que a atual e `sh -n` passar; troca
+    com `install` + `mv` (o shell que está rodando segue com o arquivo antigo). A chave privada fica só no
+    segredo `BRUNOS_SCRIPT_KEY` do GitHub Actions, que assina o script na publicação e embute a
+    assinatura no binário (`internal/hostcmd/assinatura.txt`). Quem invadir o BrunOS não consegue instalar
+    um script falso (não tem a chave); o preço é confiar no repositório do GitHub, como qualquer programa
+    que se atualiza sozinho. Sem assinatura (compilação local, segredo ausente), fica o caminho manual: o
+    painel abre o Terminal com os comandos numa linha (`... | base64 -d | sudo sh`, o sudo pede a senha).
+    Mudança de usuário/sudoers (`SetupVersion`) continua manual. Testado como root num contêiner no CI
+    (`tests/script-selfupdate.sh`): aceita só assinado e mais novo; recusa igual, outra chave, alterado.
+50. **Backup do Runtipi antes de atualizar app, marcado sempre** (0.12.1). `runtipi-cli app backup` é o
+    mesmo backup do painel do Runtipi (pasta do app + app-data, restaurável por ele); se falhar, nada é
+    atualizado. O tamanho é medido antes (`tamanho-backup`, `du` com limite) e mostrado na confirmação;
+    o Bruno quis a caixinha marcada independente do tamanho. Backup "só do essencial" foi descartado: a
+    restauração do Runtipi substitui a pasta do app e apagaria o que ficou de fora.
+51. **Acesso de diagnóstico só de leitura para o Claude** (0.12.1, opção A do Bruno). Usuário
+    `claude-diag` sem senha, chave criada no computador do Bruno (WSL `~/.brunos/diag`), presa por
+    `restrict,command=` ao `tools/diagnostico/brunos-diag`, que só aceita uma lista fixa de leituras
+    (sistema, discos, versão do script, registro das atualizações, apt, Runtipi, journal de unidades
+    escolhidas, logs do contêiner do BrunOS, configuração e tamanho de um app sem o `app.env`). Nada
+    escreve. O BrunOS de teste no servidor (opção B, com discos só leitura) fica para depois da 0.13.0.

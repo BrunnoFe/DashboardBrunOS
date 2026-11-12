@@ -45,6 +45,8 @@ jobs:
         run: docker build -t brunos:ci --build-arg VERSION=ci .
       - name: Teste de fumaça (container + proxy do Docker + checagens da API)
         run: bash tests/smoke.sh brunos:ci
+      - name: Script do servidor se atualiza só com assinatura válida (como root, num contêiner)
+        run: bash tests/script-selfupdate.sh
 
   publish:
     name: publica a imagem
@@ -79,6 +81,33 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.ver.outputs.skip != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      # Assina o script do servidor (decisão 49): o brunos-host instalado só se troca por um script
+      # assinado por esta chave. A chave privada fica só no segredo BRUNOS_SCRIPT_KEY.
+      - name: Assina o script do servidor
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          CHAVE: ${{ secrets.BRUNOS_SCRIPT_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CHAVE" ]; then
+            echo "::warning::sem o segredo BRUNOS_SCRIPT_KEY: nesta versão o script do servidor não se atualiza sozinho"
+            exit 0
+          fi
+          umask 077
+          d=$(mktemp -d)
+          printf '%s\n' "$CHAVE" >"$d/chave"
+          go run ./tools/hostscript >"$d/brunos-host"
+          ssh-keygen -q -Y sign -f "$d/chave" -n brunos-host "$d/brunos-host"
+          # confere com a chave pública que está dentro do próprio script antes de embutir
+          printf 'brunos-release %s\n' "$(sed -n "s/^CHAVE_ASSINATURA='\(.*\)'\$/\1/p" "$d/brunos-host")" >"$d/assinantes"
+          ssh-keygen -Y verify -f "$d/assinantes" -I brunos-release -n brunos-host -s "$d/brunos-host.sig" <"$d/brunos-host"
+          base64 -w0 "$d/brunos-host.sig" >internal/hostcmd/assinatura.txt
+          rm -rf "$d"
+          echo "script do servidor assinado"
       - id: meta
         if: steps.ver.outputs.skip != 'true'
         uses: docker/metadata-action@v5

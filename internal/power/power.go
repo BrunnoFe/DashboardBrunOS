@@ -145,11 +145,16 @@ var ErrHostNotReady = errors.New("configure e teste a conexão com o servidor em
 // HostOutput faz um pedido de leitura ao script do servidor (ex.: hostcmd.CmdTailscale), pela mesma
 // conexão do desligamento seguro. Só com a configuração nova (chave atual) já testada.
 func (m *Monitor) HostOutput(ctx context.Context, cmd string) ([]byte, error) {
+	return m.HostOutputInput(ctx, cmd, nil)
+}
+
+// HostOutputInput é o HostOutput mandando input pela entrada padrão (o script novo no "atualizar-script").
+func (m *Monitor) HostOutputInput(ctx context.Context, cmd string, input []byte) ([]byte, error) {
 	c := m.Config()
 	if m.runner == nil || c.Host == "" || c.TestedAt == 0 || c.HostSetup < hostcmd.SetupVersion {
 		return nil, ErrHostNotReady
 	}
-	return m.runner.Output(ctx, c.Target(), cmd)
+	return m.runner.OutputInput(ctx, c.Target(), cmd, input)
 }
 
 // New lê a configuração e o histórico. Arquivos vazios = só em memória (testes).

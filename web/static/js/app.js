@@ -511,6 +511,16 @@ initUpdates({
   openApp: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
   osList: () => osUpdatesDialog(),
   scriptDialog: () => import('./energy.js').then((m) => m.scriptDialog()),
+  // os mesmos comandos da janela "Atualizar o script", compactados numa linha (o sudo pede a senha no Terminal)
+  scriptInTerminal: async () => {
+    if (S.terminal === false) { import('./energy.js').then((m) => m.scriptDialog()); return; }
+    try {
+      const cmds = (await api.power.setup()).updateCommands;
+      const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(cmds + '\n')));
+      openTerminal({ typeCmd: `printf '%s' '${b64}' | base64 -d | sudo sh` });
+      toast('Comando digitado no Terminal', 'Confira e aperte Enter; o sudo vai pedir a sua senha do servidor.');
+    } catch (err) { toastError(err, 'Não deu para gerar os comandos'); }
+  },
   openSettings: () => { setSettingsTab('system'); settingsQuery = ''; openSheet('settings', $('[data-sys="settings"]')); },
   reloadApps: () => loadApps(),
 });

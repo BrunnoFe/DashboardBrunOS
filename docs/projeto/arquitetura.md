@@ -149,6 +149,15 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   (Docker/BrunOS reiniciando) até 3 h; retoma no `Run` depois de reiniciar. No fim: aviso no sino
   (`update-done`) e confere de novo. Rotas: `GET /api/updates`, `POST /api/updates/check`,
   `PUT /api/updates/config {every}`, `POST /api/updates/run {kind, urn}` (202; 409 com outra rodando).
+  **Script versão 7** (0.12.1, decisões 49–50): `VERSAO=7` e `CHAVE_ASSINATURA` (= `hostcmd.ReleasePublicKey`)
+  no topo; até 4 palavras por pedido. `atualizar-app <app>:<loja> <sim|nao>` (sim = `runtipi-cli app backup`
+  antes; registro com `backup-inicio`/`backup-ok`/`backup-falhou N`), `tamanho-backup <app>:<loja>` →
+  `tamanho <bytes> livre <bytes>`, `atualizar-script <assinatura base64>` + script pela entrada padrão
+  (`Runner.OutputInput`/`power.HostOutputInput`). No Linux, `apt-get update` falhando não impede o upgrade
+  (registra `aviso-repositorio`). `updates.CheckScript` lê `versao` ao ligar e em cada conferência e chama
+  `UpgradeScript` (só existe com `hostcmd.ScriptSignature()` não vazia, gerada pelo CI a partir de
+  `go run ./tools/hostscript`). Rotas novas: `GET /api/updates/backup-size?urn=`, `POST /api/updates/script`;
+  o snapshot ganha `script: {have, want, auto, checkedAt, err, at, from}`.
 - **Rotinas da etapa 9**: `energy.Run`, `smart.Run` e `updates.Run` só passaram a ser ligadas no `main.go`
   na 0.12.0 (antes, só rodavam ao pedir pela interface).
 - **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).

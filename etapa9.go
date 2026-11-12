@@ -54,6 +54,14 @@ func (s *server) setupEtapa9(dataDir string) {
 		}
 		return s.power.HostOutput(ctx, cmd)
 	}
+	// o script do servidor se troca sozinho pelo desta versão, assinado pelo CI (decisão 49); sem
+	// assinatura (compilação local), fica desligado e o painel oferece atualizar pelo Terminal
+	if cmd := hostcmd.UpdateScriptCmd(); cmd != "" {
+		s.updates.UpgradeScript = func(ctx context.Context) error {
+			_, err := s.power.HostOutputInput(ctx, cmd, []byte(hostcmd.HostScript))
+			return err
+		}
+	}
 	s.updates.Events = s.events
 	s.updates.NotifyApps = func() bool { v, ok := s.readSettings()["appUpdateNotify"].(bool); return !ok || v }
 }

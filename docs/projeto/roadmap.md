@@ -58,6 +58,8 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | E4 | Páginas na tela inicial | M | feito (0.7.0) | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
 | E5 | Uso por app ao longo do tempo | M | feito (0.7.0) | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
 | E6 | Botão de atualizações ao lado do sino + frequência + atualizar pela interface | M–A | **feito (0.12.0)** | Clique abre o painel e já confere; frequência 6 h/12 h/diária/semanal/manual; `apt upgrade` e `runtipi-cli app update` pelo script (`systemd-run`), com confirmação e andamento (decisão 47). Script 6. |
+| E7 | Script do servidor que se atualiza sozinho (assinado) | M | **feito (0.12.1)** | Decisão 49. Falta o Bruno cadastrar o segredo `BRUNOS_SCRIPT_KEY` no GitHub. |
+| E8 | Backup do Runtipi antes de atualizar app | B | **feito (0.12.1)** | Decisão 50; caixinha sempre marcada. |
 
 ## F. Arquivos
 

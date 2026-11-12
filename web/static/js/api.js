@@ -111,7 +111,9 @@ const real = {
   updates: {
     get: () => call('GET', '/api/updates'), check: () => call('POST', '/api/updates/check', {}),
     setEvery: (every) => call('PUT', '/api/updates/config', { every }),
-    run: (kind, urn) => call('POST', '/api/updates/run', { kind, urn }),
+    run: (kind, urn, backup = false) => call('POST', '/api/updates/run', { kind, urn, backup }),
+    backupSize: (urn) => call('GET', `/api/updates/backup-size?${q({ urn })}`),
+    script: () => call('POST', '/api/updates/script', {}),
   },
   settings: () => call('GET', '/api/settings'),
   saveSettings: (s) => call('PUT', '/api/settings', s),
@@ -586,13 +588,16 @@ function makeDemo() {
       const s = { apps: [{ urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' }],
         os: { total: 12, security: 3, reboot: true, packages: ['linux-image-generic', 'linux-headers-generic', 'openssl', 'libssl3t64', 'tzdata', 'snapd', 'curl', 'libcurl4t64', 'python3.12', 'vim', 'git', 'docker-ce'], checkedAt: now - 7200 }, checkedAt: now - 7200 };
       s.every = '24h';
+      s.script = { have: 7, want: 7, auto: true, checkedAt: now - 60 };
       // demonstração da atualização: o andamento avança a cada leitura e termina em ~12 s
       const LOG = ['Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease', 'Reading package lists...', 'Calculating upgrade...', 'The following packages will be upgraded:', 'Unpacking openssl (3.0.13-0ubuntu3.5)...', 'Setting up openssl (3.0.13-0ubuntu3.5)...', 'Processing triggers for man-db...'];
       const APPLOG = ['Pulling images...', 'Stopping app...', 'Updating app files...', 'Starting app...', 'App updated successfully'];
+      const BKLOG = ['Backing up app...', 'Compressing app-data...', 'Backup created: backup-20261112.tar.gz'];
       const tick = () => {
         const j = s.job; if (!j?.running) return;
-        const lines = j.kind === 'linux' ? LOG : APPLOG, n = Math.floor((Date.now() / 1000 - j.startedAt) / 2);
+        const lines = j.kind === 'linux' ? LOG : j.backup ? [...BKLOG, ...APPLOG] : APPLOG, n = Math.floor((Date.now() / 1000 - j.startedAt) / 2);
         j.lines = lines.slice(0, Math.min(n + 1, lines.length));
+        if (j.backup) j.phase = n < BKLOG.length ? 'backup' : 'atualizando';
         if (n >= lines.length) {
           Object.assign(j, { running: false, ok: true, finishedAt: Math.floor(Date.now() / 1000) });
           if (j.kind === 'linux') s.os = { ...s.os, total: 0, security: 0, packages: [] }; else s.apps = s.apps.filter((a) => a.urn !== j.target);
@@ -602,12 +607,14 @@ function makeDemo() {
         get: () => { tick(); return wait(s); },
         check: () => { s.checkedAt = Math.floor(Date.now() / 1000); return wait(s, 1200); },
         setEvery: (every) => { s.every = every; return wait(s); },
-        run: (kind, urn) => {
+        run: (kind, urn, backup) => {
           if (s.job?.running) return Promise.reject(Object.assign(new Error('já tem uma atualização rodando: espere ela terminar'), { status: 409 }));
           const u = s.apps.find((a) => a.urn === urn);
-          s.job = { kind, target: urn || '', name: kind === 'linux' ? 'Linux' : u?.name || urn, from: u?.installed, to: u?.available, startedAt: Math.floor(Date.now() / 1000), running: true, lines: [], ok: false };
+          s.job = { kind, target: urn || '', name: kind === 'linux' ? 'Linux' : u?.name || urn, from: u?.installed, to: u?.available, startedAt: Math.floor(Date.now() / 1000), running: true, lines: [], ok: false, backup: kind === 'app' && !!backup, phase: backup ? 'backup' : '' };
           return wait(s, 400);
         },
+        backupSize: () => wait({ size: 1.8e9, free: 640e9 }, 900),
+        script: () => wait(s, 600),
       };
     })(),
     geocode: (q) => wait([['Belo Horizonte', 'Minas Gerais', -19.92, -43.94], ['São Paulo', 'São Paulo', -23.55, -46.63], ['Rio de Janeiro', 'Rio de Janeiro', -22.91, -43.17], ['Florianópolis', 'Santa Catarina', -27.6, -48.55], ['Lisboa', 'Lisboa', 38.72, -9.14]]

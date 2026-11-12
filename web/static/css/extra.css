@@ -683,6 +683,26 @@ body.reduce-motion .upd-btn.busy::after { animation-duration: 3s; }
 .upd-log { margin: 0; padding: 8px 10px; border-radius: 9px; background: rgba(0,0,0,.28); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; opacity: .8; max-height: 92px; overflow: hidden; }
 .upd-foot { display: flex; align-items: center; gap: 6px; padding: 8px 12px 12px 18px; font-size: 11.5px; border-top: 1px solid rgba(255,255,255,.05); }
 .upd-foot span { flex: 1; opacity: .5; }
+/* 0.12.1: backup antes de atualizar, passos, aviso, script do servidor desatualizado */
+.upd-bk { position: relative; display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 4px; padding: 12px; border-radius: 13px; background: rgba(255,255,255,.05); cursor: pointer; }
+.upd-bk input { position: absolute; opacity: 0; pointer-events: none; }
+.upd-bk input:checked + .map-check { background: var(--brand); color: #fff; box-shadow: var(--shadow-btn-hl); }
+.upd-bk input:focus-visible + .map-check { outline: 2px solid var(--brand-lighter); outline-offset: 2px; }
+.upd-bk > span:last-child { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.upd-bk small { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: .65; }
+.upd-bk-note { margin: 6px 2px 0; opacity: .75; }
+.upd-steps { display: flex; gap: 6px; font-size: 11.5px; opacity: .75; }
+.upd-steps .on { color: var(--brand-lightest); font-weight: 700; }
+.upd-steps .done { opacity: .55; text-decoration: line-through; }
+.upd-job.warn { background: rgba(255,190,70,.13); }
+.upd-job.warn .upd-job-head > .svg { color: #ffd27a; }
+.upd-note { display: flex; gap: 10px; margin: 2px 2px 6px; padding: 10px 12px; border-radius: 13px; background: rgba(255,255,255,.05); font-size: 12.5px; }
+.upd-note.warn { background: rgba(255,190,70,.12); }
+.upd-note > span:first-child { flex: none; color: #ffd27a; }
+.upd-note > span:first-child .svg { width: 16px; height: 16px; }
+.upd-note > span:last-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.upd-note small { font-size: 11.5px; opacity: .7; line-height: 1.4; }
+.upd-note-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .np-empty > .svg { font-size: 30px; opacity: .6; }
 .np-empty small { font-size: 12px; opacity: .8; }
 

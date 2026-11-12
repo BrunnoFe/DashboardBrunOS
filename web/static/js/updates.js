@@ -3,9 +3,9 @@
 // atualizar cada app e o Linux direto pela interface: o servidor roda a atualização sozinho e o
 // painel mostra o andamento (decisão 47).
 import { api } from './api.js';
-import { $, esc, html, svg, toastError, timeAgo, confirmDialog } from './ui.js';
+import { $, esc, html, svg, toast, toastError, timeAgo, confirmDialog, openDialog, fmtBytes } from './ui.js';
 
-let ctx = null, panel = null, checking = false, pollTimer = 0, lastJobRunning = false, dismissed = 0;
+let ctx = null, panel = null, checking = false, pollTimer = 0, lastJobRunning = false, dismissed = 0, failure = '';
 const STALE = 600; // segundos: conferência mais velha que isso é refeita ao abrir o painel
 const EVERY = { '6h': 'a cada 6 horas', '12h': 'a cada 12 horas', '24h': 'uma vez por dia', '168h': 'uma vez por semana', manual: 'só quando você manda' };
 
@@ -82,17 +82,48 @@ async function check() {
   checking = false; paintUpdates();
 }
 
+// Confirmação do app: caixinha do backup do Runtipi (sempre marcada) e o tamanho medido no servidor.
+function confirmApp(u) {
+  return new Promise((resolve) => {
+    let done = false;
+    const d = openDialog(`<h2>Atualizar ${esc(u.name)}?</h2>
+      <p>De ${esc(u.installed || '?')} para ${esc(u.available || '?')}, pelo Runtipi. O app fica fora do ar por alguns instantes enquanto baixa a versão nova e reinicia.</p>
+      <label class="upd-bk"><input type="checkbox" checked data-bk><span class="map-check">${svg('check')}</span>
+        <span><b>Fazer backup antes (como o Runtipi)</b><small data-bk-size><span class="upd-spin"></span> Medindo o tamanho do backup…</small></span></label>
+      <p class="upd-bk-note"><small>O backup é o mesmo do painel do Runtipi (pasta do app e dados dele) e dá para restaurar pela página do app no Runtipi. Se o backup falhar, nada é atualizado.</small></p>
+      <div class="dlg-actions"><button class="pill-btn" data-c="no">Cancelar</button><button class="pill-btn primary" data-c="ok" autofocus>Atualizar</button></div>`,
+    { closeBtn: false, width: 460, onClose: () => { if (!done) resolve(null); } });
+    api.updates.backupSize(u.urn).then((r) => {
+      const el = $('[data-bk-size]', d.el); if (!el) return;
+      const tight = r.free && r.size > r.free * 0.9;
+      el.innerHTML = `Backup de ~${esc(fmtBytes(r.size))}${r.free ? ` · ${esc(fmtBytes(r.free))} livres` : ''}${tight ? ' · <b class="os-reboot">pode faltar espaço</b>' : r.size > 5e9 ? ' · pode demorar alguns minutos' : ''}`;
+    }).catch(() => { const el = $('[data-bk-size]', d.el); if (el) el.textContent = 'Não deu para medir o tamanho agora.'; });
+    d.el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-c]'); if (!b) return;
+      done = true; resolve(b.dataset.c === 'ok' ? { backup: $('[data-bk]', d.el).checked } : null); d.close();
+    });
+  });
+}
+
 async function run(kind, urn) {
   const s = snap();
+  let backup = false;
   if (kind === 'linux') {
     const o = s.os;
     if (!(await confirmDialog('Atualizar o Linux do servidor?', `${o.total} ${o.total === 1 ? 'pacote' : 'pacotes'} vão ser instalados sem perguntas (os arquivos de configuração que você mudou são mantidos). Pode levar alguns minutos. Se o Docker for atualizado, os apps e o BrunOS reiniciam sozinhos e voltam em seguida. Reiniciar o servidor, se precisar, fica com você.`, 'Atualizar'))) return;
   } else {
     const u = s.apps.find((x) => x.urn === urn); if (!u) return;
-    if (!(await confirmDialog(`Atualizar ${u.name}?`, `De ${u.installed || '?'} para ${u.available || '?'}, pelo Runtipi. O app fica fora do ar por alguns instantes enquanto baixa a versão nova e reinicia. Versões grandes às vezes mudam coisas: se o app guarda dados importantes, vale ter backup.`, 'Atualizar'))) return;
+    const r = await confirmApp(u); if (!r) return;
+    backup = r.backup;
   }
-  try { ctx.set(await api.updates.run(kind, urn)); }
-  catch (err) { toastError(err, 'Não deu para começar a atualização'); }
+  try { ctx.set(await api.updates.run(kind, urn, backup)); }
+  catch (err) { failure = err.message || String(err); toastError(err, 'Não deu para começar a atualização'); }
+  paintUpdates();
+}
+
+async function upgradeScript() {
+  try { ctx.set(await api.updates.script()); const sc = snap()?.script; if (sc && sc.have >= sc.want) toast('Script do servidor em dia', `Versão ${sc.have}.`); }
+  catch (err) { toastError(err, 'Não deu para atualizar o script'); }
   paintUpdates();
 }
 
@@ -106,16 +137,33 @@ async function onClick(e) {
   else if (a === 'open-app') { closeUpdates(); ctx.openApp(b.dataset.urn); }
   else if (a === 'os-list') ctx.osList();
   else if (a === 'script') ctx.scriptDialog();
+  else if (a === 'script-term') { closeUpdates(); ctx.scriptInTerminal(); }
+  else if (a === 'script-auto') { b.disabled = true; upgradeScript(); }
   else if (a === 'dismiss') { dismissed = snap()?.job?.startedAt || 0; drawPanel(); }
+  else if (a === 'dismiss-fail') { failure = ''; drawPanel(); }
+}
+
+// Faixa do script do servidor desatualizado: troca sozinho (7+, versão assinada) ou pelo Terminal.
+function scriptHTML(sc) {
+  if (!sc) return '';
+  if (!sc.have) return sc.err ? `<div class="upd-note"><span>${svg('info')}</span><small>${esc(sc.err)}</small></div>` : '';
+  if (sc.have >= sc.want) return sc.err ? `<div class="upd-note warn"><span>${svg('info')}</span><small>${esc(sc.err)}</small></div>` : '';
+  const self = sc.auto && sc.have >= 7;
+  return `<div class="upd-note warn"><span>${svg('info')}</span><span><b>Script do servidor desatualizado</b><small>Está na versão ${sc.have}; esta versão do BrunOS precisa da ${sc.want}${self ? '. Ele se atualiza sozinho com a versão assinada.' : sc.have < 7 ? '. Desta vez é pelo Terminal (uma vez só): a partir da versão 7 ele se atualiza sozinho.' : ''}${sc.err ? ` ${esc(sc.err)}` : ''}</small>
+    <span class="upd-note-acts">${self ? '<button class="pill-btn sm" data-up="script-auto">Atualizar agora</button>' : ''}<button class="pill-btn sm ${self ? '' : 'primary'}" data-up="script-term">${svg('terminal')}Pelo Terminal</button><button class="np-btn" data-up="script">Ver comandos</button></span></span></div>`;
 }
 
 function jobHTML(j) {
   if (!j || (!j.running && (dismissed === j.startedAt || Date.now() / 1000 - (j.finishedAt || 0) > 1800))) return '';
   const log = (j.lines || []).slice(-4);
   const logHTML = log.length ? `<pre class="upd-log">${esc(log.join('\n'))}</pre>` : '';
-  if (j.running) return `<div class="upd-job"><div class="upd-job-head"><span class="upd-spin"></span><b>Atualizando ${esc(j.name)}…</b></div>${logHTML || '<pre class="upd-log">Começando no servidor…</pre>'}<small>Pode fechar: a atualização continua no servidor e o sino avisa quando terminar.</small></div>`;
-  const ok = j.ok;
-  return `<div class="upd-job ${ok ? 'ok' : 'bad'}"><div class="upd-job-head">${svg(ok ? 'check' : 'info')}<b>${ok ? `${esc(j.name)} atualizado` : `Não deu para atualizar ${esc(j.name)}`}</b><button class="np-btn" data-up="dismiss" aria-label="Dispensar">${svg('x')}</button></div>${ok ? '' : `<small>${esc(j.err || '')}</small>${logHTML}`}</div>`;
+  if (j.running) {
+    const what = j.phase === 'backup' ? `Fazendo backup de ${esc(j.name)}…` : `Atualizando ${esc(j.name)}…`;
+    const step = j.backup ? `<small class="upd-steps"><span class="${j.phase === 'atualizando' ? 'done' : 'on'}">1. Backup</span> → <span class="${j.phase === 'atualizando' ? 'on' : ''}">2. Atualizar</span></small>` : '';
+    return `<div class="upd-job"><div class="upd-job-head"><span class="upd-spin"></span><b>${what}</b></div>${step}${logHTML || '<pre class="upd-log">Começando no servidor…</pre>'}<small>Pode fechar: a atualização continua no servidor e o sino avisa quando terminar.</small></div>`;
+  }
+  const ok = j.ok, warn = ok && j.warn;
+  return `<div class="upd-job ${warn ? 'warn' : ok ? 'ok' : 'bad'}"><div class="upd-job-head">${svg(ok && !warn ? 'check' : 'info')}<b>${ok ? `${esc(j.name)} atualizado` : `Não deu para atualizar ${esc(j.name)}`}</b><button class="np-btn" data-up="dismiss" aria-label="Dispensar">${svg('x')}</button></div>${warn ? `<small>Aviso: ${esc(j.warn)}.</small>` : ''}${ok ? '' : `<small>${esc(j.err || '')}</small>${logHTML}`}</div>`;
 }
 
 function drawPanel() {
@@ -123,20 +171,24 @@ function drawPanel() {
   const s = snap() || {}, n = counts(s), run = jobRunning(s), o = s.os;
   $('.upd-when', panel).textContent = s.checkedAt ? `conferido ${timeAgo(s.checkedAt)}` : '';
   const chk = $('[data-up="check"]', panel); chk.disabled = checking || run; chk.textContent = checking ? 'Conferindo…' : 'Conferir agora';
-  const dis = run ? 'disabled' : '';
+  // atualizar apps pede o script 7 (backup); o Linux funciona desde o 6
+  const sc = s.script || {}, known = sc.have > 0;
+  const disApp = run || (known && sc.have < 7) ? 'disabled' : '', disOS = run || (known && sc.have < 6) ? 'disabled' : '';
   const apps = (s.apps || []).map((u) => `<div class="upd-row">
       <button class="upd-app" data-up="open-app" data-urn="${esc(u.urn)}" title="Detalhes do app">${ctx.appIcon(u.urn)}<span class="upd-txt"><b>${esc(u.name)}</b><small>${esc(u.installed || '?')} → ${esc(u.available || '?')}</small></span></button>
-      <button class="pill-btn sm" data-up="app" data-urn="${esc(u.urn)}" ${dis}>Atualizar</button></div>`).join('');
+      <button class="pill-btn sm" data-up="app" data-urn="${esc(u.urn)}" ${disApp}>Atualizar</button></div>`).join('');
   const script = /script do servidor/.test(o?.err || '');
   const linux = !o ? '' : o.err
     ? `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${esc(o.err)}</small></span></span>${script ? '<button class="pill-btn sm" data-up="script">Mostrar comandos</button>' : ''}</div>`
     : o.total || o.reboot ? `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${o.total ? `${o.total} ${o.total === 1 ? 'atualização' : 'atualizações'}${o.security ? ` · <span class="upd-sec">${o.security} de segurança</span>` : ''}` : 'tudo instalado'}${o.reboot ? ' · <b class="os-reboot">reinício necessário</b>' : ''}</small></span></span>
-      ${o.total ? `<button class="np-btn" data-up="os-list">Ver lista</button><button class="pill-btn sm" data-up="linux" ${dis}>Atualizar</button>` : ''}</div>` : '';
+      ${o.total ? `<button class="np-btn" data-up="os-list">Ver lista</button><button class="pill-btn sm" data-up="linux" ${disOS}>Atualizar</button>` : ''}</div>` : '';
   const checkingHTML = checking ? '<div class="upd-checking"><span class="upd-spin"></span>Conferindo os apps e o Linux…</div>' : '';
   const body = !n.total && !linux
     ? `<div class="np-empty">${svg('check')}<span>Tudo em dia.<br><small>${checking ? 'Conferindo de novo…' : 'Nenhum app nem pacote do Linux para atualizar.'}</small></span></div>`
     : `${apps ? `<div class="upd-sec-title">Apps <span>${n.apps}</span></div>${apps}` : ''}${linux ? `<div class="upd-sec-title">Sistema</div>${linux}` : ''}`;
-  $('.upd-body', panel).innerHTML = checkingHTML + jobHTML(s.job) + body;
+  // erro ao começar uma atualização: fica no painel (não só numa mensagem que some)
+  const failHTML = failure ? `<div class="upd-job bad"><div class="upd-job-head">${svg('info')}<b>Não deu para começar</b><button class="np-btn" data-up="dismiss-fail" aria-label="Dispensar">${svg('x')}</button></div><small>${esc(failure)}</small>${/script do servidor/.test(failure) ? '<span class="upd-note-acts"><button class="pill-btn sm" data-up="script-term">Atualizar o script pelo Terminal</button></span>' : ''}</div>` : '';
+  $('.upd-body', panel).innerHTML = checkingHTML + scriptHTML(sc) + failHTML + jobHTML(s.job) + body;
   $('.upd-foot span', panel).textContent = `Procura sozinho ${EVERY[s.every] || EVERY['24h']}.`;
 }
 

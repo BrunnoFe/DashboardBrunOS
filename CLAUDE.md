@@ -75,7 +75,7 @@ internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa c
 internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
 internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux na frequência escolhida, e
                             atualizar pela interface com andamento (/data/updates.json)
-etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 6)
+etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 7)
 settings.go                 preferências (/data/settings.json): erro de leitura ≠ vazio, trava contra gravar o
                             padrão por cima (409), cópia diária em /data/settings-backup (14 dias) e restaurar
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
@@ -112,6 +112,8 @@ web/static/js/widgets.js    Formatos, Tamanhos, Métricas da fonte BrunOS, Model
 web/static/js/charts.js     gráficos SVG (linha, barras, rosca, mini-gráfico)
 web/static/js/widgetsapp.js janela Widgets (meus widgets, modelos, integrações, editor com prévia)
 tools/codemirror/           receita (npm + esbuild) que gera o bundle do CodeMirror; não roda no build
+tools/hostscript/           imprime o script do servidor para o CI assinar (internal/hostcmd/assinatura.txt)
+tools/diagnostico/          brunos-diag: acesso SÓ DE LEITURA do Claude ao servidor (usuário claude-diag, decisão 51)
 web/static/css/app.css      base visual (adaptada do umbrelOS)
 web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)
 runtipi-app/brunos/         app para a loja do Runtipi (config.json, docker-compose.json, metadata/)

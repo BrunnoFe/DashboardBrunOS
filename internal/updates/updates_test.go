@@ -93,6 +93,67 @@ func TestParseStatus(t *testing.T) {
 	if s := ParseStatus([]byte("parado\n=== registro\ninicio 100 atualizar-linux\nfim 0\n"), 1000); s.Started || s.Done || len(s.Lines) != 0 {
 		t.Fatalf("antiga: %+v", s)
 	}
+	// backup do Runtipi antes: a fase aparece; backup que falhou não atualiza
+	s = ParseStatus([]byte("rodando\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nBacking up app...\n"), 1000)
+	if s.Phase != "backup" || len(s.Lines) != 1 {
+		t.Fatalf("fase backup: %+v", s)
+	}
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nbackup-ok\nUpdating...\nfim 0\n"), 1000)
+	if s.Phase != "atualizando" || !s.Done || s.Exit != 0 {
+		t.Fatalf("fase atualizando: %+v", s)
+	}
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nNo space left on device\nbackup-falhou 1\nfim 1\n"), 1000)
+	if !s.BackupFailed || s.Exit != 1 {
+		t.Fatalf("backup falhou: %+v", s)
+	}
+	// o caso do servidor do Bruno: o repositório da Ookla quebrado vira aviso, o resto instala
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-linux\nErr:9 https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release\nE: The repository 'https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release' does not have a Release file.\n5 upgraded\naviso-repositorio\nfim 0\n"), 1000)
+	if !s.Warn || s.Exit != 0 || !strings.Contains(s.Repo, "packagecloud.io/ookla") {
+		t.Fatalf("aviso do repositório: %+v", s)
+	}
+}
+
+func TestExitMessage(t *testing.T) {
+	for lines, want := range map[string]string{
+		"E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 123": "outra instalação",
+		"write error: No space left on device":                                         "espaço",
+		"Temporary failure resolving 'archive.ubuntu.com'":                             "sem internet",
+		"qualquer outra coisa":                                                         "código 100",
+	} {
+		if got := exitMessage(100, []string{lines}); !strings.Contains(got, want) {
+			t.Errorf("%q → %q (queria %q)", lines, got, want)
+		}
+	}
+}
+
+func TestCheckScript(t *testing.T) {
+	ver := "brunos-host 6"
+	upgraded := 0
+	c := New("")
+	c.Query = func(_ context.Context, cmd string) ([]byte, error) {
+		if cmd != "versao" {
+			t.Fatalf("pedido %q", cmd)
+		}
+		return []byte(ver + "\n"), nil
+	}
+	c.UpgradeScript = func(context.Context) error { upgraded++; return nil }
+	// script 6 ainda não sabe se atualizar sozinho: fica para o Terminal
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; s.Have != 6 || s.Want != 7 || !s.Auto || upgraded != 0 {
+		t.Fatalf("script 6: %+v (trocas %d)", s, upgraded)
+	}
+	// em dia: nada a fazer
+	ver = "brunos-host 7"
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; s.Have != 7 || upgraded != 0 || s.Err != "" {
+		t.Fatalf("script 7: %+v", s)
+	}
+	// sem conexão: o erro aparece em português
+	c.Query = func(context.Context, string) ([]byte, error) { return nil, errors.New("pedido inválido") }
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; s.Have != 0 || !strings.Contains(s.Err, "Configurações → Energia") {
+		t.Fatalf("erro: %+v", s)
+	}
 }
 
 // fakeServer imita o script: "atualizar-*" começa, "atualizacao-estado" mostra o andamento.
@@ -147,18 +208,18 @@ func TestStartAndFollow(t *testing.T) {
 	c.Now = func() time.Time { nmu.Lock(); defer nmu.Unlock(); return time.Unix(now, 0) }
 	setNow := func(v int64) { nmu.Lock(); now = v; nmu.Unlock() }
 
-	if err := c.Start(context.Background(), "app", "plex:migrated"); !errors.Is(err, ErrNoUpdate) {
+	if err := c.Start(context.Background(), "app", "plex:migrated", false); !errors.Is(err, ErrNoUpdate) {
 		t.Fatalf("app sem atualização: %v", err)
 	}
-	if err := c.Start(context.Background(), "tudo", ""); !errors.Is(err, ErrKind) {
+	if err := c.Start(context.Background(), "tudo", "", false); !errors.Is(err, ErrKind) {
 		t.Fatalf("tipo inválido: %v", err)
 	}
 	t0 := now
 	f.set(fmt.Sprintf("rodando\n=== registro\ninicio %d atualizar-app immich:migrated\nPulling images...\n", t0))
-	if err := c.Start(context.Background(), "app", "immich:migrated"); err != nil {
+	if err := c.Start(context.Background(), "app", "immich:migrated", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Start(context.Background(), "linux", ""); !errors.Is(err, ErrBusy) {
+	if err := c.Start(context.Background(), "linux", "", false); !errors.Is(err, ErrBusy) {
 		t.Fatalf("duas ao mesmo tempo: %v", err)
 	}
 	time.Sleep(80 * time.Millisecond)
@@ -184,7 +245,7 @@ func TestStartAndFollow(t *testing.T) {
 	f.mu.Lock()
 	first := f.cmds[0]
 	f.mu.Unlock()
-	if first != "atualizar-app immich:migrated" {
+	if first != "atualizar-app immich:migrated sim" {
 		t.Fatalf("pedido: %v", first)
 	}
 
@@ -192,10 +253,10 @@ func TestStartAndFollow(t *testing.T) {
 	t1 := t0 + 100
 	setNow(t1)
 	f.set(fmt.Sprintf("parado\n=== registro\ninicio %d atualizar-linux\nE: Could not get lock /var/lib/dpkg/lock-frontend\nfim 100\n", t1))
-	if err := c.Start(context.Background(), "linux", ""); err != nil {
+	if err := c.Start(context.Background(), "linux", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if j := waitDone(t, c); j.OK || !strings.Contains(j.Err, "código 100") {
+	if j := waitDone(t, c); j.OK || !strings.Contains(j.Err, "outra instalação está rodando") {
 		t.Fatalf("erro: %+v", j)
 	}
 	list, _ = ev.List()
@@ -207,7 +268,7 @@ func TestStartAndFollow(t *testing.T) {
 	t2 := t1 + 100
 	setNow(t2)
 	f.set(fmt.Sprintf("rodando\n=== registro\ninicio %d atualizar-linux\n", t2))
-	if err := c.Start(context.Background(), "linux", ""); err != nil {
+	if err := c.Start(context.Background(), "linux", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if j := New(filepath.Join(dir, "updates.json")).Snapshot().Job; j == nil || !j.Running {
