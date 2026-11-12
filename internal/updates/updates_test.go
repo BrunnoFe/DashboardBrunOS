@@ -81,35 +81,56 @@ func TestEvery(t *testing.T) {
 
 func TestParseStatus(t *testing.T) {
 	out := "rodando\n=== registro\ninicio 1000 atualizar-linux \nHit:1 http://archive.ubuntu.com\n\x1b[32mReading package lists...\x1b[0m\nProgress: 10%\rProgress: 90%\r\n"
-	s := ParseStatus([]byte(out), 1000)
+	s := ParseStatus([]byte(out), 1000, false)
 	if !s.Running || !s.Started || s.Done || len(s.Lines) != 3 || s.Lines[1] != "Reading package lists..." || s.Lines[2] != "Progress: 90%" {
 		t.Fatalf("%+v", s)
 	}
-	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated\nok\nfim 0\n"), 1000)
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated\nok\nfim 0\n"), 1000, false)
 	if s.Running || !s.Done || s.Exit != 0 || len(s.Lines) != 1 {
 		t.Fatalf("fim: %+v", s)
 	}
 	// registro de uma atualização antiga (antes do pedido) não conta
-	if s := ParseStatus([]byte("parado\n=== registro\ninicio 100 atualizar-linux\nfim 0\n"), 1000); s.Started || s.Done || len(s.Lines) != 0 {
+	if s := ParseStatus([]byte("parado\n=== registro\ninicio 100 atualizar-linux\nfim 0\n"), 1000, false); s.Started || s.Done || len(s.Lines) != 0 {
 		t.Fatalf("antiga: %+v", s)
 	}
 	// backup do Runtipi antes: a fase aparece; backup que falhou não atualiza
-	s = ParseStatus([]byte("rodando\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nBacking up app...\n"), 1000)
+	s = ParseStatus([]byte("rodando\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nBacking up app...\n"), 1000, false)
 	if s.Phase != "backup" || len(s.Lines) != 1 {
 		t.Fatalf("fase backup: %+v", s)
 	}
-	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nbackup-ok\nUpdating...\nfim 0\n"), 1000)
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nbackup-ok\nUpdating...\nfim 0\n"), 1000, false)
 	if s.Phase != "atualizando" || !s.Done || s.Exit != 0 {
 		t.Fatalf("fase atualizando: %+v", s)
 	}
-	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nNo space left on device\nbackup-falhou 1\nfim 1\n"), 1000)
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nNo space left on device\nbackup-falhou 1\nfim 1\n"), 1000, false)
 	if !s.BackupFailed || s.Exit != 1 {
 		t.Fatalf("backup falhou: %+v", s)
 	}
 	// o caso do servidor do Bruno: o repositório da Ookla quebrado vira aviso, o resto instala
-	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-linux\nErr:9 https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release\nE: The repository 'https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release' does not have a Release file.\n5 upgraded\naviso-repositorio\nfim 0\n"), 1000)
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-linux\nErr:9 https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release\nE: The repository 'https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release' does not have a Release file.\n5 upgraded\naviso-repositorio\nfim 0\n"), 1000, false)
 	if !s.Warn || s.Exit != 0 || !strings.Contains(s.Repo, "packagecloud.io/ookla") {
 		t.Fatalf("aviso do repositório: %+v", s)
+	}
+	// o bug da 0.12.1 no servidor do Bruno: registro comprido, o script 7 só mandava as últimas 30
+	// linhas e o "inicio" ficava de fora. Rodando ou já visto rodando, o registro é desta atualização.
+	var long strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&long, "Unpacking pacote-%d...\n", i)
+	}
+	run := "rodando\n=== registro\n" + long.String()
+	if s := ParseStatus([]byte(run), 1000, false); !s.Started || !s.Running || len(s.Lines) != 15 {
+		t.Fatalf("rodando sem o inicio: %+v", s)
+	}
+	end := "parado\n=== registro\n" + long.String() + "fim 0\n"
+	if s := ParseStatus([]byte(end), 1000, true); !s.Done || s.Exit != 0 {
+		t.Fatalf("já vista rodando, terminou: %+v", s)
+	}
+	if s := ParseStatus([]byte(end), 1000, false); s.Started || s.Done {
+		t.Fatalf("nunca vista e sem inicio: não dá para saber se é desta: %+v", s)
+	}
+	// script 8: a primeira linha vem antes do fim do registro
+	if s := ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-linux\n"+long.String()+"fim 0\n"), 1000, false); !s.Done || s.Exit != 0 {
+		t.Fatalf("script 8 com a primeira linha: %+v", s)
 	}
 }
 
@@ -139,14 +160,29 @@ func TestCheckScript(t *testing.T) {
 	c.UpgradeScript = func(context.Context) error { upgraded++; return nil }
 	// script 6 ainda não sabe se atualizar sozinho: fica para o Terminal
 	c.CheckScript(context.Background())
-	if s := c.Snapshot().Script; s.Have != 6 || s.Want != 7 || !s.Auto || upgraded != 0 {
+	if s := c.Snapshot().Script; s.Have != 6 || s.Want != 8 || !s.Auto || upgraded != 0 {
 		t.Fatalf("script 6: %+v (trocas %d)", s, upgraded)
 	}
-	// em dia: nada a fazer
+	// script 7 já sabe se atualizar: troca sozinho pelo 8
 	ver = "brunos-host 7"
 	c.CheckScript(context.Background())
-	if s := c.Snapshot().Script; s.Have != 7 || upgraded != 0 || s.Err != "" {
-		t.Fatalf("script 7: %+v", s)
+	if s := c.Snapshot().Script; s.Have != 8 || s.From != 7 || upgraded != 1 || s.Err != "" {
+		t.Fatalf("script 7 → 8: %+v (trocas %d)", s, upgraded)
+	}
+	// em dia: nada a fazer
+	ver = "brunos-host 8"
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; s.Have != 8 || upgraded != 1 {
+		t.Fatalf("script 8: %+v", s)
+	}
+	// a troca falhou: o erro aparece e o sino avisa
+	ver = "brunos-host 7"
+	c.UpgradeScript = func(context.Context) error {
+		return errors.New("assinatura inválida: este script não foi publicado pelo BrunOS")
+	}
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; s.Have != 7 || !strings.Contains(s.Err, "sozinho") {
+		t.Fatalf("troca falhou: %+v", s)
 	}
 	// sem conexão: o erro aparece em português
 	c.Query = func(context.Context, string) ([]byte, error) { return nil, errors.New("pedido inválido") }

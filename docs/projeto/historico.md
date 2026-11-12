@@ -313,6 +313,18 @@ automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
 - Testes: `tests/script-selfupdate.sh` (como root num contêiner, no CI), `internal/updates` (backup,
   aviso do repositório, mensagens, versão do script), conferência do script 7; apitest 199 ok. A
   assinatura com a chave real foi conferida localmente com os mesmos passos do CI.
+- No servidor (12/11): script 7 colado pelo Terminal; segredo `BRUNOS_SCRIPT_KEY` cadastrado pelo Bruno;
+  acesso de diagnóstico ligado e conferido. Atualizar o Linux instalou 5 pacotes (`fim 0`), mas o painel
+  disse "a atualização não começou no servidor".
+
+## 0.12.2 (12/11/2026): andamento de atualizações compridas; primeira versão assinada
+- **Causa**: o pedido de andamento mandava só as últimas 30 linhas do registro; num registro comprido a
+  linha `inicio <hora>` (que diz de qual atualização ele é) ficava de fora, o BrunOS achava o registro
+  antigo e, ao terminar, concluía "não começou".
+- **Correção**: a atualização vista rodando fica marcada (`seen`, gravado) e o registro passa a ser dela
+  até o fim; e o **script 8** manda sempre a primeira linha antes do fim do registro.
+- **Primeira versão assinada pelo CI**: o script do servidor deve passar do 7 para o 8 sozinho ao ligar
+  o BrunOS 0.12.2 (primeiro teste real da decisão 49).
 
 ## Próximas
 Veja `roadmap.md`.

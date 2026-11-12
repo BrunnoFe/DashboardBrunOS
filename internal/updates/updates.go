@@ -70,6 +70,7 @@ type Job struct {
 	Backup     bool     `json:"backup,omitempty"` // backup do Runtipi antes de atualizar o app
 	Phase      string   `json:"phase,omitempty"`  // backup | atualizando
 	Warn       string   `json:"warn,omitempty"`   // terminou bem, mas com aviso (repositório quebrado)
+	Seen       bool     `json:"seen,omitempty"`   // já foi vista rodando no servidor (o registro é dela)
 }
 
 // Script é a versão do script do servidor (brunos-host) e se ele se atualiza sozinho.
@@ -454,7 +455,7 @@ func (c *Checker) poll(ctx context.Context) bool {
 		c.mu.Unlock()
 		return true
 	}
-	started := j.StartedAt
+	started, seen := j.StartedAt, j.Seen
 	c.mu.Unlock()
 	now := c.Now()
 	qctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -467,7 +468,13 @@ func (c *Checker) poll(ctx context.Context) bool {
 		}
 		return false
 	}
-	st := ParseStatus(out, started)
+	st := ParseStatus(out, started, seen)
+	if st.Running && !seen { // viu rodando: o registro é desta atualização até o fim (grava para retomar)
+		c.mu.Lock()
+		c.st.Job.Seen = true
+		c.mu.Unlock()
+		c.save()
+	}
 	switch {
 	case st.Done:
 		msg, warn := "", ""
@@ -573,9 +580,11 @@ var repoRe = regexp.MustCompile(`The repository '([^']+)'`)
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
 // ParseStatus lê "rodando|parado", "=== registro" e o registro ("inicio <ts> ...", saída, "fim <n>").
-// Registro de uma atualização anterior (início antes do pedido) não conta.
-func ParseStatus(out []byte, startedAt int64) Status {
-	var s Status
+// Registro de uma atualização anterior (início antes do pedido) não conta. O registro é reescrito a
+// cada atualização, então se ela já foi vista rodando (seen) ou está rodando agora, ele é desta, mesmo
+// que a linha "inicio" não apareça (o script 7 só mandava as últimas 30 linhas).
+func ParseStatus(out []byte, startedAt int64, seen bool) Status {
+	s := Status{Started: seen}
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	inLog := false
@@ -584,7 +593,7 @@ func ParseStatus(out []byte, startedAt int64) Status {
 		if !inLog {
 			switch strings.TrimSpace(ln) {
 			case "rodando":
-				s.Running = true
+				s.Running, s.Started = true, true
 			case "=== registro":
 				inLog = true
 			}
@@ -599,7 +608,7 @@ func ParseStatus(out []byte, startedAt int64) Status {
 		}
 		if f := strings.Fields(ln); f[0] == "inicio" && len(f) >= 2 {
 			ts, _ := strconv.ParseInt(f[1], 10, 64)
-			s.Started, s.Done, s.Lines = ts >= startedAt-60, false, nil
+			s.Started, s.Done, s.Lines = ts >= startedAt-60 || s.Running || seen, false, nil
 			s.Phase, s.BackupFailed, s.Warn, s.Repo = "", false, false, ""
 			continue
 		} else if f[0] == "fim" && len(f) == 2 && s.Started {

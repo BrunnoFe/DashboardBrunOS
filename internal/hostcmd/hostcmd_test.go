@@ -265,7 +265,7 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 7") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 8") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa

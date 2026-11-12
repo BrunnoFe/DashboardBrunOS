@@ -58,7 +58,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | E4 | Páginas na tela inicial | M | feito (0.7.0) | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
 | E5 | Uso por app ao longo do tempo | M | feito (0.7.0) | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
 | E6 | Botão de atualizações ao lado do sino + frequência + atualizar pela interface | M–A | **feito (0.12.0)** | Clique abre o painel e já confere; frequência 6 h/12 h/diária/semanal/manual; `apt upgrade` e `runtipi-cli app update` pelo script (`systemd-run`), com confirmação e andamento (decisão 47). Script 6. |
-| E7 | Script do servidor que se atualiza sozinho (assinado) | M | **feito (0.12.1)** | Decisão 49. Falta o Bruno cadastrar o segredo `BRUNOS_SCRIPT_KEY` no GitHub. |
+| E7 | Script do servidor que se atualiza sozinho (assinado) | M | **feito (0.12.1)** | Decisão 49. Segredo `BRUNOS_SCRIPT_KEY` cadastrado em 12/11; a 0.12.2 é a primeira assinada. |
 | E8 | Backup do Runtipi antes de atualizar app | B | **feito (0.12.1)** | Decisão 50; caixinha sempre marcada. |
 
 ## F. Arquivos
@@ -137,8 +137,10 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 7c | 0.9.3 | Transmission · Syncthing · Nextcloud (pedidos do Bruno em 08/11/2026) — **feito (0.9.3), aguardando teste no servidor**. Vaultwarden **adiado** ("Vamos sem integração com Vaultwarden nesse momento. Deixe para o futuro."): sem token só daria no ar, versão e cadastro aberto; com o ADMIN_TOKEN, usuários (decidir no futuro) |
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 — **feito (0.10.0), aguardando teste no servidor** |
 | 9 | 0.11.0 | A1 · B3 · D3 — **feito (0.11.0), aguardando teste no servidor** (B4 já feito na 0.8.1; H4 e I2 adiados em 10/11/2026: "Vamos deixar H4 e I2 para o futuro") |
-| 10a | 0.11.2 | D6 (SMART) — **feito (0.11.2), aguardando teste no servidor** |
-| 10b | 0.12.0 | J4 · J5 · E6 — **feito (0.12.0), aguardando teste no servidor** |
+| 10a | 0.11.2 | D6 (SMART) — **feito (0.11.2)**; testado no servidor em 11/11 |
+| 10b | 0.12.0 | J4 · J5 · E6 — **feito (0.12.0)**; testado no servidor em 12/11 |
+| 10b+ | 0.12.1 | E7 (script que se atualiza sozinho) · E8 (backup antes de atualizar) · apt tolerante · acesso de diagnóstico — **feito (0.12.1)** |
+| 10b++ | 0.12.2 | andamento de atualizações compridas (script 8, primeira troca automática do script) — **feito (0.12.2), aguardando teste no servidor** |
 | 10c | 0.13.0 | J6 — a fazer |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) · H5 (revisão de segurança) |

@@ -61,8 +61,9 @@ const (
 	// "temperatura" e "atualizacoes", 0.11.0; 5 = "discos" e SMART um disco por vez com o modo, 0.11.2;
 	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0;
 	// 7 = backup antes de atualizar app, "tamanho-backup", repositório quebrado vira aviso e
-	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1).
-	ScriptVersion = 7
+	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1; 8 = o andamento manda a
+	// primeira linha do registro, 0.12.2).
+	ScriptVersion = 8
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -194,7 +195,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 7: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 8: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -205,7 +206,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=7
+VERSAO=8
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 if [ "$(id -u)" -ne 0 ]; then
   # chamado pelo SSH (usuário brunos-power): o pedido vem em SSH_ORIGINAL_COMMAND
@@ -388,6 +389,8 @@ case "$acao" in
   atualizacao-estado)
     if systemctl is-active --quiet brunos-atualizar; then echo "rodando"; else echo "parado"; fi
     echo "=== registro"
+    # a primeira linha ("inicio <hora>") diz de qual atualização é o registro; depois, o fim dele
+    head -n 1 "$LOG" 2>/dev/null || true
     tail -n 30 "$LOG" 2>/dev/null || true
     exit 0 ;;
   limite)
