@@ -350,6 +350,17 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
     página); alça `[data-wresize]` com `pointer*` + `sizeFor(colunas, linhas)`; barra `.w-area-bar`
     (− N colunas + / Automático) no modo Organizar, que também desenha uma página nova vazia no fim.
     `widgets.js`: `spanStyle(tamanho, colunas)` limita a largura às colunas da Área.
+  - 0.13.0 (decisão 48): `js/layout.js` (puro, testado em `tests/layout.test.mjs`): `fits`, `firstFree`,
+    `nearestFree`, `place` (encaixa em ordem), `dragPlan` (lugar livre → só ele muda; ocupado → o atingido
+    vai para o lugar deixado ou o livre mais perto; senão null), `compact` (ordem de leitura em N colunas),
+    `quadro` (zoom da Área entre 150 e 260 px). `app.js`: `pageCfg(p)`/`setPageCfg`, `migrateAreas`
+    (v1/v2 → v3), `putWidget(id, item, página, lugar?)`, `drawHome` (cada Página real → telas no trilho
+    conforme a Disposição; `fillWidgets` escala ou compacta; `appsPer` com Medida fixa ou automática),
+    seletores `gridPickHTML`/`wireGridPick`/`dispPickHTML` num `popover`, `setWidgetMedida` (pergunta
+    antes de mandar widgets para outra Página), `setWidgetSize`, `areaSnapshot`/`restoreSnapshot` +
+    `undoToast`. Arrastar de widgets e de ícones com `pointer*` (fantasma `position: fixed`, prévia FLIP,
+    move/soltar ouvidos em `window`). `widgets.js`: `w`/`h` no item, `sizeKey` só para o desenho,
+    `minSize` (gráfico de linha/barras ≥ 2 × 1), `posStyle(lugar)`.
 
 ### Preferências (`/api/settings`, objeto do frontend)
 
@@ -368,8 +379,11 @@ click:{kind:auto|app|window|url|none, target}, look:{follow, opacity?, hue?, hid
 automático), no formato Atalhos `folders:[{root, path, name?, icon?, color?(matiz)}]` (vazio = favoritas)
 e `files:{layout: grid|list, showFree}`; `appPlace` (`{"<id do app ou folder:id>": página}`; sem entrada =
 solto, vai para a última página com apps). 0.9.2: no formato Mídia `media:{rotate (min), caption}`;
-`wallpaperMode` (`single` | `schedule`) e `wallpaperSchedule` (`[{at:"HH:MM", wp}]`). **Nunca** guardar
-senhas aqui.
+`wallpaperMode` (`single` | `schedule`) e `wallpaperSchedule` (`[{at:"HH:MM", wp}]`). 0.13.0:
+`widgets2.v = 3` (`areas:{"<página>":[{id, x, y}]}`, cada item com `w`/`h` em Quadros no lugar de
+`size`; `cols` some), `pageCfg` (`{"<página>": {disp: wtop|atop|wleft|wright|wonly|aonly, wm:[colunas,
+linhas] até 6 × 4, am: "auto" | [colunas, linhas] até 16 × 6}}`) e `mobileSplit` (padrão true). **Nunca**
+guardar senhas aqui.
 
 ## Testes
 

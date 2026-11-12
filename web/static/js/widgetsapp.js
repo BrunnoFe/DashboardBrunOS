@@ -2,7 +2,7 @@
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
 import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp } from './ui.js';
-import { SIZES, FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText } from './widgets.js';
+import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText, sizeLabel, minSize } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
 const KIND_GLYPH = { weather: 'wx-partly', tuya: 'plug' }; // tipos sem ícone de app: um desenho próprio
@@ -26,7 +26,8 @@ function searchCity(input) {
   }, 350);
 }
 const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
-const PREVIEW = { s: [240, 148], w: [508, 148], t: [240, 322], l: [508, 322], f: [508, 148] };
+// Tamanho do widget na prévia (px do desenho base): Quadros de 240 × 148, vãos de 28 e 18 + rótulo
+const prevDims = (it) => [it.w * 240 + (it.w - 1) * 28, it.h * 148 + (it.h - 1) * 44];
 
 let st = null; // { body, ctx, view, page, draft, editId, integ }
 
@@ -76,7 +77,8 @@ function show(view) {
 
 /* ── Prévias ───────────────────────────────────────────────────── */
 function previewBox(item, id = '', scale = 0.62) {
-  const [w, h] = PREVIEW[item.size] || PREVIEW.s;
+  const [w, h] = prevDims(item);
+  scale = Math.min(scale, 330 / w, 260 / (h + 26)); // os grandes ficam menores no cartão
   return `<div class="wapp-prev" style="width:${Math.round(w * scale)}px;height:${Math.round((h + 26) * scale)}px"><div class="wapp-prev-in" style="width:${w}px;height:${h + 26}px;transform:scale(${scale})">${widgetHTML(item, st.ctx.ctx(), { id })}</div></div>`;
 }
 function paintPreviews() {
@@ -96,14 +98,14 @@ function paintPreviews() {
 /* ── Meus widgets ──────────────────────────────────────────────── */
 function drawMine() {
   const w2 = st.ctx.w2;
-  const pages = Object.keys(w2.areas).map(Number).sort((a, b) => a - b).filter((p) => w2.areas[p].some((id) => w2.items[id]));
+  const pages = Object.keys(w2.areas).map(Number).sort((a, b) => a - b).filter((p) => st.ctx.areaOf(p).length);
   main().innerHTML = `<div class="wapp-head"><div><h3>Meus widgets</h3><p>Os widgets da tela inicial, por página. Clique para editar.</p></div>
     <span class="f-spacer"></span><button class="pill-btn" data-act="organize">${svg('sort')}Organizar na tela inicial</button><button class="pill-btn primary" data-act="new">${svg('plus')}Novo widget</button></div>
-    ${pages.length ? pages.map((p) => `<div class="wapp-sec wapp-sec-row"><span>Página ${p + 1}</span><label class="wapp-inline">Colunas dos widgets <select class="text-input sm" data-pcols="${p}"><option value="0">automático</option>${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${w2.cols?.[p] === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div><div class="wapp-cards">${w2.areas[p].filter((id) => w2.items[id]).map((id) => {
+    ${pages.length ? pages.map((p) => { const [mc, mr] = st.ctx.pageCfg(p).wm; return `<div class="wapp-sec wapp-sec-row"><span>Página ${p + 1}</span><button class="pill-btn sm" data-pmedida="${p}" title="Colunas × linhas de Quadros da Área de widgets">${svg('grid')}Área de widgets: ${mc} × ${mr}</button></div><div class="wapp-cards">${st.ctx.areaOf(p).map(({ id }) => {
       const it = normalize(w2.items[id]);
-      return `<div class="wapp-card" data-edit="${esc(id)}">${previewBox(it, id)}<div class="wapp-card-txt"><b>${esc(it.title || FORMATS[it.format].label)}</b><small>${FORMATS[it.format].label} · ${SIZES[it.size].label}</small></div>
+      return `<div class="wapp-card" data-edit="${esc(id)}">${previewBox(it, id)}<div class="wapp-card-txt"><b>${esc(it.title || FORMATS[it.format].label)}</b><small>${FORMATS[it.format].label} · ${sizeLabel(it.w, it.h)}</small></div>
         <div class="wapp-card-acts"><button class="icon-btn" data-dup="${esc(id)}" title="Duplicar">${svg('copy')}</button><button class="icon-btn danger" data-del="${esc(id)}" title="Remover">${svg('trash')}</button></div></div>`;
-    }).join('')}</div>`).join('') : `<div class="wapp-empty">${svg('grid')}<p>Nenhum widget ainda.</p><button class="pill-btn primary" data-act="new">${svg('plus')}Escolher um modelo</button></div>`}`;
+    }).join('')}</div>`; }).join('') :`<div class="wapp-empty">${svg('grid')}<p>Nenhum widget ainda.</p><button class="pill-btn primary" data-act="new">${svg('plus')}Escolher um modelo</button></div>`}`;
 }
 
 /* ── Modelos ───────────────────────────────────────────────────── */
@@ -127,7 +129,7 @@ function openEditor(id, draft) {
   const w2 = st.ctx.w2;
   st.editId = id && w2.items[id] ? id : null;
   st.draft = normalize(draft || (st.editId ? w2.items[id] : {}));
-  if (st.editId) st.page = +(Object.entries(w2.areas).find(([, ids]) => ids.includes(id))?.[0] ?? 0);
+  if (st.editId) st.page = st.ctx.pageOf(id);
   show('edit');
 }
 const metricOptions = (format, cur) => {
@@ -190,7 +192,7 @@ function drawEditor() {
       <div class="wed-sec"><label>Título<input class="text-input" data-f="title" value="${esc(d.title)}" placeholder="ex.: Minha rede" maxlength="40"></label>
         <label class="wsw">Mostrar o título dentro do widget${sw(d.caption, 'data-f="caption"')}</label></div>
       <div class="wed-sec"><span class="wed-lbl">Formato</span><div class="wed-chips">${Object.entries(FORMATS).map(([k, x]) => `<button type="button" class="wchip ${d.format === k ? 'on' : ''}" data-format="${k}" title="${esc(x.desc)}">${svg(x.icon)}${x.label}</button>`).join('')}</div><small class="hint">${esc(f.desc)}</small></div>
-      <div class="wed-sec"><span class="wed-lbl">Tamanho</span><div class="wed-chips">${Object.entries(SIZES).map(([k, x]) => `<button type="button" class="wchip ${d.size === k ? 'on' : ''}" data-size="${k}"><i class="wsz-ico z-${k}"></i>${x.label}</button>`).join('')}</div></div>
+      <div class="wed-sec"><span class="wed-lbl">Tamanho · ${sizeLabel(d.w, d.h)}</span><div class="wed-size">${(() => { const [mc, mr] = st.ctx.pageCfg(st.page).wm; return st.ctx.gridPickHTML({ maxC: mc, maxR: mr, cur: [Math.min(d.w, mc), Math.min(d.h, mr)], min: minSize(d), label: `Quadros da Área (${mc} × ${mr})` }); })()}</div></div>
       <div class="wed-sec"><label>Página<select class="text-input" data-f="page">${Array.from({ length: total + (st.editId ? 0 : 1) }, (_, i) => `<option value="${i}" ${i === st.page ? 'selected' : ''}>${i < total ? `Página ${i + 1}` : 'Página nova'}</option>`).join('')}${st.editId ? `<option value="${total}">Página nova</option>` : ''}</select></label></div>
       ${d.format === 'clock' ? clockOptsHTML() : d.format === 'notes' ? notesOptsHTML() : d.format === 'shortcuts' ? foldersHTML() : `
       <div class="wed-sec"><span class="wed-lbl">Métricas <small>${d.slots.length}/${f.max}</small></span>
@@ -222,6 +224,8 @@ function drawEditor() {
     <aside class="wed-side"><div class="wed-preview">${previewEditor()}</div>
       <div class="wed-actions">${st.editId ? `<button class="pill-btn danger" data-act="remove">${svg('trash')}Remover</button>` : ''}<span class="f-spacer"></span><button class="pill-btn" data-act="cancel">Cancelar</button><button class="pill-btn primary" data-act="save">${svg('check')}Salvar</button></div></aside>
   </div>`;
+  // Tamanho: quadradinhos até a Medida da Área da página escolhida
+  st.ctx.wireGridPick($('.wed-size', main()), (c, r) => { d.w = c; d.h = r; redrawEditor(); });
 }
 /* Formato Relógio: digital ou de ponteiros, segundos, data e fuso (sempre 24 h) */
 function clockOptsHTML() {
@@ -292,8 +296,8 @@ function pickFolder() {
   });
 }
 function previewEditor() {
-  const [w, h] = PREVIEW[st.draft.size] || PREVIEW.s;
-  const scale = Math.min(1, Math.min(380, innerWidth - 70) / w);
+  const [w, h] = prevDims(st.draft);
+  const scale = Math.min(1, Math.min(380, innerWidth - 70) / w, 420 / (h + 26));
   return `<div class="wapp-prev big" style="width:${Math.round(w * scale)}px;height:${Math.round((h + 26) * scale)}px"><div class="wapp-prev-in" style="width:${w}px;height:${h + 26}px;transform:scale(${scale})">${widgetHTML(st.draft, st.ctx.ctx()).replace('data-wid=""', 'data-wid="" data-draft="1"')}</div></div>`;
 }
 const redrawPreview = () => { const p = $('.wed-preview', st.body); if (p) p.innerHTML = previewEditor(); };
@@ -306,16 +310,22 @@ function setFormat(k) {
   const defs = st.ctx.defs();
   d.slots = d.slots.filter((s) => acceptsKind(k, defs.get(s.metric)?.kind, defs.get(s.metric))).slice(0, FORMATS[k].max);
   if (!d.slots.length && FORMATS[k].max) { const m = firstMetric(k); if (m) d.slots.push({ metric: m }); }
-  if (k === 'chart' && d.size === 's' && d.chart.type !== 'donut') d.size = 'w';
+  if (k === 'chart' && d.w < 2 && d.chart.type !== 'donut') d.w = 2; // gráfico de linha/barras pede 2 de largura
 }
 
 function saveDraft() {
   const w2 = st.ctx.w2, d = st.draft;
   const id = st.editId || st.ctx.newId();
-  const samePage = st.editId && (w2.areas[st.page] || []).includes(id);
-  const item = structuredClone(d);
-  if (samePage) w2.items[id] = item;
-  else st.ctx.put(id, item, st.page);
+  const samePage = st.editId && st.ctx.areaOf(st.page).some((o) => o.id === id);
+  const item = structuredClone(d), old = w2.items[id];
+  delete item.size; // o que vale é w × h
+  if (samePage) {
+    // Tamanho mudou no editor: os vizinhos abrem espaço (como a alça do canto)
+    const resized = old && (old.w !== item.w || old.h !== item.h);
+    if (resized) Object.assign(item, { w: old.w, h: old.h });
+    w2.items[id] = item;
+    if (resized) st.ctx.setSize(id, d.w, d.h);
+  } else st.ctx.put(id, item, st.page);
   st.ctx.save();
   toast('Widget salvo', d.title || FORMATS[d.format].label);
   st.editId = null; st.draft = null;
@@ -431,8 +441,9 @@ async function onClick(e) {
   const q = (s) => e.target.closest(s);
   let el;
   if ((el = q('[data-view]'))) { show(el.dataset.view); return; }
-  if ((el = q('[data-dup]'))) { const w2 = st.ctx.w2, id = el.dataset.dup, n = st.ctx.newId(); st.ctx.put(n, structuredClone(w2.items[id]), +(Object.entries(w2.areas).find(([, ids]) => ids.includes(id))?.[0] ?? 0)); st.ctx.save(); drawMine(); return; }
+  if ((el = q('[data-dup]'))) { const w2 = st.ctx.w2, id = el.dataset.dup, n = st.ctx.newId(); st.ctx.put(n, structuredClone(w2.items[id]), st.ctx.pageOf(id)); st.ctx.save(); drawMine(); return; }
   if ((el = q('[data-del]'))) { const id = el.dataset.del; if (await confirmDialog('Remover este widget?', 'Ele sai da tela inicial. Dá para criar de novo a partir dos modelos.', 'Remover', { danger: true })) { st.ctx.remove(id); drawMine(); } return; }
+  if ((el = q('[data-pmedida]'))) { st.ctx.pagePicker('wm', +el.dataset.pmedida, el, () => { if (st?.view === 'mine') drawMine(); }); return; }
   if ((el = q('[data-edit]'))) { openEditor(el.dataset.edit); return; }
   if ((el = q('[data-model-use]'))) { const m = st.models.get(el.dataset.modelUse); st.editId = null; openEditor(null, { ...m, model: el.dataset.modelUse }); return; }
   if ((el = q('[data-integ]'))) { openIntegration(el.dataset.integ); return; }
@@ -459,9 +470,8 @@ async function onClick(e) {
     if ((el = q('[data-ckstyle]'))) { d.clock.style = el.dataset.ckstyle; redrawEditor(); return; }
     if ((el = q('[data-nmode]'))) { d.notes.mode = el.dataset.nmode; redrawEditor(); return; }
     if ((el = q('[data-format]'))) { setFormat(el.dataset.format); redrawEditor(); return; }
-    if ((el = q('[data-size]'))) { d.size = el.dataset.size; $$('[data-size]', st.body).forEach((b) => b.classList.toggle('on', b === el)); redrawPreview(); return; }
     if ((el = q('[data-layout]'))) { d.layout = el.dataset.layout; redrawEditor(); return; }
-    if ((el = q('[data-ctype]'))) { d.chart.type = el.dataset.ctype; redrawEditor(); return; }
+    if ((el = q('[data-ctype]'))) { d.chart.type = el.dataset.ctype; if (d.chart.type !== 'donut' && d.w < 2) d.w = 2; redrawEditor(); return; }
     if ((el = q('[data-range]'))) { d.chart.range = el.dataset.range; redrawEditor(); return; }
     if ((el = q('[data-sact]'))) {
       const i = +el.closest('[data-slot]').dataset.slot, a = el.dataset.sact;
@@ -523,7 +533,6 @@ function onInput(e) {
     return;
   }
   if (st.view === 'models' && t.dataset.f === 'page') { st.page = +t.value; return; }
-  if (t.dataset.pcols != null) { if (e.type === 'change') st.ctx.setCols(+t.dataset.pcols, +t.value); return; }
   const d = st.draft; if (st.view !== 'edit' || !d) return;
   if (t.dataset.fo) {
     const f = d.folders[+t.closest('[data-fold]').dataset.fold], k = t.dataset.fo;
@@ -534,7 +543,7 @@ function onInput(e) {
   if (t.dataset.f) {
     const k = t.dataset.f;
     if (k === 'title') d.title = t.value;
-    else if (k === 'page') st.page = +t.value;
+    else if (k === 'page') { st.page = +t.value; if (e.type === 'change') redrawEditor(); return; } // a Medida da página limita o Tamanho
     else if (k === 'listmax') d.list.max = +t.value;
     else if (k === 'rotate') d.media.rotate = +t.value;
     else if (k === 'cktz') d.clock.tz = t.value;

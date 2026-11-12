@@ -338,5 +338,30 @@ automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
 - **Lojas do Runtipi atualizadas antes de conferir os apps** (script **9**, pedido `atualizar-lojas` =
   `runtipi-cli appstore update`); falha na loja vira aviso no painel e os apps são conferidos mesmo assim.
 
+## 0.13.0 (12/11/2026): tela inicial nova (decisão 48)
+- **Widgets com lugar e Tamanho livres**: cada Página tem uma grade de Quadros (a Medida, até 6 × 4) e
+  cada widget fica num lugar fixo dela, com qualquer Tamanho até a Medida (ex.: um 2 × 1 no meio da
+  última linha). Preferências `widgets2.v = 3` (`areas[página] = [{id, x, y}]`, `items[id].w/h`) e
+  `pageCfg[página] = {disp, wm, am}`; as antigas (v1/v2) são convertidas uma vez, na ordem de antes.
+- **Disposições**: widgets em cima (padrão), apps em cima, widgets à esquerda, à direita, só widgets e
+  só apps. **Área de apps** com Medida própria (até 16 × 6) ou Automática.
+- **Arrastar novo** (feito pelo BrunOS, sem o arrastar do navegador): o widget segue o ponteiro, uma
+  sombra mostra onde cai (vermelha quando não dá) e os vizinhos abrem espaço (troca de lugar ou o livre
+  mais perto). Alça do canto muda o Tamanho de Quadro em Quadro. Ícones de apps escorregam em fila;
+  soltar no meio de outro cria pasta. Beira da tela muda de Página. "Desfazer" depois de cada mudança.
+- Seletores de quadradinhos (Medida e Tamanho) e das 6 Disposições: na barra do modo Organizar, no menu
+  do widget, no editor da janela Widgets e em Configurações → Aparência → **Páginas da tela inicial**.
+- **Celular**: a Área fica compacta (2 colunas, ordem de leitura, sem mudar o que está guardado) e, por
+  padrão, os widgets de uma Página ficam numa tela e os apps na seguinte (chave "No celular, widgets e
+  apps em telas separadas"). Segurar o dedo entra no modo Organizar.
+- A Área escala inteira (zoom) entre Quadros de 150 e 260 px; se a Área for alta demais para dividir a
+  tela com os apps, os apps passam para a tela seguinte.
+- Encaixe em `web/static/js/layout.js` (funções puras) com teste `tests/layout.test.mjs` (Node), que
+  passou a rodar no CI.
+- Bugs achados nos testes com Playwright: a regra antiga `justify-content: center` da `.app-page`
+  centralizava as telas na vertical e a conta de apps por tela saía menor; a grade de apps com
+  `auto-fill` alargava a tela no lado a lado (`min-width: 0`); soltar fora da tela inicial deixava o
+  fantasma preso (agora os eventos de soltar são ouvidos na janela inteira).
+
 ## Próximas
 Veja `roadmap.md`.

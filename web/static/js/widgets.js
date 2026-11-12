@@ -6,13 +6,32 @@ import { lineSVG, barSVG, donutSVG, sparkSVG, stats } from './charts.js';
 import { batteryGlyph, stateText } from './battery.js';
 
 /* ── Tamanhos (em quadros) e Formatos ──────────────────────────── */
+// 0.13.0: Tamanho livre, largura × altura em Quadros (w × h, de 1 × 1 até a Medida da Área). Os nomes
+// ficam para os tamanhos conhecidos. As letras antigas (s, w, t, l, f) só existem para converter widgets
+// guardados antes e como "classe" que os Formatos usam para se arrumar (sizeKey).
+export const MAX_W = 6, MAX_H = 4;
 export const SIZES = {
   s: { label: 'Pequeno', c: 1, r: 1 },
   w: { label: 'Largo', c: 2, r: 1 },
   t: { label: 'Alto', c: 1, r: 2 },
   l: { label: 'Grande', c: 2, r: 2 },
-  f: { label: 'Faixa', c: 0, r: 1 }, // c = 0: largura toda
+  f: { label: 'Faixa', c: 4, r: 1 }, // antiga "largura toda": vira 4 × 1 (a Área limita à Medida)
 };
+/** Classe do tamanho para o desenho: pequeno, largo, alto, grande (e faixa = bem largo e baixo). */
+export function sizeKey(w, h) {
+  if (h <= 1) return w <= 1 ? 's' : w >= 4 ? 'f' : 'w';
+  return w <= 1 ? 't' : 'l';
+}
+/** Nome do tamanho: "Pequeno", "Largo", "Alto", "Grande" ou "3 × 2". */
+export function sizeLabel(w, h) {
+  const named = { '1x1': 'Pequeno', '2x1': 'Largo', '1x2': 'Alto', '2x2': 'Grande' }[`${w}x${h}`];
+  return named || `${w} × ${h}`;
+}
+/** Menor Tamanho em que o Formato ainda fica bonito (o gráfico de linha/barras pede 2 de largura). */
+export function minSize(item) {
+  if (item?.format === 'chart' && (item.chart?.type || 'line') !== 'donut') return [2, 1];
+  return [1, 1];
+}
 export const FORMATS = {
   stat: { label: 'Destaque', icon: 'star', desc: 'Um número grande, uma linha de apoio e até 3 valores pequenos', max: 5, kinds: ['num', 'text'] },
   grid: { label: 'Grade', icon: 'grid', desc: 'De 2 a 6 valores com ícone', max: 6, kinds: ['num', 'text'] },
@@ -265,8 +284,13 @@ export function normalize(item) {
   it.folders = Array.isArray(item?.folders) ? item.folders.filter((f) => f && f.root).slice(0, 24) : [];
   it.clock = { style: 'digital', seconds: false, date: true, tz: '', ...(item?.clock || {}) };
   it.notes = { mode: 'text', ...(item?.notes || {}) };
-  if (!SIZES[it.size]) it.size = 's';
   if (!FORMATS[it.format]) it.format = 'stat';
+  // Tamanho livre (0.13.0); widgets guardados antes têm só a letra
+  const old = SIZES[item?.size] || SIZES.s;
+  const [mw, mh] = minSize(it);
+  it.w = clamp(Math.round(+item?.w || old.c), mw, MAX_W);
+  it.h = clamp(Math.round(+item?.h || old.r), mh, MAX_H);
+  it.size = sizeKey(it.w, it.h); // só para o desenho; o que vale é w × h
   it.slots = (it.slots || []).filter((s) => s && typeof s.metric === 'string').slice(0, FORMATS[it.format].max || 0);
   return it;
 }
@@ -288,10 +312,12 @@ export function migrate(oldList) {
 }
 
 /* ── Desenho ───────────────────────────────────────────────────── */
-// Área útil aproximada de cada Tamanho (para o viewBox dos gráficos)
-const DIMS = { s: [212, 120], w: [480, 120], t: [212, 300], l: [480, 300], f: [960, 120] };
+// Área útil do widget em px no desenho base (Quadro 240 × 148, vãos de 28 e 18 + rótulo de 26; a Área
+// inteira escala com zoom). Serve para o viewBox dos gráficos e para as proporções.
+const dims = (it) => [it.w * 240 + (it.w - 1) * 28 - 28, it.h * 148 + (it.h - 1) * 44 - 28];
 
-function cellsOf(n, size, layout) {
+function cellsOf(n, item, layout) {
+  const size = item.size;
   const rowsMode = layout === 'rows', colsMode = layout === 'cols';
   const by = {
     s: rowsMode ? (n <= 3 ? 1 : 2) : colsMode ? Math.min(n, 3) : n <= 3 ? n : n === 4 ? 2 : 3,
@@ -301,7 +327,7 @@ function cellsOf(n, size, layout) {
     f: rowsMode ? Math.min(n, 3) : n,
   };
   const cols = Math.max(1, by[size] || n), rows = Math.ceil(n / cols);
-  const [w, h] = DIMS[size];
+  const [w, h] = dims(item);
   return { cols, rows, row: (w / cols) / (h / rows) > 1.9 };
 }
 
@@ -348,7 +374,7 @@ function statHTML(item, ctx) {
 function gridHTML(item, ctx) {
   const n = item.slots.length;
   if (!n) return `<span class="w-empty">Escolha as métricas</span>`;
-  const { cols, row } = cellsOf(n, item.size, item.layout);
+  const { cols, row } = cellsOf(n, item, item.layout);
   return `${item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : ''}<span class="wf-grid ${row ? 'rows' : 'pills'}" style="--cols:${cols}">${item.slots.map((s) => {
     const def = ctx.def(s.metric), val = ctx.value(s.metric), f = fmtVal(val, def, s);
     const sp = s.spark ? `<span class="wf-cspark">${sparkFor(s, ctx, item.size, 100, 18)}</span>` : '';
@@ -364,22 +390,22 @@ function listHTML(item, ctx) {
   const def0 = ctx.def(first.metric);
   const cap = item.caption ? `<span class="w-caption wf-cap">${esc(item.title)}</span>` : '';
   if (def0?.kind === 'list') {
-    const per = { s: 3, w: 3, t: 8, l: 8, f: 3 }[item.size];
+    const per = item.h <= 1 ? 3 : 4 * item.h; // cada linha a mais mostra mais itens
     const max = item.list?.max > 0 ? Math.min(item.list.max, per) : per;
     let items = (ctx.value(first.metric)?.l || []).slice(0, max);
     const top = Math.max(1, ...items.map((x) => x.n || 0));
     // itens com ícone próprio (previsão do Clima): lado a lado na Faixa/Largo, um por linha no resto
     const all = ctx.value(first.metric)?.l || [];
     if (all.some((x) => x.i)) {
-      const wide = item.size === 'f' || item.size === 'w';
-      const cap7 = { s: 3, w: 5, t: 7, l: 7, f: 7 }[item.size];
+      const wide = item.h <= 1 && item.w >= 2;
+      const cap7 = item.h <= 1 ? Math.min(7, item.w <= 1 ? 3 : item.w * 2 + 1) : 7;
       items = all.slice(0, item.list?.max > 0 ? Math.min(item.list.max, cap7) : cap7);
       return `${cap}<span class="wf-list wf-wxlist ${wide ? 'days' : ''}">${items.map((x) => wide
         ? (() => { const [temps, rain] = (x.v || '').split(' · '), [mx, mn] = (temps || '').split(' / ');
           return `<span class="wf-day"><small>${esc(x.k)}</small>${svg(x.i || 'wx-cloud', 'wx')}<b>${esc(mx || '')}</b>${mn ? `<small class="wf-min">${esc(mn)}</small>` : ''}${rain ? `<small class="wf-rain">${esc(rain)}</small>` : ''}</span>`; })()
         : `<span class="wf-li wf-wxrow">${svg(x.i || 'wx-cloud', 'wx')}<span class="wf-lk">${esc(x.k)}</span><span class="wf-lv">${esc(x.v || '')}</span></span>`).join('')}</span>`;
     }
-    return `${cap}<span class="wf-list ${item.size === 'f' || item.size === 'w' ? 'cols' : ''}">${items.length ? items.map((x) => x.n == null && x.v ? `<span class="wf-li stack"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><small class="wf-lsub" title="${esc(x.v)}">${esc(x.v)}</small></span>` : `<span class="wf-li"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><span class="wf-lv">${esc(x.n != null ? fmtText({ n: x.n }, { unit: first.unit ? '' : def0.unit }, first) : x.v || '')}</span>${item.list?.bars !== false && x.n != null ? `<span class="wf-lbar"><i style="width:${((x.n / top) * 100).toFixed(1)}%"></i></span>` : ''}</span>`).join('') : '<span class="w-empty">Sem itens ainda</span>'}</span>`;
+    return `${cap}<span class="wf-list ${item.h <= 1 && item.w >= 2 ? 'cols' : ''}">${items.length ? items.map((x) => x.n == null && x.v ? `<span class="wf-li stack"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><small class="wf-lsub" title="${esc(x.v)}">${esc(x.v)}</small></span>` : `<span class="wf-li"><span class="wf-lk" title="${esc(x.k)}">${esc(x.k)}</span><span class="wf-lv">${esc(x.n != null ? fmtText({ n: x.n }, { unit: first.unit ? '' : def0.unit }, first) : x.v || '')}</span>${item.list?.bars !== false && x.n != null ? `<span class="wf-lbar"><i style="width:${((x.n / top) * 100).toFixed(1)}%"></i></span>` : ''}</span>`).join('') : '<span class="w-empty">Sem itens ainda</span>'}</span>`;
   }
   return `${cap}<span class="wf-list">${item.slots.map((s) => {
     const def = ctx.def(s.metric), val = ctx.value(s.metric);
@@ -389,7 +415,7 @@ function listHTML(item, ctx) {
 
 function chartHTML(item, ctx) {
   if (!item.slots.length) return `<span class="w-empty">Escolha o que vai no gráfico</span>`;
-  const [W, H] = DIMS[item.size];
+  const [W, H] = dims(item);
   const type = item.chart?.type || 'line';
   const head0 = item.slots[0], d0 = ctx.def(head0.metric), v0 = ctx.value(head0.metric);
   const cap = `<span class="wf-chead"><span class="w-caption">${esc(item.title || labelOf(head0, d0))}</span>`;
@@ -398,7 +424,8 @@ function chartHTML(item, ctx) {
     const one = item.slots.length === 1;
     const total = one ? (v0?.max ?? head0.max ?? (d0?.unit === '%' ? 100 : null)) : null;
     const f = fmtVal(v0, d0, head0);
-    const sz = item.size === 's' ? 84 : item.size === 'w' || item.size === 'f' ? 92 : 170;
+    // rosca: cresce com o lado menor (84 no Pequeno, 92 nos baixos, até ocupar bem os altos)
+    const sz = item.h <= 1 ? (item.w <= 1 ? 84 : 92) : Math.round(Math.min(W * 0.62, H - 40, 300));
     const legend = item.slots.map((s, i) => { const d = ctx.def(s.metric); return `<span class="wf-leg"><i class="c${i}"></i>${esc(labelOf(s, d))} <b>${esc(fmtText(ctx.value(s.metric), d, s))}</b></span>`; }).join('');
     return `${cap}</span><span class="wf-donut ${item.size}"><span class="wf-ring" style="--sz:${sz}px">${donutSVG(parts, { total: one ? total ?? undefined : undefined, size: 100, thick: 11 })}<span class="wf-ringv"><b class="${lv(levelOf(v0, d0, head0)).trim()}">${esc(f.v)}<small>${esc(f.u)}</small></b>${one && head0.label ? `<small>${esc(head0.label)}</small>` : ''}</span></span>${one ? '' : `<span class="wf-legend">${legend}</span>`}</span>`;
   }
@@ -432,8 +459,9 @@ function shortcutsHTML(item, ctx) {
   const roots = ctx.roots?.() || [];
   const chosen = (item.folders || []).filter((f) => roots.some((r) => r.id === f.root));
   const all = chosen.length ? chosen.map((f) => ({ ...f, name: f.name || f.path.split('/').pop() || roots.find((r) => r.id === f.root)?.name || f.root })) : ctx.favorites();
-  const cols = list ? { s: 1, w: 2, t: 1, l: 2, f: 4 }[item.size] : { s: 2, w: 4, t: 2, l: 4, f: 6 }[item.size];
-  const rows = list ? { s: 3, w: 3, t: 7, l: 7, f: 3 }[item.size] : { s: 2, w: 2, t: 4, l: 4, f: 2 }[item.size];
+  // pastas por linha e linhas pelo Tamanho: cada Quadro a mais na largura/altura mostra mais pastas
+  const cols = list ? (item.w <= 1 ? 1 : Math.min(item.w, 4)) : Math.min(item.w * 2, 8);
+  const rows = list ? (item.h <= 1 ? 3 : item.h * 4 - 1) : item.h * 2;
   const fav = all.slice(0, cols * rows);
   const showFree = item.files?.showFree;
   const cell = (f) => {
@@ -486,7 +514,7 @@ function clockHTML(item) {
   const tzName = c.tz ? (TIMEZONES.find(([z]) => z === c.tz)?.[1] || c.tz.split('/').pop().replace(/_/g, ' ')) : '';
   const cap = item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : '';
   // ponteiros no Pequeno/Largo: data curta ao lado ("ter., 10 de nov.")
-  const short = c.style === 'analog' && (item.size === 's' || item.size === 'w');
+  const short = c.style === 'analog' && item.h <= 1;
   const date = c.date !== false ? `<span class="wf-cdate">${esc(short ? t.short : t.date)}</span>` : '';
   const tz = tzName ? `<span class="wf-ctz">${svg('globe')}${esc(tzName)}</span>` : '';
   if (c.style === 'analog') {
@@ -529,34 +557,26 @@ export function lookStyle(item) {
   return s;
 }
 
-/** Posição na grade: largura em colunas (limitada às colunas da Área) e altura em linhas. */
-export function spanStyle(size, cols = 6) {
-  const sz = SIZES[size] || SIZES.s;
-  return `${sz.c ? `grid-column:span ${Math.min(sz.c, cols)};` : 'grid-column:1 / -1;'}${sz.r > 1 ? `grid-row:span ${sz.r};` : ''}`;
-}
+/** Lugar na grade da Área (0.13.0): coluna e linha (a partir de 0) e o Tamanho em Quadros. */
+export const posStyle = (p) => (p ? `grid-column:${p.x + 1} / span ${p.w};grid-row:${p.y + 1} / span ${p.h};` : '');
 
 /**
- * O widget inteiro (moldura + rótulo). Formato Atalhos não é botão (as pastas são).
- * Arrastável sempre que tiver id (como os ícones); a alça de tamanho e o "−" só no modo Organizar.
+ * O widget inteiro (moldura + rótulo). Formato Atalhos não é botão (as pastas são). pos = o lugar na
+ * Área ({ x, y, w, h }); sem pos (prévia do editor) ele ocupa o espaço que lhe derem. O arrastar é
+ * feito pela tela inicial (pointer events); a alça de tamanho e o "−" aparecem só no modo Organizar.
  */
-export function widgetHTML(item, ctx, { id = '', i = 0, editing = false, cols = 6 } = {}) {
+export function widgetHTML(item, ctx, { id = '', i = 0, editing = false, pos = null } = {}) {
   // Atalhos e Notas não são botão (as pastas e o texto são); Notas só arrasta no modo Organizar,
   // senão selecionar o texto com o mouse arrastaria o widget
   const tag = item.format === 'shortcuts' || item.format === 'notes' ? 'div' : 'button';
   const drag = id && (item.format !== 'notes' || editing);
   const own = item.look?.follow === false;
   const hideLabel = own && item.look?.hideLabel;
-  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" style="--i:${i};${spanStyle(item.size, cols)}" ${drag ? 'draggable="true"' : ''}>
+  return `<div class="widget-wrap wsz-${item.size}" data-wid="${esc(id)}" data-w="${item.w}" data-h="${item.h}" ${drag ? 'data-drag="1"' : ''} style="--i:${i};${posStyle(pos)}">
     <${tag} class="widget wf wfm-${item.format} ${own ? 'w-own' : ''} ${own && item.look?.hue != null ? 'w-hue' : ''}" style="${lookStyle(item)}" ${tag === 'button' ? `type="button" aria-label="${esc(item.title || FORMATS[item.format].label)}"` : ''}>${innerHTML(item, ctx, id)}</${tag}>
     <div class="widget-label ${hideLabel ? 'is-hidden' : ''}">${esc(item.title || '')}</div>
-    ${editing ? `<button class="w-remove" data-wremove="${esc(id)}" aria-label="Remover widget">${svg('minus')}</button><span class="w-resize" data-wresize="${esc(id)}" title="Arraste para mudar o tamanho" aria-hidden="true"></span>` : ''}
+    ${editing ? `<button class="w-remove" data-wremove="${esc(id)}" aria-label="Remover widget">${svg('minus')}</button><button class="w-more" data-wmore="${esc(id)}" aria-label="Mais opções do widget">${svg('more')}</button><span class="w-resize" data-wresize="${esc(id)}" title="Arraste para mudar o tamanho" aria-hidden="true"></span>` : ''}
   </div>`;
-}
-
-/** Tamanho mais próximo para uma largura (colunas) e altura (linhas) pedidas pela alça. */
-export function sizeFor(c, r) {
-  if (r >= 2) return c >= 2 ? 'l' : 't';
-  return c >= 3 ? 'f' : c === 2 ? 'w' : 's';
 }
 
 /** Para onde o clique vai quando o Bruno deixou "automático". */

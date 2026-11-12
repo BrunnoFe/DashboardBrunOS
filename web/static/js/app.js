@@ -1,6 +1,7 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { paintBattery, batteryDialog } from './battery.js';
-import { SIZES, BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, spanStyle, sizeFor } from './widgets.js';
+import { BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
+import { fits, firstFree, place, dragPlan, compact, quadro, usedRows, Q } from './layout.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
@@ -19,7 +20,7 @@ const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
   wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
-  widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, folders: [], openIn: 'tab',
+  widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, pageCfg: {}, mobileSplit: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
   // 0.10.0: Bloqueio (J1) e Terminal (K1–K3)
   lockMode: 'senha', lockIdleMin: 15, termIdleMin: 15, termConnections: [], termSnippets: [], termSnippetBar: true,
@@ -262,28 +263,81 @@ function storageTotals() {
   const disks = S.snapshot?.disks || [];
   return disks.reduce((acc, d) => ({ used: acc.used + d.used, total: acc.total + d.total }), { used: 0, total: 0 });
 }
-// preferência widgets2 = { v, areas: { página: [ids] }, items: { id: widget } }; a antiga `widgets` vira Modelos
+/* Widgets e Páginas (0.13.0, decisão 48). widgets2 v3 = { v: 3, areas: { página: [{ id, x, y }] },
+   items: { id: widget com w × h } }; a antiga `widgets` (0.8.x) vira Modelos. Cada Página tem a sua
+   Disposição e Medidas em set().pageCfg[página] = { disp, wm: [colunas, linhas], am: 'auto' | [c, l] }. */
+const DISPS = ['wtop', 'atop', 'wleft', 'wright', 'wonly', 'aonly'];
+const DEF_WM = [4, 3];
+function pageCfg(p) {
+  const c = (set().pageCfg ||= {})[p] || {};
+  const pair = (v, mc, mr) => [clamp(v[0] | 0, 1, mc), clamp(v[1] | 0, 1, mr)];
+  return {
+    disp: DISPS.includes(c.disp) ? c.disp : 'wtop',
+    wm: Array.isArray(c.wm) ? pair(c.wm, MAX_W, MAX_H) : [...DEF_WM],
+    am: Array.isArray(c.am) ? pair(c.am, 16, 6) : 'auto',
+  };
+}
+function setPageCfg(p, patch) { (set().pageCfg ||= {})[p] = { ...pageCfg(p), ...patch }; }
 function W2() {
   const st = set();
   if (!st.widgets2 || typeof st.widgets2 !== 'object' || !st.widgets2.items) { st.widgets2 = migrate(st.widgets); save(); }
   st.widgets2.areas ||= {};
+  if ((st.widgets2.v || 1) < 3) { migrateAreas(st); save(); }
   return st.widgets2;
 }
+// v1/v2 → v3: cada Página vira uma grade (colunas fixas de antes, ou a soma das larguras, até 6; até 4
+// linhas) e os widgets são encaixados na ordem de hoje; o que não couber vai para uma Página nova.
+function migrateAreas(st) {
+  const w = st.widgets2, oldCols = w.cols || {}, cfg = (st.pageCfg ||= {}), areas = {};
+  const pages = Object.keys(w.areas).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  let next = Math.max(-1, ...pages, ...Object.values(st.appPlace || {}).filter(Number.isInteger)) + 1;
+  for (const p of pages) {
+    const ids = (w.areas[p] || []).map((x) => (typeof x === 'string' ? x : x?.id)).filter((id) => id && w.items[id]);
+    const items = ids.map((id) => { const it = normalize(w.items[id]); return { id, w: it.w, h: it.h, full: w.items[id].size === 'f' }; });
+    const cols = clamp(oldCols[p] || items.reduce((s, it) => s + (it.full ? 1 : it.w), 0), Math.max(1, ...items.map((it) => (it.full ? 1 : it.w))), MAX_W);
+    for (const it of items) if (it.full) it.w = cols; // a Faixa antiga ocupa a largura da Área
+    let rest = items, page = p;
+    while (rest.length) {
+      const { list, overflow } = place([], cols, MAX_H, rest);
+      if (!list.length) break;
+      areas[page] = list.map(({ id, x, y }) => ({ id, x, y }));
+      for (const o of list) { Object.assign(w.items[o.id], { w: o.w, h: o.h }); delete w.items[o.id].size; }
+      // linhas: as usadas + 1 vazia para crescer (2 a 4); a Medida dá para mudar depois
+      cfg[page] = { disp: 'wtop', wm: [cols, clamp(usedRows(list) + 1, 2, MAX_H)], am: 'auto', ...(cfg[page] || {}) };
+      rest = overflow; page = next++;
+    }
+  }
+  w.areas = areas; w.v = 3; delete w.cols;
+}
 const widgetById = (id) => { const it = W2().items[id]; return it ? normalize(it) : null; };
+const areaOf = (p) => { const w = W2(); return (w.areas[p] || []).filter((o) => o && w.items[o.id]); };
+/** [id, item, lugar] dos widgets de uma Página; o lugar é limitado à Medida (sem sair da grade). */
 function widgetsOn(page) {
   const w = W2();
-  return (w.areas[page] || []).filter((id) => w.items[id]).map((id) => [id, normalize(w.items[id])]);
+  return areaOf(page).map((o) => { const it = normalize(w.items[o.id]); return [o.id, it, { x: Math.max(0, o.x | 0), y: Math.max(0, o.y | 0), w: it.w, h: it.h }]; });
 }
-const widgetPages = () => Object.keys(W2().areas).map(Number).filter((p) => widgetsOn(p).length).sort((a, b) => a - b);
-function pageOfWidget(id) { for (const [p, ids] of Object.entries(W2().areas)) if (ids.includes(id)) return +p; return 0; }
-function removeFromAreas(id) { const w = W2(); for (const p of Object.keys(w.areas)) { w.areas[p] = w.areas[p].filter((x) => x !== id); if (!w.areas[p].length) delete w.areas[p]; } }
-function putWidget(id, item, page, beforeId) {
+const rectsOn = (p) => widgetsOn(p).map(([id, , pos]) => ({ id, ...pos }));
+const widgetPages = () => Object.keys(W2().areas).map(Number).filter((p) => areaOf(p).length).sort((a, b) => a - b);
+function pageOfWidget(id) { for (const [p, l] of Object.entries(W2().areas)) if (l.some((o) => o?.id === id)) return +p; return 0; }
+function removeFromAreas(id) { const w = W2(); for (const p of Object.keys(w.areas)) { w.areas[p] = w.areas[p].filter((o) => o?.id !== id); if (!w.areas[p].length) delete w.areas[p]; } }
+/** Guarda o widget na Página: no lugar pedido (se couber) ou no primeiro livre; não cabendo, numa Página nova. */
+function putWidget(id, item, page, at = null) {
   const w = W2();
   w.items[id] = item;
   removeFromAreas(id);
-  const list = (w.areas[page] ||= []);
-  const at = beforeId ? list.indexOf(beforeId) : -1;
-  list.splice(at < 0 ? list.length : at, 0, id);
+  const it = normalize(item), [cols, rows] = pageCfg(page).wm, list = rectsOn(page);
+  const ww = Math.min(it.w, cols), hh = Math.min(it.h, rows);
+  let pos = at && fits(list, cols, rows, at.x, at.y, ww, hh) ? at : firstFree(list, cols, rows, ww, hh);
+  if (!pos) {
+    const to = realPageCount();
+    toast('Não coube nesta página', `O widget foi para a Página ${to + 1}.`);
+    page = to; pos = { x: 0, y: 0 };
+    const [c2, r2] = pageCfg(to).wm;
+    if (ww > c2 || hh > r2) setPageCfg(to, { wm: [Math.max(c2, ww), Math.max(r2, hh)] });
+  }
+  if (ww !== it.w || hh !== it.h) Object.assign(item, { w: ww, h: hh });
+  (w.areas[page] ||= []).push({ id, x: pos.x, y: pos.y });
+  return page;
 }
 function deleteWidget(id) {
   if (W2().items[id]?.format === 'notes') deleteNote(id); // o texto da nota sai do servidor junto
@@ -372,39 +426,149 @@ function widgetCtx() {
   return ctx;
 }
 
-// Área de widgets: colunas escolhidas para a página (widgets2.cols) ou automáticas (centraliza o que há).
-// Em tela estreita nunca passa do que cabe; a Faixa ocupa a largura toda.
-function areaFit() {
-  const mobile = innerWidth < 640, wu = mobile ? Math.min(240, innerWidth * 0.44) : 240, gap = mobile ? 10 : 28;
-  return clamp(Math.floor((Math.min(innerWidth - 32, 1640) + gap) / (wu + gap)), 1, 6);
-}
-function areaCols(list, page = 0) {
-  const fit = areaFit(), fixed = W2().cols?.[page];
-  if (fixed) return clamp(fixed, 1, fit);
-  const need = list.reduce((s, [, it]) => s + (SIZES[it.size].c || fit), 0);
-  const wide = list.some(([, it]) => SIZES[it.size].c === 2);
-  return clamp(Math.max(need, wide ? 2 : 1), 1, fit);
-}
+/* Área de widgets (0.13.0): a grade da Medida com cada widget no seu lugar. O desenho é sempre o do
+   Quadro de 240 × 148 e a Área inteira escala com zoom (k), entre o mínimo e o máximo. compactCols > 0:
+   tela estreita demais, os widgets em ordem de leitura nessa quantidade de colunas (nada muda no que
+   está guardado). No modo Organizar aparecem os Quadros vazios (onde dá para soltar). */
 let wEditing = false;
-function areaHTML(page, list, cls = 'widget-area') {
-  const ctx = widgetCtx(), cols = areaCols(list, page);
-  return `<div class="${cls} ${wEditing ? 'editing' : ''}" data-area="${page}" style="--cols:${cols}">${list.map(([id, it], i) => widgetHTML(it, ctx, { id, i, editing: wEditing, cols })).join('')}${wEditing ? `<button class="w-add" data-wadd="${page}">${svg('plus')}<span>Adicionar widget</span></button>` : ''}</div>`;
+function areaHTML(page, list, { k = 1, compactCols = 0 } = {}) {
+  const ctx = widgetCtx(), [mc, mr] = pageCfg(page).wm, compactOn = compactCols > 0;
+  let rects = list.map(([id, , pos]) => ({ id, ...pos }));
+  if (compactOn) rects = compact(rects, compactCols);
+  const cols = compactOn ? compactCols : mc, edit = wEditing && !compactOn;
+  const rows = edit ? mr : Math.max(1, usedRows(rects));
+  const byId = new Map(rects.map((r) => [r.id, r]));
+  const slots = edit ? Array.from({ length: mc * mr }, (_, i) => `<div class="w-slot" style="grid-column:${(i % mc) + 1};grid-row:${Math.floor(i / mc) + 1}"></div>`).join('') : '';
+  const free = edit ? firstFree(rects, mc, mr, 1, 1) : null;
+  const add = wEditing && (free || compactOn) ? `<button class="w-add" data-wadd="${page}" style="${free ? `grid-column:${free.x + 1};grid-row:${free.y + 1}` : 'grid-column:1 / -1'}">${svg('plus')}<span>Adicionar widget</span></button>` : '';
+  return `<div class="widget-area ${wEditing ? 'editing' : ''} ${compactOn ? 'compact' : ''}" data-area="${page}" data-cols="${cols}" data-rows="${edit ? mr : rows}" style="--cols:${cols};--rows:${rows};zoom:${k.toFixed(4)}">${slots}${list.map(([id, it], i) => widgetHTML(it, ctx, { id, i, editing: wEditing, pos: byId.get(id) })).join('')}${add}</div>`;
 }
-// Modo Organizar: "− N colunas +" em cima da Área de cada página
+// As 6 Disposições (CONTEXT.md): desenho pequeno de cada uma (blocos = widgets, pontos = apps)
+const DISP_NAMES = { wtop: 'Widgets em cima', atop: 'Apps em cima', wleft: 'Widgets à esquerda', wright: 'Widgets à direita', wonly: 'Só widgets', aonly: 'Só apps' };
+function dispSVG(d) {
+  const W = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" class="dw"/>`;
+  const A = (x0, y0, cols, rows, gx = 6, gy = 6) => Array.from({ length: cols * rows }, (_, i) => `<circle cx="${x0 + (i % cols) * gx}" cy="${y0 + Math.floor(i / cols) * gy}" r="1.6" class="da"/>`).join('');
+  const parts = {
+    wtop: W(5, 4, 11, 8) + W(18, 4, 7, 8) + W(27, 4, 12, 8) + A(9, 19, 5, 2, 6.5),
+    atop: A(9, 6, 5, 2, 6.5) + W(5, 16, 11, 8) + W(18, 16, 7, 8) + W(27, 16, 12, 8),
+    wleft: W(4, 4, 9, 9) + W(15, 4, 7, 9) + W(4, 15, 18, 9) + A(27, 7, 3, 3, 5),
+    wright: A(7, 7, 3, 3, 5) + W(22, 4, 9, 9) + W(33, 4, 7, 9) + W(22, 15, 18, 9),
+    wonly: W(5, 4, 14, 9) + W(21, 4, 14, 9) + W(5, 15, 9, 9) + W(16, 15, 19, 9),
+    aonly: A(8, 7, 5, 3, 6.5, 7),
+  };
+  return `<svg class="disp-ico" viewBox="0 0 44 28" aria-hidden="true"><rect x=".5" y=".5" width="43" height="27" rx="5" class="df"/>${parts[d] || parts.wtop}</svg>`;
+}
+/* Seletores (0.13.0). Quadradinhos: acende do canto até onde o mouse (ou o dedo) está, com "4 × 3", e o
+   clique escolhe — usado na Medida da Área de widgets (6 × 4), na de apps (16 × 6, + Automático) e no
+   Tamanho do widget. Disposições: os 6 desenhos. Funcionam soltos (no painel das Configurações) ou num
+   balão (modo Organizar, menu do widget). */
+function gridPickHTML({ maxC, maxR, cur, min = [1, 1], auto = false, isAuto = false, label = '' }) {
+  const [cc, cr] = cur || [0, 0];
+  const cells = Array.from({ length: maxC * maxR }, (_, i) => {
+    const c = (i % maxC) + 1, r = Math.floor(i / maxC) + 1, under = c < min[0] || r < min[1];
+    return `<button type="button" class="gp-cell ${!isAuto && c <= cc && r <= cr ? 'on' : ''} ${under ? 'under' : ''}" data-c="${c}" data-r="${r}" aria-label="${c} × ${r}"></button>`;
+  }).join('');
+  return `<div class="gpick" style="--gc:${maxC}" data-min="${min.join(',')}"><div class="gp-cells">${cells}</div>
+    <div class="gp-foot"><span class="gp-label">${isAuto ? 'Automático' : cur ? `${cc} × ${cr}` : ''}</span>${label ? `<small>${esc(label)}</small>` : ''}${auto ? `<button type="button" class="pill-btn sm ${isAuto ? 'on' : ''}" data-gp-auto>Automático</button>` : ''}</div></div>`;
+}
+function wireGridPick(root, onPick, onAuto) {
+  const pick = $('.gpick', root); if (!pick) return;
+  const [mc, mr] = pick.dataset.min.split(',').map(Number), label = $('.gp-label', pick), orig = label.textContent;
+  const mark = (c, r) => $$('.gp-cell', pick).forEach((b) => b.classList.toggle('hot', +b.dataset.c <= c && +b.dataset.r <= r));
+  pick.addEventListener('pointerover', (e) => {
+    const b = e.target.closest('.gp-cell'); if (!b) return;
+    const c = Math.max(+b.dataset.c, mc), r = Math.max(+b.dataset.r, mr);
+    mark(c, r); label.textContent = `${c} × ${r}`;
+  });
+  pick.addEventListener('pointerleave', () => { mark(0, 0); label.textContent = orig; });
+  pick.addEventListener('click', (e) => {
+    if (e.target.closest('[data-gp-auto]')) { onAuto?.(); return; }
+    const b = e.target.closest('.gp-cell'); if (!b) return;
+    onPick(Math.max(+b.dataset.c, mc), Math.max(+b.dataset.r, mr));
+  });
+}
+const dispPickHTML = (cur) => `<div class="dpick">${DISPS.map((d) => `<button type="button" class="dp-opt ${d === cur ? 'on' : ''}" data-disp="${d}">${dispSVG(d)}<span>${DISP_NAMES[d]}</span></button>`).join('')}</div>`;
+// Balão perto de um botão, que fecha ao clicar fora ou com Esc
+let popClose = null;
+function popover(anchor, inner, mount) {
+  popClose?.();
+  const pop = html(`<div class="ctx pop-pick">${inner}</div>`);
+  $('#menu-host').append(pop);
+  const r = anchor.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+  pop.style.left = clamp(r.left + r.width / 2 - pr.width / 2, 8, innerWidth - pr.width - 8) + 'px';
+  pop.style.top = (r.bottom + 8 + pr.height < innerHeight - 8 ? r.bottom + 8 : Math.max(8, r.top - pr.height - 8)) + 'px';
+  const close = () => { pop.remove(); popClose = null; document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', esc_, true); };
+  const outside = (e) => { if (!pop.contains(e.target) && !anchor.contains(e.target) && !e.target.closest('.dlg-wrap')) close(); };
+  const esc_ = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', esc_, true); });
+  popClose = close;
+  mount(pop, close);
+}
+// Guarda um arranjo da Área (lugares e Tamanhos) de uma Página
+function applyArea(p, rects) {
+  const w = W2();
+  w.areas[p] = rects.map(({ id, x, y }) => ({ id, x, y }));
+  for (const o of rects) if (w.items[o.id]) Object.assign(w.items[o.id], { w: o.w, h: o.h });
+  if (!w.areas[p].length) delete w.areas[p];
+}
+const areaSnapshot = () => JSON.stringify({ areas: W2().areas, sizes: Object.fromEntries(Object.entries(W2().items).map(([id, it]) => [id, [it.w, it.h]])), cfg: set().pageCfg, place: set().appPlace, order: set().order });
+function restoreSnapshot(snap) {
+  const s = JSON.parse(snap), w = W2();
+  w.areas = s.areas; set().pageCfg = s.cfg; set().appPlace = s.place; set().order = s.order;
+  for (const [id, [ww, hh]] of Object.entries(s.sizes)) if (w.items[id]) Object.assign(w.items[id], { w: ww, h: hh });
+  save(); renderApps();
+}
+const undoToast = (title, snap) => toast(title, 'Mudou de ideia?', { label: 'Desfazer', run: () => restoreSnapshot(snap) });
+/** Medida nova da Área de widgets. Quem fica de fora é encaixado de novo; não cabendo, vai para outra Página (pergunta antes). */
+async function setWidgetMedida(p, c, r) {
+  const list = rectsOn(p);
+  const keep = list.filter((o) => o.x + o.w <= c && o.y + o.h <= r);
+  const out = list.filter((o) => !keep.includes(o)).map((o) => ({ id: o.id, w: Math.min(o.w, c), h: Math.min(o.h, r) }));
+  const { list: placed, overflow } = place(keep, c, r, out);
+  if (overflow.length) {
+    const to = realPageCount(), n = overflow.length;
+    if (!(await confirmDialog('Mudar a Medida?', `${n} ${n === 1 ? 'widget não cabe' : 'widgets não cabem'} em ${c} × ${r} e ${n === 1 ? 'vai' : 'vão'} para a Página ${to + 1}.`, 'Mudar'))) return;
+  }
+  const snap = areaSnapshot();
+  setPageCfg(p, { wm: [c, r] });
+  applyArea(p, placed);
+  for (const o of overflow) putWidget(o.id, W2().items[o.id], realPageCount());
+  compactPages(); save(); renderApps();
+  if (overflow.length) undoToast(`Medida ${c} × ${r}`, snap);
+}
+function setAppsMedida(p, am) { setPageCfg(p, { am }); save(); renderApps(); }
+function setDisp(p, disp) { setPageCfg(p, { disp }); save(); renderApps(); }
+/** Tamanho novo de um widget: os vizinhos abrem espaço (como no arrastar); sem espaço no lugar, procura outro. */
+function setWidgetSize(id, ww, hh) {
+  const p = pageOfWidget(id), [cols, rows] = pageCfg(p).wm, list = rectsOn(p), me = list.find((o) => o.id === id);
+  if (!me) return;
+  ww = Math.min(ww, cols); hh = Math.min(hh, rows);
+  let plan = dragPlan(list, cols, rows, id, Math.min(me.x, cols - ww), Math.min(me.y, rows - hh), ww, hh);
+  if (!plan) { const at = firstFree(list, cols, rows, ww, hh, [id]); if (at) plan = list.map((o) => (o.id === id ? { ...o, ...at, w: ww, h: hh } : o)); }
+  if (!plan) { toast('Não cabe nesta página', `Aumente a Medida da Área (está em ${cols} × ${rows}) ou libere espaço.`, null, { error: true }); return; }
+  const snap = areaSnapshot();
+  applyArea(p, plan); save(); renderApps();
+  undoToast(`Tamanho: ${sizeLabel(ww, hh)}`, snap);
+}
+function widgetSizePicker(id, anchor) {
+  const it = widgetById(id); if (!it) return;
+  const [cols, rows] = pageCfg(pageOfWidget(id)).wm;
+  popover(anchor, `<b class="pp-title">Tamanho do widget</b>${gridPickHTML({ maxC: cols, maxR: rows, cur: [it.w, it.h], min: minSize(it), label: 'Até a Medida da Área' })}`, (pop, close) => wireGridPick(pop, (c, r) => { close(); setWidgetSize(id, c, r); }));
+}
+function pagePicker(kind, p, anchor, after) {
+  const c = pageCfg(p);
+  if (kind === 'disp') popover(anchor, `<b class="pp-title">Disposição da Página ${p + 1}</b>${dispPickHTML(c.disp)}`, (pop, close) => pop.addEventListener('click', (e) => { const b = e.target.closest('[data-disp]'); if (b) { close(); setDisp(p, b.dataset.disp); after?.(); } }));
+  else if (kind === 'wm') popover(anchor, `<b class="pp-title">Área de widgets da Página ${p + 1}</b>${gridPickHTML({ maxC: MAX_W, maxR: MAX_H, cur: c.wm, label: 'colunas × linhas de Quadros' })}`, (pop, close) => wireGridPick(pop, async (cc, rr) => { close(); await setWidgetMedida(p, cc, rr); after?.(); }));
+  else popover(anchor, `<b class="pp-title">Área de apps da Página ${p + 1}</b>${gridPickHTML({ maxC: 16, maxR: 6, cur: c.am === 'auto' ? null : c.am, auto: true, isAuto: c.am === 'auto', label: 'colunas × linhas de ícones' })}`, (pop, close) => wireGridPick(pop, (cc, rr) => { close(); setAppsMedida(p, [cc, rr]); after?.(); }, () => { close(); setAppsMedida(p, 'auto'); after?.(); }));
+}
+// Modo Organizar: em cima de cada Página, a Disposição e as Medidas (abrem os seletores num balão)
 function areaBarHTML(p) {
   if (!wEditing) return '';
-  const n = W2().cols?.[p];
-  return `<div class="w-area-bar"><span>Página ${p + 1} · colunas dos widgets</span><button data-wcols="-1" data-wpage="${p}" aria-label="Menos colunas">−</button><span class="w-cols-n">${n || 'automático'}</span><button data-wcols="1" data-wpage="${p}" aria-label="Mais colunas">+</button><button class="${n ? '' : 'on'}" data-wcols="auto" data-wpage="${p}">Automático</button></div>`;
-}
-function setAreaCols(p, how) {
-  const w = W2();
-  w.cols ||= {};
-  if (how === 'auto') delete w.cols[p];
-  else {
-    const list = widgetsOn(p), cur = w.cols[p] || areaCols(list, p);
-    w.cols[p] = clamp(cur + how, 1, 6);
-  }
-  save(); renderApps();
+  const c = pageCfg(p);
+  return `<div class="w-area-bar"><span>Página ${p + 1}</span>
+    <button data-pbar="disp" data-wpage="${p}" title="Disposição da página">${dispSVG(c.disp)}${DISP_NAMES[c.disp]}</button>
+    <button data-pbar="wm" data-wpage="${p}" title="Medida da Área de widgets">${svg('grid')}Widgets ${c.wm[0]} × ${c.wm[1]}</button>
+    <button data-pbar="am" data-wpage="${p}" title="Medida da Área de apps">${svg('apps')}Apps ${c.am === 'auto' ? 'automático' : `${c.am[0]} × ${c.am[1]}`}</button></div>`;
 }
 
 /* Páginas montadas pelo Bruno (0.9.1): página "real" = índice salvo. Cada uma tem a sua Área de widgets
@@ -449,10 +613,10 @@ function compactPages() {
   const used = [...new Set([...widgetPages(), ...Object.values(place)])].sort((a, b) => a - b);
   const map = new Map(used.map((p, i) => [p, i]));
   if (used.every((p, i) => p === i)) return;
-  const areas = {}, cols = {};
-  for (const [p, ids] of Object.entries(w.areas)) if (map.has(+p)) areas[map.get(+p)] = ids;
-  for (const [p, n] of Object.entries(w.cols || {})) if (map.has(+p)) cols[map.get(+p)] = n;
-  w.areas = areas; w.cols = cols;
+  const areas = {}, cfg = {}, old = set().pageCfg || {};
+  for (const [p, l] of Object.entries(w.areas)) if (map.has(+p)) areas[map.get(+p)] = l;
+  for (const [p, c] of Object.entries(old)) if (map.has(+p)) cfg[map.get(+p)] = c; // Disposição e Medidas andam junto
+  w.areas = areas; set().pageCfg = cfg;
   for (const k of Object.keys(place)) place[k] = map.get(place[k]) ?? 0;
 }
 function placeItem(key, real) { fixLoosePlaces(); appPlace()[key] = real; }
@@ -554,8 +718,7 @@ function widgetMenu(id, x, y) {
   const it = widgetById(id); if (!it) return;
   contextMenu(x, y, [
     { icon: 'edit', label: 'Editar…', run: () => openWidgets({ edit: id }) },
-    '-',
-    ...Object.entries(SIZES).map(([k, s]) => ({ icon: it.size === k ? 'check' : 'grid', label: `Tamanho: ${s.label}`, run: () => { W2().items[id].size = k; save(); renderApps(); } })),
+    { icon: 'grid', label: `Tamanho (${sizeLabel(it.w, it.h)})…`, run: () => { const el = $(`.widget-wrap[data-wid="${CSS.escape(id)}"]`); if (el) widgetSizePicker(id, el); } },
     '-',
     { icon: 'layers', label: 'Mover para outra página…', run: () => moveWidgetDialog(id) },
     { icon: 'sort', label: 'Organizar widgets', run: () => setWidgetEditing(true) },
@@ -595,7 +758,12 @@ const widgetsCtx = {
   ctx: () => widgetCtx(),
   pages: () => realPageCount(),
   currentPage: () => currentReal(),
-  setCols: (p, n) => { const w = W2(); w.cols ||= {}; if (n) w.cols[p] = clamp(n, 1, 6); else delete w.cols[p]; save(); renderApps(); },
+  pageCfg: (p) => pageCfg(p),
+  pagePicker: (kind, p, anchor, after) => pagePicker(kind, p, anchor, after),
+  gridPickHTML, wireGridPick,
+  areaOf: (p) => areaOf(p),
+  pageOf: (id) => pageOfWidget(id),
+  setSize: (id, w, h) => setWidgetSize(id, w, h),
   save: () => { save(); renderApps(); },
   saveNow: () => saveNow(),
   put: putWidget,
@@ -649,69 +817,120 @@ function renderApps() {
   drawHome();
   restoreNoteFocus(f);
 }
+/* Tela inicial (0.13.0): cada Página real vira uma ou mais telas no trilho (.pages-track). A Disposição
+   diz onde ficam a Área de widgets e a Área de apps (.page-body em coluna ou linha); "só widgets"/"só
+   apps" com os dois tipos, e o celular com "telas separadas", dividem a Página em telas seguidas (a
+   segunda conta como continuação). Apps que não cabem seguem em telas de continuação, como antes.
+   "Páginas" desligado: as Páginas ficam uma embaixo da outra e a tela rola. */
+const MOBILE_W = 640;
 function drawHome() {
   const grid = $('#app-grid');
-  const appW = Math.min(Math.round(set().iconSize * 1.8), Math.floor((innerWidth - 40) / 4));
-  document.documentElement.style.setProperty('--app-w', appW + 'px');
-  document.documentElement.style.setProperty('--app-icon', Math.min(set().iconSize, Math.round(appW * 0.68)) + 'px');
-  const items = homeItems();
-  grid.classList.remove('paged');
+  const baseW = Math.min(Math.round(set().iconSize * 1.8), Math.floor((innerWidth - 40) / 4));
+  document.documentElement.style.setProperty('--app-w', baseW + 'px');
+  document.documentElement.style.setProperty('--app-icon', Math.min(set().iconSize, Math.round(baseW * 0.68)) + 'px');
+  const items = homeItems(), paged = !!set().appPages, mobile = innerWidth < MOBILE_W;
   $$('#desktop > .w-area-bar').forEach((x) => x.remove());
-  // Área de widgets fora das páginas (uma página só ou páginas desligadas): todos os widgets no topo
-  const showRow = (list) => {
-    $('#widgets').outerHTML = list.length || wEditing ? areaHTML(0, list, 'widget-row').replace('class="widget-row', 'id="widgets" class="widget-row') : '<div id="widgets" class="widget-row" style="display:none"></div>';
-    if (wEditing) $('#widgets').insertAdjacentHTML('beforebegin', areaBarHTML(0));
-  };
-  const empty = `<div class="grid-empty">${S.tipi.found === false ? 'Não encontrei a pasta do Runtipi. Confira a montagem <code>/runtipi</code> no docker-compose.' : 'Nenhum app ainda.'}<br><button class="pill-btn" data-action="add-link">${svg('plus')}Adicionar atalho</button></div>`;
-  if (!set().appPages) {
-    showRow(widgetPages().flatMap((p) => widgetsOn(p)));
-    grid.innerHTML = items.length ? items.map(itemHTML).join('') : empty;
-    paintWidgets();
-    return;
-  }
-  // Páginas reais: as que têm widgets ou apps colocados (+ uma página nova vazia no modo Organizar)
-  const plan = appPagesPlan(items);
-  const wPages = widgetPages(), lastReal = Math.max(plan.last, wPages.length ? wPages[wPages.length - 1] : -1, 0);
-  if (lastReal === 0 && !wEditing) {
-    showRow(widgetsOn(0));
-    if (items.length <= perPage(grid, appW)) { // tudo cabe numa tela só: sem páginas
-      grid.innerHTML = items.length ? items.map(itemHTML).join('') : empty;
-      paintWidgets();
-      return;
-    }
-  }
-  $('#widgets').outerHTML = '<div id="widgets" class="widget-row" style="display:none"></div>';
-  $$('#desktop > .w-area-bar').forEach((x) => x.remove());
-  grid.classList.add('paged');
+  const row = $('#widgets'); row.style.display = 'none'; row.innerHTML = '';
+  grid.classList.add('paged'); grid.classList.toggle('stacked', !paged);
   grid.innerHTML = '<div class="pages-track"></div><div class="page-dots"></div>';
   const track = $('.pages-track', grid);
+  const plan = appPagesPlan(items);
+  const wPages = widgetPages(), lastReal = Math.max(plan.last, wPages.length ? wPages[wPages.length - 1] : -1, 0);
+  if (!items.length && !wPages.length && !wEditing) {
+    track.innerHTML = `<div class="app-page"><div class="grid-empty">${S.tipi.found === false ? 'Não encontrei a pasta do Runtipi. Confira a montagem <code>/runtipi</code> no docker-compose.' : 'Nenhum app ainda.'}<br><button class="pill-btn" data-action="add-link">${svg('plus')}Adicionar atalho</button></div></div>`;
+    return;
+  }
   let n = 0;
   for (let real = 0; real <= lastReal + (wEditing ? 1 : 0); real++) {
     const list = widgetsOn(real), apps = plan.by.get(real) || [], isNew = real > lastReal;
     if (!list.length && !apps.length && !isNew) continue; // página sem nada não aparece
-    const withArea = list.length > 0 || wEditing;
+    const cfg = pageCfg(real);
+    let disp = cfg.disp;
+    if (mobile && (disp === 'wleft' || disp === 'wright')) disp = 'wtop'; // lado a lado não cabe no celular
+    const hasW = list.length > 0 || (wEditing && disp !== 'aonly'), hasA = apps.length > 0;
+    // telas desta Página: juntas, ou separadas (só widgets / só apps com os dois tipos, celular)
+    const split = hasW && hasA && (disp === 'wonly' || disp === 'aonly' || (mobile && set().mobileSplit !== false));
+    const screens = isNew ? ['new'] : !hasA ? ['w'] : !hasW ? ['a'] : split ? (disp === 'aonly' ? ['a', 'w'] : ['w', 'a']) : ['both'];
     let k = 0, first = true;
-    do { // quando os apps não cabem, páginas de continuação logo depois (sem widgets)
-      const pg = html(`<div class="app-page" data-real="${real}" ${first ? '' : 'data-cont="1"'}>${first && withArea ? areaBarHTML(real) + areaHTML(real, list) : ''}<div class="page-apps" role="list"></div></div>`);
-      track.append(pg);
-      const box = $('.page-apps', pg);
-      if (isNew) { box.innerHTML = '<div class="page-new-hint">Página nova: arraste widgets ou apps para cá</div>'; break; }
-      const per = pagePer(pg, appW, first && withArea);
-      const slice = apps.slice(k, k + per);
-      box.innerHTML = slice.map((it, i) => itemHTML(it, n + i)).join('');
-      k += slice.length; n += slice.length; first = false;
-    } while (k < apps.length);
+    for (let si = 0; si < screens.length; si++) {
+      const kind = screens[si];
+      do { // apps que não cabem: telas de continuação logo depois (só apps)
+        const showW = kind === 'w' || kind === 'both', showA = kind !== 'w' && kind !== 'new';
+        const pg = html(`<div class="app-page disp-${showW && showA ? disp : showW ? 'wonly' : 'aonly'}" data-real="${real}" ${first ? '' : 'data-cont="1"'}>${first ? areaBarHTML(real) : ''}<div class="page-body">${showW ? '<div class="page-widgets"></div>' : ''}${showA || kind === 'new' ? '<div class="page-apps" role="list"></div>' : ''}</div></div>`);
+        track.append(pg);
+        if (showW) {
+          const fits = fillWidgets(pg, real, list, { both: showA && hasA, side: showA && (disp === 'wleft' || disp === 'wright'), mobile });
+          if (!fits && kind === 'both' && !mobile) { // Área alta demais para dividir a tela com os apps: eles vão para a tela seguinte
+            $('.page-apps', pg)?.remove(); pg.className = pg.className.replace(/\bdisp-\w+/, 'disp-wonly');
+            screens.splice(si + 1, 0, 'a'); first = false; break;
+          }
+        }
+        const box = $('.page-apps', pg);
+        if (kind === 'new') { box.innerHTML = '<div class="page-new-hint">Página nova: arraste widgets ou apps para cá</div>'; break; }
+        if (!showA) { first = false; break; }
+        const per = paged ? appsPer(pg, box, cfg.am, showW) : Infinity;
+        const slice = apps.slice(k, k + per);
+        box.innerHTML = slice.map((it, i) => itemHTML(it, n + i)).join('');
+        k += slice.length; n += slice.length; first = false;
+      } while (k < apps.length);
+    }
   }
-  const total = $$('.app-page', track).length;
-  $$('.app-page', track).forEach((el, i) => el.setAttribute('aria-label', `Página ${i + 1} de ${total}`));
+  const pages = $$('.app-page', track), total = pages.length;
+  pages.forEach((el, i) => el.setAttribute('aria-label', `Página ${i + 1} de ${total}`));
   page = clamp(page, 0, total - 1);
-  $('.page-dots', grid).innerHTML = Array.from({ length: total }, (_, i) => `<button class="${i === page ? 'on' : ''}" data-page="${i}" aria-label="Página ${i + 1}"></button>`).join('');
+  $('.page-dots', grid).innerHTML = paged && total > 1 ? Array.from({ length: total }, (_, i) => `<button class="${i === page ? 'on' : ''}" data-page="${i}" aria-label="Página ${i + 1}"></button>`).join('') : '';
   paintWidgets();
+  if (!paged) return;
   track.scrollLeft = page * track.clientWidth;
   track.addEventListener('scroll', debounce(() => {
     page = Math.round(track.scrollLeft / track.clientWidth);
     $$('.page-dots button', grid).forEach((b, i) => b.classList.toggle('on', i === page));
   }, 60), { passive: true });
+}
+// Espaço livre para a página (descontando dock, pesquisa e os pontinhos) a partir do topo do elemento
+function freeHeight(el) {
+  const desk = $('#desktop'), top = el.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
+  return Math.max(160, innerHeight - top - 150 - 26);
+}
+// Desenha a Área de widgets numa tela: escala do Quadro pelo espaço que a Disposição dá, ou compacta.
+function fillWidgets(pg, real, list, { both, side, mobile }) {
+  const box = $('.page-widgets', pg), [mc, mr] = pageCfg(real).wm;
+  const pageW = Math.min(pg.clientWidth || innerWidth - 32, 1700);
+  const appW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-w')) || 116;
+  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
+  // lado a lado: os apps ficam com pelo menos 3 colunas; em coluna: sobra pelo menos uma fileira de apps
+  const spaceW = side ? pageW - Math.max(appW * 3, pageW * 0.3) - 24 : pageW;
+  const spaceH = freeHeight(box) - (both && !side ? icon + 60 : 0);
+  const rows = wEditing ? mr : Math.max(1, usedRows(list.map(([, , p]) => p)));
+  const q = mobile ? null : quadro(spaceW, spaceH, mc, rows);
+  let k = q?.k ?? 1, cc = 0;
+  if (!q) { // estreito demais: compacta em menos colunas (2 no celular), na ordem de leitura
+    cc = mobile ? 2 : clamp(Math.floor((spaceW + Q.gapX) / (175 + Q.gapX)), 1, mc);
+    k = Math.min(260 / Q.w, spaceW / (cc * Q.w + (cc - 1) * Q.gapX));
+  }
+  box.innerHTML = areaHTML(real, list, { k, compactCols: cc });
+  // cabe na altura que sobra (com uma fileira de apps embaixo, quando divide a tela)? false = transbordou
+  return !!cc || side || (rows * (Q.h + Q.label) + (rows - 1) * Q.gapY) * k <= spaceH + 1;
+}
+// Quantos apps cabem nesta tela. Medida fixa: colunas × linhas (os ícones encolhem até ~44 px; abaixo
+// disso, menos colunas). Automática: o que couber na largura e na altura, como antes.
+function appsPer(pg, box, am, withWidgets) {
+  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
+  const baseW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-w')) || 116;
+  const width = box.clientWidth || innerWidth - 32;
+  if (Array.isArray(am)) {
+    const [c, r] = am, w = Math.floor(width / c);
+    if (w < baseW) { // ícones menores para caber as colunas pedidas
+      const aw = Math.max(64, w);
+      box.style.setProperty('--app-w', `${aw}px`);
+      box.style.setProperty('--app-icon', `${Math.max(44, Math.min(icon, Math.round(aw * 0.68)))}px`);
+      if (w >= 64) box.style.gridTemplateColumns = `repeat(${c}, var(--app-w))`;
+    } else box.style.gridTemplateColumns = `repeat(${c}, var(--app-w))`;
+    return c * r;
+  }
+  const cols = Math.max(1, Math.floor(Math.min(width, baseW * 8) / baseW));
+  const rows = Math.floor(freeHeight(box) / (icon + 60));
+  return Math.max(1, cols * Math.max(withWidgets ? 1 : 2, rows)); // nunca 0 (senão as telas de continuação não acabam)
 }
 
 /* Pastas (E3) e páginas (E4) */
@@ -739,38 +958,23 @@ function statusDot(a) {
 }
 function appTileHTML(a, i, extra = '') {
   const url = appUrl(a);
-  return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn === 'tab' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="true" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
+  return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn === 'tab' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="false" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
     ${appIconHTML(a, 'app-icon', statusDot(a) + (a.update ? `<i class="app-upd" title="Atualização disponível: ${esc(a.update.available || '')}">${svg('arrowUp')}</i>` : ''))}<span class="app-name">${esc(a.name)}</span></a>`;
 }
 function itemHTML(it, i) {
   if (it.app) return appTileHTML(it.app, i);
   const down = it.apps.some((a) => a.health === 'down' && a.state !== 'stopped');
-  return `<button class="app folder" role="listitem" data-folder="${esc(it.folder.id)}" data-key="${esc(it.key)}" draggable="true" style="--i:${i}" title="${esc(it.name)} (${it.apps.length} apps)">
+  return `<button class="app folder" role="listitem" data-folder="${esc(it.folder.id)}" data-key="${esc(it.key)}" draggable="false" style="--i:${i}" title="${esc(it.name)} (${it.apps.length} apps)">
     <span class="app-icon folder-icon">${it.apps.slice(0, 9).map((a) => appIconHTML(a, 'fi-mini')).join('')}${down && set().showStatus ? '<i class="status-dot down" title="Algum app fora do ar"></i>' : ''}</span><span class="app-name">${esc(it.name)}</span></button>`;
-}
-function perPage(grid, appW) {
-  const cols = Math.max(1, Math.floor(Math.min(innerWidth - 32, appW * 8) / appW));
-  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
-  const rowH = icon + 60; // ícone + nome + espaçamentos
-  const desk = $('#desktop');
-  const top = grid.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
-  // com widgets em cima, aceita uma fileira só (o resto vai para a próxima página)
-  const rows = Math.max(widgetsOn(0).length ? 1 : 2, Math.floor((innerHeight - top - 150 - 26) / rowH)); // 150 = dock e pesquisa; 26 = pontinhos
-  return cols * rows;
-}
-// Quantos ícones cabem numa página que já tem a sua área de widgets desenhada
-function pagePer(pg, appW, hasArea) {
-  const cols = Math.max(1, Math.floor(Math.min(innerWidth - 32, appW * 8) / appW));
-  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
-  const desk = $('#desktop'), apps = $('.page-apps', pg);
-  const top = apps.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
-  const rows = Math.floor((innerHeight - top - 150 - 26) / (icon + 60));
-  return cols * Math.max(hasArea ? 0 : 2, rows);
 }
 function goPage(n) {
   const track = $('#app-grid .pages-track'); if (!track) return false;
-  const max = $$('.app-page', track).length - 1;
-  const to = clamp(n, 0, max);
+  const pages = $$('.app-page', track), to = clamp(n, 0, pages.length - 1);
+  if ($('#app-grid').classList.contains('stacked')) { // Páginas uma embaixo da outra: rola até ela
+    if (to === page) return false;
+    page = to; pages[to]?.scrollIntoView({ behavior: set().reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    return true;
+  }
   if (to === page && Math.abs(track.scrollLeft - to * track.clientWidth) < 4) return false;
   page = to;
   track.scrollTo({ left: to * track.clientWidth, behavior: set().reduceMotion ? 'auto' : 'smooth' });
@@ -906,41 +1110,94 @@ function folderMenu(id, x, y) {
     wheelAt = Date.now(); goPage(page + (e.deltaY > 0 ? 1 : -1));
   }, { passive: false });
 
-  // Arrastar: no meio de um ícone = juntar numa pasta; na borda = mudar de lugar.
-  // Perto da borda da tela, troca de página.
-  let dragKey = null, edgeTimer = 0;
-  const clear = () => $$('.drop-before,.drop-into', grid).forEach((x) => x.classList.remove('drop-before', 'drop-into'));
-  const zone = (e, el) => { const r = el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width; return fx > 0.25 && fx < 0.75 ? 'into' : 'before'; };
-  grid.addEventListener('dragstart', (e) => {
-    const el = e.target.closest('.app'); if (!el) return;
-    dragKey = el.dataset.key; el.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/x-brunos-app', dragKey);
-  });
-  grid.addEventListener('dragover', (e) => {
-    if (!dragKey) return;
-    e.preventDefault();
-    clear();
-    const el = e.target.closest('.app');
-    if (el && el.dataset.key !== dragKey) el.classList.add(zone(e, el) === 'into' && !dragKey.startsWith('folder:') ? 'drop-into' : 'drop-before');
-    if (grid.classList.contains('paged')) {
-      const r = grid.getBoundingClientRect(), edge = e.clientX < r.left + 40 ? -1 : e.clientX > r.right - 40 ? 1 : 0;
-      if (edge && !edgeTimer) edgeTimer = setTimeout(() => { edgeTimer = 0; goPage(page + edge); }, 650);
-      if (!edge) { clearTimeout(edgeTimer); edgeTimer = 0; }
+  /* Arrastar ícones (0.13.0): feito pelo BrunOS, como os widgets. Enquanto arrasta, os outros ícones
+     escorregam para abrir espaço (em fila); soltar no meio de outro app cria uma pasta (ou entra nela); na
+     beira da tela muda de Página. No celular, segurar o dedo entra no modo Organizar, e aí arrasta. */
+  let ad = null, aHold = 0, aSuppress = false;
+  const zone = (x, el) => { const r = el.getBoundingClientRect(), fx = (x - r.left) / r.width; return fx > 0.28 && fx < 0.72 ? 'into' : fx <= 0.28 ? 'before' : 'after'; };
+  grid.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const el = e.target.closest('.app[data-key]'); if (!el) return;
+    ad = { el, key: el.dataset.key, x0: e.clientX, y0: e.clientY, pid: e.pointerId };
+    if (e.pointerType !== 'mouse' && !wEditing) { // celular: segurar o dedo entra no modo Organizar
+      clearTimeout(aHold);
+      aHold = setTimeout(() => { aHold = 0; ad = null; navigator.vibrate?.(15); aSuppress = true; setWidgetEditing(true); }, 500);
+      ad.hold = true;
     }
   });
-  grid.addEventListener('drop', (e) => {
-    if (!dragKey) return;
-    e.preventDefault(); e.stopPropagation();
-    const el = e.target.closest('.app'), key = dragKey, pg = e.target.closest('.app-page');
-    dragKey = null; clear();
-    // soltar numa página (ou na continuação dela) coloca o app lá
-    if (pg && grid.classList.contains('paged')) placeItem(key, +pg.dataset.real);
-    if (el && el.dataset.key !== key && zone(e, el) === 'into' && dropInto(key, el.dataset.key)) return;
-    reorder(key, el && el.dataset.key !== key ? el.dataset.key : null);
-    compactPages(); save(); renderApps();
+  addEventListener('pointermove', (e) => {
+    if (!ad || e.pointerId !== ad.pid) return;
+    const d = Math.hypot(e.clientX - ad.x0, e.clientY - ad.y0);
+    if (ad.hold) { if (d > 10) { clearTimeout(aHold); ad = null; } return; }
+    if (!ad.on) { if (d < 6) return; aStart(e); }
+    aMove(e);
   });
-  grid.addEventListener('dragend', () => { dragKey = null; clearTimeout(edgeTimer); edgeTimer = 0; $$('.dragging', grid).forEach((x) => x.classList.remove('dragging')); clear(); });
+  const aEnd = (cancel) => {
+    clearTimeout(aHold);
+    setTimeout(() => { aSuppress = false; }, 60);
+    if (!ad) return;
+    const s = ad; ad = null;
+    if (s.on) aDrop(s, cancel);
+  };
+  addEventListener('pointerup', () => aEnd(false));
+  addEventListener('pointercancel', () => aEnd(true));
+  grid.addEventListener('click', (e) => { if (aSuppress) { aSuppress = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  grid.addEventListener('dragstart', (e) => { if (e.target.closest?.('.app')) e.preventDefault(); }); // sem o arrastar nativo
+  function aStart(e) {
+    const r = ad.el.getBoundingClientRect(), g = ad.el.cloneNode(true);
+    g.classList.add('app-ghost');
+    Object.assign(g.style, { width: `${r.width}px`, height: `${r.height}px` });
+    document.body.append(g);
+    Object.assign(ad, { on: true, ghost: g, gx: ad.x0 - r.left, gy: ad.y0 - r.top, snap: areaSnapshot() });
+    ad.el.classList.add('app-origin'); document.body.classList.add('w-dragging');
+    aSuppress = true;
+  }
+  // move o ícone no DOM e anima os vizinhos escorregando até o lugar novo
+  function flipMove(box, fn) {
+    const els = $$('.app', grid), first = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
+    fn();
+    if (reduced()) return;
+    for (const el of els) {
+      if (el === ad?.el) continue;
+      const a = first.get(el), b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+      if (Math.abs(dx) + Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+  }
+  function aMove(e) {
+    ad.ghost.style.transform = `translate(${e.clientX - ad.gx}px, ${e.clientY - ad.gy}px)`;
+    const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0; // beira da tela: muda de Página
+    if (edge && !ad.edgeT) ad.edgeT = setTimeout(() => { if (ad) ad.edgeT = 0; goPage(page + edge); }, 650);
+    if (!edge) { clearTimeout(ad.edgeT); ad.edgeT = 0; }
+    ad.ghost.style.display = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    ad.ghost.style.display = '';
+    $$('.drop-into', grid).forEach((x) => x.classList.remove('drop-into'));
+    ad.into = null;
+    const tgt = under?.closest('.app[data-key]'), box = under?.closest('.page-apps');
+    if (tgt && tgt !== ad.el && grid.contains(tgt)) {
+      const z = zone(e.clientX, tgt);
+      if (z === 'into' && !ad.key.startsWith('folder:')) { tgt.classList.add('drop-into'); ad.into = tgt.dataset.key; return; }
+      const parent = tgt.parentElement, ref = z === 'before' ? tgt : tgt.nextElementSibling;
+      if (ad.el.parentElement !== parent || ad.el.nextElementSibling !== ref) flipMove(parent, () => parent.insertBefore(ad.el, ref));
+    } else if (box && !tgt && ad.el.parentElement !== box && grid.contains(box)) { // espaço vazio de outra tela: vai para o fim dela
+      $('.page-new-hint', box)?.remove();
+      flipMove(box, () => box.append(ad.el));
+    }
+  }
+  function aDrop(s, cancel) {
+    clearTimeout(s.edgeT); s.ghost.remove(); s.el.classList.remove('app-origin'); document.body.classList.remove('w-dragging');
+    $$('.drop-into', grid).forEach((x) => x.classList.remove('drop-into'));
+    if (cancel) { renderApps(); return; }
+    if (s.into && dropInto(s.key, s.into)) return;
+    // a ordem nova é a da tela: a página onde ele ficou e quem vem logo depois dele
+    const pg = s.el.closest('.app-page');
+    if (pg) placeItem(s.key, +pg.dataset.real);
+    let next = s.el.nextElementSibling;
+    while (next && !next.dataset?.key) next = next.nextElementSibling;
+    reorder(s.key, next ? next.dataset.key : null);
+    compactPages(); save(); renderApps();
+    undoToast('App no lugar novo', s.snap);
+  }
   // setas do teclado trocam de página (fora de campos de texto, janelas e menus)
   document.addEventListener('keydown', (e) => {
     if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -1199,6 +1456,15 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'Ícones da tela inicial', ctrl: range('iconSize', 48, 88, 'px') },
     { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets e as integrações com os apps na janela Widgets', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
+    (() => {
+      const total = realPageCount(), p = Math.min(cfgPage, total - 1), c = pageCfg(p);
+      return { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Páginas da tela inicial', desc: 'Para cada página: a Disposição (onde ficam os widgets e os apps) e a Medida das Áreas (colunas × linhas). Também dá para mudar no modo Organizar',
+        ctrl: `<div class="pgcfg">${total > 1 ? `<div class="seg">${Array.from({ length: total }, (_, i) => `<button class="${i === p ? 'on' : ''}" data-pgcfg="${i}">Página ${i + 1}</button>`).join('')}</div>` : ''}
+          <div class="pgcfg-btns"><button class="pill-btn" data-pgpick="disp" data-pg="${p}">${dispSVG(c.disp)}${DISP_NAMES[c.disp]}</button>
+          <button class="pill-btn" data-pgpick="wm" data-pg="${p}">${svg('grid')}Widgets ${c.wm[0]} × ${c.wm[1]}</button>
+          <button class="pill-btn" data-pgpick="am" data-pg="${p}">${svg('apps')}Apps ${c.am === 'auto' ? 'automático' : `${c.am[0]} × ${c.am[1]}`}</button></div></div>` };
+    })(),
+    { group: 'Aparência', cat: 'look', icon: 'phone', title: 'No celular, widgets e apps em telas separadas', desc: 'Na tela pequena, os widgets de uma página ficam numa tela e os apps na seguinte (deslize para o lado). Desligado, ficam um embaixo do outro', ctrl: sw('mobileSplit', 'Widgets e apps em telas separadas no celular') },
     { group: 'Aparência', cat: 'look', icon: 'sparkles', title: 'Reduzir animações', desc: 'Desliga a ampliação do dock e as transições', ctrl: sw('reduceMotion') },
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelos ícones Runtipi e Loja de apps do dock. Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
@@ -1208,7 +1474,7 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando, vermelho fora do ar', ctrl: sw('showStatus') },
     { group: 'Apps', cat: 'apps', icon: 'bell', title: 'Avisar quando um app cair', desc: 'A cada minuto o BrunOS confere se cada app responde e avisa no sino se algum parar. Dá para desligar por app em Detalhes do app', ctrl: sw('appMonitor', 'Avisar quando um app cair') },
     { group: 'Apps', cat: 'apps', icon: 'arrowUp', title: 'Avisar atualização de apps', desc: (() => { const n = S.updates?.apps.length || 0; return `Avisa no sino quando um app tem versão nova na loja do Runtipi. ${n ? `Agora: ${n} ${n === 1 ? 'app com atualização' : 'apps com atualização'} (seta ↑ no ícone)` : 'Agora: tudo em dia'}`; })(), ctrl: sw('appUpdateNotify', 'Avisar atualização de apps') },
-    { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Páginas na tela inicial', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
+    { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Dividir em páginas', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
     { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'Nova aba ou na mesma aba', ctrl: `<div class="seg"><button class="${st.openIn === 'tab' ? 'on' : ''}" data-openin="tab">Nova aba</button><button class="${st.openIn === 'same' ? 'on' : ''}" data-openin="same">Mesma aba</button></div>` },
     { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? hidden.map((a) => a.name).join(', ') : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
     { group: 'Apps', cat: 'apps', icon: 'sort', title: 'Ordem dos apps', desc: 'Arraste os ícones na tela inicial para reordenar', ctrl: st.order.length ? `<button class="pill-btn" data-act="reset-order">Ordem alfabética</button>` : '' },
@@ -1241,7 +1507,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Restaurar aparência padrão', desc: 'Volta papel de parede, cores, widgets e ordem dos apps ao padrão (não mexe na conta)', ctrl: `<button class="pill-btn danger" data-act="reset">Restaurar</button>` },
   ];
 }
-let settingsBody = null;
+let settingsBody = null, cfgPage = 0; // cfgPage: a página escolhida em "Páginas da tela inicial"
 function refreshSettings() { if (settingsBody?.isConnected) drawSettingsRows(settingsBody); }
 function renderSettings(body) {
   settingsBody = body;
@@ -1330,6 +1596,8 @@ function wireSettings(body) {
     else if ((el = q('[data-accent]'))) { st.accentMode = el.dataset.accent; save(); applyBrand(); redraw(); }
     else if ((el = q('[data-hue]'))) { st.manualHue = +el.dataset.hue; save(); applyBrand(); redraw(); }
     else if ((el = q('[data-toggle]'))) { const k = el.dataset.toggle; st[k] = !st[k]; save(); applyPrefs(); redraw(); }
+    else if ((el = q('[data-pgcfg]'))) { cfgPage = +el.dataset.pgcfg; redraw(); }
+    else if ((el = q('[data-pgpick]'))) pagePicker(el.dataset.pgpick, +el.dataset.pg, el, redraw);
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
@@ -1957,100 +2225,190 @@ $('#search-pill').addEventListener('click', commandPalette);
 $('#desktop').addEventListener('click', (e) => {
   const rm = e.target.closest('[data-wremove]'); if (rm) { deleteWidget(rm.dataset.wremove); return; }
   const add = e.target.closest('[data-wadd]'); if (add) { openWidgets({ add: +add.dataset.wadd }); return; }
-  const wc = e.target.closest('[data-wcols]'); if (wc) { setAreaCols(+wc.dataset.wpage, wc.dataset.wcols === 'auto' ? 'auto' : +wc.dataset.wcols); return; }
+  const pb = e.target.closest('[data-pbar]'); if (pb) { pagePicker(pb.dataset.pbar, +pb.dataset.wpage, pb); return; }
+  const more = e.target.closest('[data-wmore]'); if (more) { const r = more.getBoundingClientRect(); widgetMenu(more.dataset.wmore, r.left, r.bottom + 4); return; }
   if (e.target.closest('[data-wresize]')) return;
   const fav = e.target.closest('[data-fav-root]');
   if (fav) { if (!wEditing) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath }); return; }
   const w = e.target.closest('.widget-wrap[data-wid] > .widget');
   if (w) { if (wEditing) openWidgets({ edit: w.parentElement.dataset.wid }); else widgetClick(w.parentElement.dataset.wid); }
 });
-// segurar o dedo num widget (celular) abre o mesmo menu do botão direito
-(() => {
-  let timer = 0;
-  $('#desktop').addEventListener('touchstart', (e) => {
-    const w = e.target.closest('.widget-wrap[data-wid]'); if (!w || wEditing) return;
-    const t = e.touches[0];
-    timer = setTimeout(() => { timer = 0; widgetMenu(w.dataset.wid, t.clientX, t.clientY); }, 550);
-  }, { passive: true });
-  const cancel = () => { clearTimeout(timer); timer = 0; };
-  $('#desktop').addEventListener('touchend', cancel);
-  $('#desktop').addEventListener('touchmove', cancel, { passive: true });
-})();
-// Arrastar widgets (sempre, como os ícones): muda a ordem e, soltando em outra página, a página.
+/* Arrastar widgets (0.13.0): feito pelo próprio BrunOS (pointer events, mouse e dedo iguais). O widget
+   levanta e segue o ponteiro; uma sombra mostra os Quadros onde ele vai cair (vermelha quando não dá); os
+   vizinhos abrem espaço com uma animação curta (dragPlan: troca de lugar ou o livre mais perto). Na beira
+   da tela muda de Página. No celular, segurar o dedo entra no modo Organizar, e aí arrasta. "Desfazer". */
+const reduced = () => set().reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+// a grade de uma Área na tela: tamanho de um Quadro + vão, já com o zoom
+function areaGeom(area) {
+  const r = area.getBoundingClientRect(), cols = +area.dataset.cols, rows = +area.dataset.rows;
+  const s = r.width / (cols * Q.w + (cols - 1) * Q.gapX); // px da tela por px do desenho
+  return { r, cols, rows, cw: (Q.w + Q.gapX) * s, ch: (Q.h + Q.label + Q.gapY) * s, compact: area.classList.contains('compact') };
+}
+// põe os widgets nos lugares do plano, com FLIP (escorregam de onde estavam até o lugar novo)
+function previewArea(area, rects, skip) {
+  const els = $$('.widget-wrap[data-wid]', area), k = parseFloat(area.style.zoom) || 1;
+  const first = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
+  const by = new Map(rects.map((o) => [o.id, o]));
+  for (const el of els) {
+    const o = by.get(el.dataset.wid); if (!o || el.dataset.wid === skip) continue;
+    el.style.gridColumn = `${o.x + 1} / span ${o.w}`; el.style.gridRow = `${o.y + 1} / span ${o.h}`;
+  }
+  if (reduced()) return;
+  for (const el of els) {
+    if (el.dataset.wid === skip) continue;
+    const a = first.get(el), b = el.getBoundingClientRect(), dx = (a.left - b.left) / k, dy = (a.top - b.top) / k;
+    if (Math.abs(dx) + Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+}
 (() => {
   const desk = $('#desktop');
-  let dragId = null, edgeTimer = 0;
-  const clear = () => $$('.w-drop-before,.w-drop-area', desk).forEach((x) => x.classList.remove('w-drop-before', 'w-drop-area'));
-  desk.addEventListener('dragstart', (e) => {
-    const w = e.target.closest?.('.widget-wrap[data-wid]'); if (!w) return;
-    if (e.target.closest?.('[data-wresize]')) { e.preventDefault(); return; }
-    dragId = w.dataset.wid; w.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/x-brunos-widget', dragId);
-  });
-  desk.addEventListener('dragover', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    clear();
-    const w = e.target.closest('.widget-wrap[data-wid]'), area = e.target.closest('[data-area]') || e.target.closest('.app-page');
-    if (w && w.dataset.wid !== dragId) w.classList.add('w-drop-before');
-    else if (area) area.classList.add('w-drop-area');
-    const grid = $('#app-grid');
-    if (grid.classList.contains('paged')) {
-      const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0;
-      if (edge && !edgeTimer) edgeTimer = setTimeout(() => { edgeTimer = 0; goPage(page + edge); }, 650);
-      if (!edge) { clearTimeout(edgeTimer); edgeTimer = 0; }
+  let st = null, holdTimer = 0, suppressClick = false;
+  const isTouch = (e) => e.pointerType === 'touch' || e.pointerType === 'pen';
+  desk.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    if (e.target.closest('[data-wresize],[data-wremove],[data-wmore],.w-add,input,textarea,select,[contenteditable="true"]')) return;
+    const wrap = e.target.closest('.widget-wrap[data-wid]'); if (!wrap) return;
+    const p = { id: wrap.dataset.wid, wrap, x0: e.clientX, y0: e.clientY, pid: e.pointerId };
+    if (isTouch(e) && !wEditing) { // celular: segurar o dedo entra no modo Organizar
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => { holdTimer = 0; navigator.vibrate?.(15); suppressClick = true; st = null; setWidgetEditing(true); }, 500);
+      st = { ...p, hold: true };
+      return;
     }
+    if (wrap.dataset.drag) st = p;
   });
-  desk.addEventListener('drop', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    const id = dragId, w = e.target.closest('.widget-wrap[data-wid]'), area = e.target.closest('[data-area]'), pg = e.target.closest('.app-page');
-    dragId = null; clear();
-    // alvo: a Área onde soltou, ou a página (inclusive uma página só de apps ou a página nova)
-    const to = area ? +area.dataset.area : pg ? +pg.dataset.real : null;
-    if (to == null) { renderApps(); return; }
-    fixLoosePlaces();
-    putWidget(id, W2().items[id], to, w && w.dataset.wid !== id ? w.dataset.wid : null);
+  addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.pid) return;
+    const dist = Math.hypot(e.clientX - st.x0, e.clientY - st.y0);
+    if (st.hold) { if (dist > 10) { clearTimeout(holdTimer); st = null; } return; }
+    if (!st.on) { if (dist < 6) return; start(e); if (!st) return; }
+    move(e);
+  });
+  const finish = (e, cancel = false) => {
+    clearTimeout(holdTimer);
+    setTimeout(() => { suppressClick = false; }, 60);
+    if (!st) return;
+    const s = st; st = null;
+    if (s.on) drop(s, cancel);
+  };
+  addEventListener('pointerup', (e) => finish(e));
+  addEventListener('pointercancel', (e) => finish(e, true));
+  desk.addEventListener('click', (e) => { if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && st?.on) { const s = st; st = null; drop(s, true); } });
+
+  function start(e) {
+    const { wrap } = st, area = wrap.closest('[data-area]'); if (!area) { st = null; return; }
+    const r = wrap.getBoundingClientRect(), z = parseFloat(area.style.zoom) || 1;
+    Object.assign(st, { on: true, area, page: +area.dataset.area, it: widgetById(st.id), gx: st.x0 - r.left, gy: st.y0 - r.top, orig: rectsOn(+area.dataset.area), snap: areaSnapshot() });
+    // o "fantasma" que segue o ponteiro, por cima de tudo (fora da página, que pode deslizar)
+    const g = wrap.cloneNode(true);
+    g.classList.add('w-ghost'); g.removeAttribute('data-wid');
+    Object.assign(g.style, { width: `${r.width / z}px`, height: `${r.height / z}px`, zoom: String(z), gridColumn: '', gridRow: '' });
+    document.body.append(g); st.ghost = g;
+    wrap.classList.add('w-origin');
+    document.body.classList.add('w-dragging');
+    suppressClick = true;
+  }
+  function move(e) {
+    const z = parseFloat(st.area.style.zoom) || 1;
+    st.ghost.style.transform = `translate(${(e.clientX - st.gx) / z}px, ${(e.clientY - st.gy) / z}px)`;
+    const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0; // beira da tela: muda de Página
+    if (edge && !st.edgeT) st.edgeT = setTimeout(() => { if (st) st.edgeT = 0; goPage(page + edge); }, 650);
+    if (!edge) { clearTimeout(st.edgeT); st.edgeT = 0; }
+    st.ghost.style.display = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    st.ghost.style.display = '';
+    const area = under?.closest('[data-area]'), pg = under?.closest('.app-page');
+    clearMarks();
+    if (area) aim(area, e, under);
+    else {
+      $$('.w-shadow').forEach((x) => x.remove());
+      st.tgt = pg ? { page: +pg.dataset.real, free: true } : null;
+      pg?.classList.add('w-drop-page');
+      if (st.area.isConnected) previewArea(st.area, st.orig, st.id);
+    }
+  }
+  function aim(area, e, under) {
+    const g = areaGeom(area), page = +area.dataset.area, it = st.it;
+    if (g.compact) { // tela estreita: soltar em cima de outro widget troca os dois de lugar (no que está guardado)
+      const over = under?.closest('.widget-wrap[data-wid]');
+      const [mc, mr] = pageCfg(page).wm, list = rectsOn(page);
+      const t = over && over.dataset.wid !== st.id && page === st.page ? list.find((o) => o.id === over.dataset.wid) : null;
+      const plan = t ? dragPlan(list, mc, mr, st.id, t.x, t.y, Math.min(it.w, mc), Math.min(it.h, mr)) : null;
+      st.tgt = { page, plan };
+      if (over && plan) over.classList.add('w-swap');
+      return;
+    }
+    const w = Math.min(it.w, g.cols), h = Math.min(it.h, g.rows);
+    // o canto de cima à esquerda do fantasma decide o Quadro (o mais perto)
+    const x = clamp(Math.round((e.clientX - st.gx - g.r.left) / g.cw), 0, Math.max(0, g.cols - w));
+    const y = clamp(Math.round((e.clientY - st.gy - g.r.top) / g.ch), 0, Math.max(0, g.rows - h));
+    let plan;
+    if (page === st.page) plan = dragPlan(st.orig, g.cols, g.rows, st.id, x, y, w, h);
+    else { const list = rectsOn(page); plan = fits(list, g.cols, g.rows, x, y, w, h) ? [...list, { id: st.id, x, y, w, h }] : null; }
+    st.tgt = { page, plan };
+    let s = $('.w-shadow', area);
+    if (!s) { s = html('<div class="w-shadow"></div>'); area.append(s); }
+    s.classList.toggle('bad', !plan);
+    s.style.gridColumn = `${x + 1} / span ${w}`; s.style.gridRow = `${y + 1} / span ${h}`;
+    if (page === st.page) previewArea(area, plan || st.orig, st.id);
+    else if (st.area.isConnected) previewArea(st.area, st.orig, st.id);
+  }
+  function clearMarks() { $$('.w-drop-page,.w-swap').forEach((x) => x.classList.remove('w-drop-page', 'w-swap')); }
+  function drop(s, cancel) {
+    clearTimeout(s.edgeT);
+    $$('.w-shadow').forEach((x) => x.remove()); $$('.w-drop-page,.w-swap').forEach((x) => x.classList.remove('w-drop-page', 'w-swap'));
+    s.ghost?.remove(); s.wrap.classList.remove('w-origin'); document.body.classList.remove('w-dragging');
+    const t = s.tgt;
+    if (cancel || !t || (!t.plan && !t.free)) { renderApps(); return; } // sombra vermelha: nada muda
+    if (t.plan) {
+      if (t.page !== s.page) { fixLoosePlaces(); removeFromAreas(s.id); }
+      applyArea(t.page, t.plan);
+    } else { fixLoosePlaces(); putWidget(s.id, W2().items[s.id], t.page); }
     compactPages(); save(); renderApps();
-  });
-  desk.addEventListener('dragend', () => { dragId = null; clearTimeout(edgeTimer); edgeTimer = 0; clear(); $$('.widget-wrap.dragging', desk).forEach((x) => x.classList.remove('dragging')); });
+    undoToast('Widget no lugar novo', s.snap);
+  }
 })();
-// Alça de tamanho (modo Organizar): arrastar o canto pula entre os 5 Tamanhos, conforme os quadros
+// Alça do canto (modo Organizar): muda o Tamanho de Quadro em Quadro; os vizinhos abrem espaço como no
+// arrastar; vermelho quando não cabe. Limitada ao mínimo do Formato e à Medida.
 (() => {
   const desk = $('#desktop');
   let rs = null;
   desk.addEventListener('pointerdown', (e) => {
-    const h = e.target.closest('[data-wresize]'); if (!h) return;
+    const hdl = e.target.closest('[data-wresize]'); if (!hdl) return;
     e.preventDefault(); e.stopPropagation();
-    const wrap = h.closest('.widget-wrap'), area = wrap.closest('[data-area]'), cs = getComputedStyle(area), r = wrap.getBoundingClientRect();
-    const tracks = cs.gridTemplateColumns.split(' ').filter(Boolean);
-    rs = { id: h.dataset.wresize, wrap, x: e.clientX, y: e.clientY, w: r.width, h: r.height, cols: tracks.length,
-      colW: parseFloat(tracks[0]) || 240, gapX: parseFloat(cs.columnGap) || 0, rowH: parseFloat(cs.gridAutoRows) || 174, gapY: parseFloat(cs.rowGap) || 0,
-      size: widgetById(h.dataset.wresize)?.size };
-    wrap.draggable = false; wrap.classList.add('resizing');
-    h.setPointerCapture(e.pointerId);
+    const wrap = hdl.closest('.widget-wrap'), area = wrap.closest('[data-area]');
+    if (!area || area.classList.contains('compact')) return;
+    const page = +area.dataset.area, id = hdl.dataset.wresize, list = rectsOn(page), me = list.find((o) => o.id === id);
+    if (!me) return;
+    rs = { id, page, area, wrap, me, list, g: areaGeom(area), x0: e.clientX, y0: e.clientY, min: minSize(widgetById(id)), snap: areaSnapshot(), plan: null };
+    wrap.classList.add('resizing');
+    try { hdl.setPointerCapture(e.pointerId); } catch { /* ok */ }
   });
-  desk.addEventListener('pointermove', (e) => {
+  addEventListener('pointermove', (e) => {
     if (!rs) return;
-    const c = clamp(Math.round((rs.w + e.clientX - rs.x + rs.gapX) / (rs.colW + rs.gapX)), 1, Math.max(1, rs.cols));
-    const r = clamp(Math.round((rs.h + e.clientY - rs.y + rs.gapY) / (rs.rowH + rs.gapY)), 1, 2);
-    const size = sizeFor(c, r);
-    if (size === rs.size) return;
-    rs.size = size;
-    rs.wrap.style.gridColumn = ''; rs.wrap.style.gridRow = '';
-    rs.wrap.style.cssText += spanStyle(size, rs.cols);
-    rs.wrap.className = rs.wrap.className.replace(/wsz-\w/, `wsz-${size}`);
+    const { g, me } = rs;
+    const w = clamp(me.w + Math.round((e.clientX - rs.x0) / g.cw), rs.min[0], g.cols - me.x);
+    const h = clamp(me.h + Math.round((e.clientY - rs.y0) / g.ch), rs.min[1], g.rows - me.y);
+    if (rs.last === `${w}x${h}`) return;
+    rs.last = `${w}x${h}`;
+    rs.plan = dragPlan(rs.list, g.cols, g.rows, rs.id, me.x, me.y, w, h);
+    rs.wrap.classList.toggle('bad', !rs.plan);
+    rs.wrap.dataset.sizeLabel = sizeLabel(w, h);
+    rs.wrap.style.gridColumn = `${me.x + 1} / span ${w}`; rs.wrap.style.gridRow = `${me.y + 1} / span ${h}`;
+    previewArea(rs.area, rs.plan || rs.list, rs.id);
   });
-  const end = () => {
+  const end = (cancel) => {
     if (!rs) return;
-    const { id, size } = rs;
-    rs = null;
-    if (W2().items[id] && size && W2().items[id].size !== size) { W2().items[id].size = size; save(); }
+    const s = rs; rs = null;
+    s.wrap.classList.remove('resizing', 'bad');
+    const changed = s.plan && s.last !== `${s.me.w}x${s.me.h}`;
+    if (!cancel && changed) { applyArea(s.page, s.plan); save(); }
     renderApps();
+    if (!cancel && changed) undoToast(`Tamanho: ${s.wrap.dataset.sizeLabel}`, s.snap);
   };
-  desk.addEventListener('pointerup', end);
-  desk.addEventListener('pointercancel', end);
+  addEventListener('pointerup', () => end(false));
+  addEventListener('pointercancel', () => end(true));
 })();
 $('#desktop').addEventListener('contextmenu', (e) => {
   const w = e.target.closest('.widget-wrap[data-wid]');

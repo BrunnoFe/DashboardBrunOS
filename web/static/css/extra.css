@@ -424,8 +424,8 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
   .s-row { flex-wrap: nowrap; gap: 12px; padding: 12px 14px; }
   .s-text { flex: 1 1 0; min-width: 0; }
   .s-ctrl { flex: none; margin-left: 0; }
-  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, input[type=range])) { flex-wrap: wrap; }
-  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, input[type=range])) > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
+  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, .pgcfg, input[type=range])) { flex-wrap: wrap; }
+  .s-row:has(> .s-ctrl :is(.seg, .text-input, .swatches, .wp-thumbs, .chips, .pgcfg, input[type=range])) > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
   .s-ctrl :is(.swatches, .wp-thumbs, .chips) { justify-content: flex-start; flex-wrap: wrap; }
   .s-row.pw-unsupported { flex-wrap: wrap; }
   .s-row.pw-unsupported > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
@@ -799,17 +799,96 @@ body.reduce-motion .pb-ico, body.reduce-motion .bell-btn.ring .svg { animation: 
    Área de widgets: grade de "quadros" (1 quadro = o widget antigo, 240 × 148).
    Tamanhos: Pequeno 1×1, Largo 2×1, Alto 1×2, Grande 2×2, Faixa (largura toda). */
 :root { --wu: 240px; --wh: 148px; --wgap: 28px; --wgap-y: 18px; --wlabel: 26px; }
-.widget-row, .widget-area {
+.widget-row {
   display: grid; grid-template-columns: repeat(var(--cols, 3), var(--wu)); grid-auto-rows: calc(var(--wh) + var(--wlabel));
   grid-auto-flow: row dense; gap: var(--wgap-y) var(--wgap); justify-content: center; flex-wrap: initial;
 }
-.widget-area { margin: clamp(10px, 2.5dvh, 28px) 0 clamp(14px, 3.5dvh, 36px); width: 100%; }
+/* 0.13.0: a Área é a grade da Medida, com cada widget no seu lugar (grid-column/grid-row). O desenho é
+   sempre o do Quadro de 240 × 148 (+ 26 do rótulo) e a Área inteira escala com zoom (calculado no JS). */
+.widget-area {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), 240px); grid-template-rows: repeat(var(--rows, 1), 174px);
+  gap: 18px 28px; justify-content: center; width: max-content; max-width: none;
+}
+.widget-area .w-add { height: 148px; align-self: start; }
+.w-slot { height: 148px; border-radius: var(--radius-widget); border: 2px dashed rgba(255,255,255,.16); pointer-events: none; }
+.widget-area .widget-wrap { z-index: 1; }
+/* Disposição de cada Página: onde ficam a Área de widgets e a de apps */
+.page-body { display: flex; flex-direction: column; align-items: center; gap: clamp(12px, 3dvh, 32px); width: 100%; }
+.page-widgets { flex: none; display: flex; justify-content: center; max-width: 100%; margin-top: clamp(10px, 2.5dvh, 28px); }
+.disp-atop .page-body { flex-direction: column-reverse; }
+.disp-wleft .page-body, .disp-wright .page-body { flex-direction: row; align-items: flex-start; justify-content: center; gap: clamp(16px, 3vw, 44px); }
+.disp-wright .page-body { flex-direction: row-reverse; }
+.disp-wleft .page-apps, .disp-wright .page-apps { flex: 1 1 0; min-width: 0; width: auto; max-width: calc(var(--app-w) * 8); margin-top: clamp(10px, 2.5dvh, 28px); }
+/* "Páginas" desligado: uma embaixo da outra, a tela rola */
+#app-grid.stacked .pages-track { flex-direction: column; overflow: visible; scroll-snap-type: none; gap: clamp(20px, 4dvh, 44px); }
+#app-grid.stacked .app-page { flex: none; }
+/* desenho das Disposições (barra do modo Organizar e o seletor) */
+.disp-ico { width: 30px; height: 19px; flex: none; }
+.disp-ico .df { fill: rgba(255,255,255,.06); stroke: rgba(255,255,255,.45); }
+.disp-ico .dw { fill: rgba(255,255,255,.85); }
+.disp-ico .da { fill: rgba(255,255,255,.75); }
+.w-area-bar button { display: inline-flex; align-items: center; gap: 6px; }
+.w-area-bar button .svg { width: 14px; height: 14px; }
+/* Arrastar (0.13.0): o fantasma segue o ponteiro; o lugar de origem fica esmaecido; a sombra mostra onde cai */
+.w-ghost { position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none; margin: 0; filter: drop-shadow(0 18px 30px rgba(0,0,0,.45)); }
+.w-ghost > .widget { transform: scale(1.04); transition: none; }
+.w-ghost .w-remove, .w-ghost .w-more, .w-ghost .w-resize { display: none; }
+.widget-wrap.w-origin { opacity: .28; animation: none !important; }
+.w-shadow { z-index: 0; height: calc(100% - 26px); border-radius: var(--radius-widget); background: rgba(255,255,255,.14); box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); pointer-events: none; transition: background .12s; }
+.w-shadow.bad { background: rgba(255,80,80,.16); box-shadow: inset 0 0 0 2px rgba(255,110,110,.85); }
+.widget-wrap.w-swap > .widget { outline: 2px solid #fff; outline-offset: 3px; }
+.app-page.w-drop-page .page-body { outline: 2px dashed rgba(255,255,255,.4); outline-offset: 8px; border-radius: 22px; }
+.app-ghost { position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none; margin: 0; filter: drop-shadow(0 14px 22px rgba(0,0,0,.4)); }
+.app-ghost .app-icon { transform: scale(1.08); }
+.app.app-origin { opacity: .25; }
+body.w-dragging, body.w-dragging * { cursor: grabbing !important; user-select: none; }
+body.w-editing .widget-wrap, body.w-editing .app { touch-action: none; }
+.widget-wrap.resizing.bad > .widget { outline: 2px solid rgba(255,110,110,.9); outline-offset: 3px; }
+.widget-wrap.resizing[data-size-label]::after { content: attr(data-size-label); position: absolute; right: 8px; bottom: 34px; z-index: 4; padding: 3px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; background: rgba(20,20,26,.85); box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+.w-more { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; background: rgba(40,40,46,.9); box-shadow: 0 2px 8px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.2); z-index: 3; }
+.w-more:hover { background: rgba(70,70,80,.95); }
+/* Seletores: balão, quadradinhos (Medida/Tamanho) e Disposições */
+.pop-pick { position: fixed; z-index: 80; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 200px; }
+.pp-title { font-size: 12.5px; font-weight: 700; opacity: .85; }
+.gpick { display: flex; flex-direction: column; gap: 8px; }
+.gp-cells { display: grid; grid-template-columns: repeat(var(--gc), 18px); gap: 4px; justify-content: start; }
+.gp-cell { width: 18px; height: 18px; border-radius: 5px; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); transition: background .08s; }
+.gp-cell.on { background: color-mix(in srgb, var(--brand) 55%, transparent); box-shadow: inset 0 0 0 1px var(--brand-lighter); }
+.gp-cell.hot { background: var(--brand); box-shadow: inset 0 0 0 1px #fff; }
+.gp-cell.under { opacity: .55; }
+.gp-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.gp-label { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 52px; }
+.gp-foot small { opacity: .5; flex: 1; }
+.dpick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.dp-opt { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 6px; border-radius: 12px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.dp-opt:hover { background: rgba(255,255,255,.09); }
+.dp-opt.on { background: color-mix(in srgb, var(--brand) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--brand-lighter); }
+.dp-opt .disp-ico { width: 44px; height: 28px; }
+.ctx .dp-opt { height: auto; width: auto; padding: 8px 6px; justify-content: center; text-align: center; } /* o balão usa .ctx: sem a altura fixa dos itens de menu */
+.ctx .dp-opt:hover { background: rgba(255,255,255,.09); }
+.ctx .dp-opt.on { background: color-mix(in srgb, var(--brand) 30%, transparent); }
+.ctx .dp-opt span { flex: none; }
+.ctx .gp-cell { width: 18px; height: 18px; padding: 0; }
+.ctx .gp-cell:hover { background: var(--brand); }
+.ctx .gp-foot .pill-btn { width: auto; height: 26px; }
+@media (max-width: 640px) { .ctx .gp-cell { width: 16px; height: 16px; } }
+@media (max-width: 640px) { .gp-cells { grid-template-columns: repeat(var(--gc), 16px); gap: 3px; } .gp-cell { width: 16px; height: 16px; } }
+/* Configurações → Páginas da tela inicial; editor do widget → Tamanho */
+.pgcfg { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.pgcfg-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.pgcfg-btns .pill-btn { gap: 6px; }
+.pgcfg-btns .disp-ico { width: 26px; height: 17px; }
+.wed-size { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
+.wed-size .gp-cells { grid-template-columns: repeat(var(--gc), 26px); gap: 5px; }
+.wed-size .gp-cell { width: 26px; height: 26px; border-radius: 7px; }
+@media (max-width: 640px) { .pgcfg { align-items: stretch; } .pgcfg-btns { justify-content: flex-start; } }
 .widget-row .widget-wrap, .widget-area .widget-wrap { min-width: 0; height: 100%; position: relative; }
 .widget-row .widget, .widget-area .widget { width: 100%; height: auto; flex: 1 1 0; min-height: 0; overflow: hidden; position: relative; }
 .widget-label { line-height: 16px; height: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .widget-label.is-hidden { visibility: hidden; }
 #app-grid.paged { width: 100%; }
-.app-page { display: flex; flex-direction: column; align-items: center; }
+.app-page { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-width: 0; } /* em cima: a conta de quantos apps cabem mede daqui; min-width 0: a grade de apps não alarga a tela */
+.page-body { min-width: 0; }
 .page-apps { display: grid; grid-template-columns: repeat(auto-fill, var(--app-w)); justify-content: center; align-content: start; gap: 14px 0; width: min(100%, calc(var(--app-w) * 8)); }
 /* aparência própria (quando o widget não segue o tema) */
 .widget.w-own { background: linear-gradient(180deg, rgba(255,255,255,calc(.16 * var(--w-alpha, .5) + .02)), rgba(255,255,255,calc(.05 * var(--w-alpha, .5)))), rgba(16,18,28,calc(.5 - .4 * var(--w-alpha, .5))); }

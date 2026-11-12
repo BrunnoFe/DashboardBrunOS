@@ -107,7 +107,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | J3 | Widgets de relógio, clima e bloco de notas | B | **feito (0.10.0)** | Clima = Tipo de integração (Open-Meteo, ícones próprios); Relógio e Notas = Formatos novos; notas em `/data/notes.json` com aviso pelo SSE. |
 | J4 | Configurações sem a aba "Tudo" | B | **feito (0.12.0)** | Abre na última aba; a pesquisa procura em todas. |
 | J5 | Terminal sempre no dock | B | **feito (0.12.0)** | Desmarcável em "Apps no dock". |
-| J6 | Tela inicial nova: Disposições, Medidas, posição e Tamanho livres, arrastar novo | A | a fazer (0.13.0) | Decisão 48; detalhes em `plano-etapa10.md`. Celular: Área compacta e Página com widgets e apps em duas telas. |
+| J6 | Tela inicial nova: Disposições, Medidas, posição e Tamanho livres, arrastar novo | A | **feito (0.13.0)** | Decisão 48; detalhes em `plano-etapa10.md`. Celular: Área compacta e Página com widgets e apps em duas telas. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
 ## K. Terminal
@@ -142,7 +142,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 10b+ | 0.12.1 | E7 (script que se atualiza sozinho) · E8 (backup antes de atualizar) · apt tolerante · acesso de diagnóstico — **feito (0.12.1)** |
 | 10b++ | 0.12.2 | andamento de atualizações compridas (script 8, primeira troca automática do script) — **feito (0.12.2)**; troca 7 → 8 conferida no servidor |
 | 10b+++ | 0.12.3 | liberação gradual do Ubuntu · "Conferir" por seção · lojas do Runtipi atualizadas antes de conferir (script 9) — **feito (0.12.3), aguardando teste no servidor** |
-| 10c | 0.13.0 | J6 — a fazer |
+| 10c | 0.13.0 | J6 (tela inicial nova) — **feito (0.13.0), aguardando teste no servidor** |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) · H5 (revisão de segurança) |
 
