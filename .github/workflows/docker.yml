@@ -99,7 +99,9 @@ jobs:
           fi
           umask 077
           d=$(mktemp -d)
-          printf '%s\n' "$CHAVE" >"$d/chave"
+          # o segredo pode ter vindo do Windows (CRLF, marca BOM): o ssh-keygen só lê a chave com LF puro
+          printf '%s\n' "$CHAVE" | tr -d '\r' | sed '1s/^\xEF\xBB\xBF//' >"$d/chave"
+          head -n 1 "$d/chave" | grep -q '^-----BEGIN OPENSSH PRIVATE KEY-----$' || { echo "::error::o segredo BRUNOS_SCRIPT_KEY não parece uma chave privada OpenSSH"; exit 1; }
           go run ./tools/hostscript >"$d/brunos-host"
           ssh-keygen -q -Y sign -f "$d/chave" -n brunos-host "$d/brunos-host"
           # confere com a chave pública que está dentro do próprio script antes de embutir
