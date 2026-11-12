@@ -134,6 +134,23 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   aviso `disk-smart-unsupported` (Key `smart-unsupported:<série>`) e nunca mais é lido sozinho. Rotas:
   `GET /api/smart` (com `running`), `POST /api/smart/refresh` e `POST /api/smart/retry {key}` (tenta o
   outro modo); as duas rodam em segundo plano e respondem 200/erro se terminarem em 1,5 s, senão 202.
+  **Script versão 6** (0.12.0): `atualizar-linux`, `atualizar-app <app>:<loja>` e `atualizacao-estado`
+  (`ActAllowed` no Go, `app_ok` no script). O script dispara `systemd-run --unit=brunos-atualizar --collect`
+  chamando a si mesmo com a ação interna `executar` (aceita só como root e com `INVOCATION_ID`, ou seja,
+  dentro do systemd; nunca pelo SSH), que grava `/var/log/brunos-atualizar.log` (`inicio <ts> ...`, saída,
+  `fim <código>`). `apt-get -y --with-new-pkgs upgrade` com `DEBIAN_FRONTEND=noninteractive`,
+  `--force-confdef/--force-confold` e `NEEDRESTART_MODE=l`; apps por `./runtipi-cli app update` na pasta
+  gravada em `/etc/brunos-host.conf` (`RUNTIPI=...`, linha incluída nos comandos quando o app recebe
+  `BRUNOS_RUNTIPI_HOST`, que o compose preenche com `BRUNOS_RUNTIPI_PATH`).
+- **`internal/updates`** (0.11.0, ampliado na 0.12.0): `/data/updates.json`
+  (`{v,apps,os,checkedAt,every,job:{kind,target,name,from,to,startedAt,running,lines,finishedAt,ok,err}}`).
+  `every` = `6h|12h|24h|168h|manual` (padrão 24h). `Start` manda o pedido e `follow` lê
+  `atualizacao-estado` a cada 3 s (registro de antes do pedido não conta); erro de leitura não encerra
+  (Docker/BrunOS reiniciando) até 3 h; retoma no `Run` depois de reiniciar. No fim: aviso no sino
+  (`update-done`) e confere de novo. Rotas: `GET /api/updates`, `POST /api/updates/check`,
+  `PUT /api/updates/config {every}`, `POST /api/updates/run {kind, urn}` (202; 409 com outra rodando).
+- **Rotinas da etapa 9**: `energy.Run`, `smart.Run` e `updates.Run` só passaram a ser ligadas no `main.go`
+  na 0.12.0 (antes, só rodavam ao pedir pela interface).
 - **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
   Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown,seen,off}]}`,
   100 quedas); na bateria grava a cada minuto (`seen`), e se o servidor apagar a queda fecha em `seen`

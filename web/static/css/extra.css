@@ -527,6 +527,8 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
 .pick-row input:focus-visible + .map-check { outline: 2px solid var(--brand-lighter); outline-offset: 2px; }
 .pick-row .map-check { width: 18px; height: 18px; border-radius: 5px; font-size: 12px; }
 .pick-row .mini { width: 22px; height: 22px; border-radius: 7px; }
+.mini > svg { width: 62%; height: 62%; color: #fff; }
+.pick-name small { opacity: .5; font-weight: 400; }
 .pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-foot { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 2px; border-top: 1px solid rgba(255,255,255,.07); font-size: 11.5px; font-weight: 600; }
 .pick-foot span { opacity: .5; }
@@ -645,6 +647,42 @@ body.no-glass .notif-panel, body.no-glass .bell-btn, body.no-glass .power-banner
 .np-text small { font-size: 12px; opacity: .6; line-height: 1.4; user-select: text; }
 .np-text time { font-size: 11px; opacity: .4; font-weight: 600; margin-top: 2px; }
 .np-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 34px 24px 40px; text-align: center; font-size: 13px; opacity: .55; line-height: 1.45; }
+
+/* ── Botão de atualizações (ao lado do sino) e o painel dele (0.12.0) ── */
+.upd-btn { right: 58px; }
+body.has-dialog .upd-panel { z-index: 40; } /* a confirmação (diálogo, camada 45) fica por cima do painel */
+.upd-btn.sec .bell-badge { background: #f59e0b; color: #2b1d00; }
+.upd-btn.busy::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--brand-lightest); animation: spin .9s linear infinite; }
+body.reduce-motion .upd-btn.busy::after { animation-duration: 3s; }
+.upd-panel .np-head small.upd-when { font-size: 11px; opacity: .45; font-weight: 600; }
+.upd-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px 6px; display: flex; flex-direction: column; gap: 2px; }
+.upd-body > * { flex: none; } /* as linhas não encolhem: a lista rola */
+.upd-sec-title { display: flex; align-items: center; gap: 6px; padding: 10px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
+.upd-sec-title span { font-variant-numeric: tabular-nums; }
+.upd-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 8px; border-radius: 13px; }
+.upd-row:hover { background: rgba(255,255,255,.04); }
+.upd-app { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; }
+.upd-app .mini { width: 30px; height: 30px; border-radius: 9px; }
+.upd-app .mini.sys > svg { width: 60%; height: 60%; }
+.upd-txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.upd-txt b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upd-txt small { font-size: 11.5px; opacity: .6; line-height: 1.35; }
+.upd-sec { color: #fcd34d; opacity: 1; }
+.upd-row .pill-btn[disabled] { opacity: .35; cursor: default; }
+.upd-checking { display: flex; align-items: center; gap: 9px; margin: 2px 2px 4px; padding: 9px 12px; border-radius: 12px; font-size: 12px; background: rgba(255,255,255,.05); }
+.upd-spin { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); border-top-color: var(--brand-lightest); animation: spin .8s linear infinite; }
+.upd-job { margin: 2px 2px 6px; padding: 11px 12px; border-radius: 14px; background: rgba(255,255,255,.06); display: flex; flex-direction: column; gap: 7px; }
+.upd-job.ok { background: rgba(95,211,138,.12); }
+.upd-job.bad { background: rgba(255,90,90,.12); }
+.upd-job-head { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.upd-job-head > .svg { width: 16px; height: 16px; flex: none; }
+.upd-job.ok .upd-job-head > .svg { color: #8ff0b1; }
+.upd-job.bad .upd-job-head > .svg { color: #ffb3b3; }
+.upd-job-head .np-btn { margin-left: auto; padding: 0 6px; }
+.upd-job small { font-size: 11.5px; opacity: .6; line-height: 1.4; }
+.upd-log { margin: 0; padding: 8px 10px; border-radius: 9px; background: rgba(0,0,0,.28); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; opacity: .8; max-height: 92px; overflow: hidden; }
+.upd-foot { display: flex; align-items: center; gap: 6px; padding: 8px 12px 12px 18px; font-size: 11.5px; border-top: 1px solid rgba(255,255,255,.05); }
+.upd-foot span { flex: 1; opacity: .5; }
 .np-empty > .svg { font-size: 30px; opacity: .6; }
 .np-empty small { font-size: 12px; opacity: .8; }
 
@@ -1258,6 +1296,8 @@ i.wn-box { font-style: normal; }
 .smart-badge.warn { background: rgba(255,190,70,.18); color: #ffd27a; }
 .smart-badge.bad { background: rgba(255,90,90,.2); color: #ffb3b3; }
 .smart-row .pill-btn { flex: none; }
+/* Configurações: pesquisando, a busca vale para todas as abas (nenhuma fica marcada) */
+.tabs.searching button.on { background: none; box-shadow: none; opacity: .65; }
 .smart-card .kv.bad span:last-child { color: #ffb3b3; font-weight: 700; }
 .app-upd { position: absolute; left: -4px; top: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: #fff; background: var(--brand); box-shadow: 0 2px 6px rgba(0,0,0,.35), 0 0 0 2px rgba(255,255,255,.85); z-index: 2; }
 .app-upd .svg { stroke-width: 2.6; }

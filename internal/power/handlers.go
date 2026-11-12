@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -117,9 +118,24 @@ func UpdateCommands(user, authorizedLine string) string {
 	return strings.Join(keyAndSudoers(user, authorizedLine), "\n")
 }
 
+// RuntipiHost é a pasta do Runtipi no servidor (BRUNOS_RUNTIPI_HOST, o mesmo caminho do formulário do
+// app). Entra em /etc/brunos-host.conf para o script achar o runtipi-cli (atualizar apps, script 6).
+var RuntipiHost string
+
+var hostPathRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]{1,200}$`)
+
+// runtipiConf é a linha que grava a pasta do Runtipi para o script (vazia se o caminho não serve).
+func runtipiConf() []string {
+	p := strings.TrimRight(strings.TrimSpace(RuntipiHost), "/")
+	if !hostPathRe.MatchString(p) || strings.Contains(p, "..") {
+		return nil
+	}
+	return []string{"echo 'RUNTIPI=" + p + "' | sudo tee /etc/brunos-host.conf >/dev/null"}
+}
+
 func keyAndSudoers(user, authorizedLine string) []string {
 	home := "/home/" + user
-	return []string{
+	return append([]string{
 		// o script vai num heredoc com aspas ('EOF'): nada dentro dele é interpretado ao colar
 		"sudo tee " + hostcmd.ScriptPath + " >/dev/null <<'EOF'\n" + strings.TrimRight(hostcmd.HostScript, "\n") + "\nEOF",
 		"sudo chown root:root " + hostcmd.ScriptPath,
@@ -130,7 +146,7 @@ func keyAndSudoers(user, authorizedLine string) []string {
 		"echo '" + user + " ALL=(root) NOPASSWD: " + hostcmd.ScriptPath + "' | sudo tee /etc/sudoers.d/" + user + " >/dev/null",
 		"sudo chmod 440 /etc/sudoers.d/" + user,
 		"sudo visudo -c",
-	}
+	}, runtipiConf()...)
 }
 
 func (m *Monitor) hSetup(w http.ResponseWriter, r *http.Request) {

@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "brunos",
-      "image": "ghcr.io/brunnofe/brunos:0.11.2",
+      "image": "ghcr.io/brunnofe/brunos:0.12.0",
       "isMain": true,
       "internalPort": 8080,
       "user": "${BRUNOS_PUID}:${BRUNOS_PGID}",
@@ -13,6 +13,7 @@
         "DOCKER_HOST": "tcp://brunos-docker-proxy:2375",
         "BRUNOS_DOCKER_ACTIONS": "${BRUNOS_DOCKER_ACTIONS}",
         "BRUNOS_TERMINAL": "${BRUNOS_TERMINAL}",
+        "BRUNOS_RUNTIPI_HOST": "${BRUNOS_RUNTIPI_PATH}",
         "BRUNOS_MAX_UPLOAD_GB": "50"
       },
       "volumes": [

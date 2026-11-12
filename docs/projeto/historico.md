@@ -275,6 +275,25 @@ automáticas a cada 20 min). Com `-d sat` o mesmo disco respondeu em 2,5 s.
 - Celular: o selo do SMART quebra a linha em vez de ser cortado na lista de discos.
 - Testes: `internal/smart` refeito (casos do servidor do Bruno com um script falso que trava), conferência
   do script com pedidos novos; apitest 191 ok. O smoke.sh fica para o CI (Docker Desktop desligado aqui).
+- No servidor (Bruno, 11/11): os quatro discos leem; o sdb (JMicron) passou a funcionar com `-d sat`;
+  o sda avisou 1 setor realocado (Atenção).
+
+## 0.12.0 (12/11/2026): botão de atualizações, Terminal no dock, Configurações sem "Tudo" (etapa 10b)
+- **Botão de atualizações ao lado do sino**: bolinha com apps + Linux (laranja com atualização de
+  segurança); um clique abre o painel e já confere (se a última tiver mais de 10 min); "Conferir agora".
+- **Atualizar pela interface** (decisão 47), script **versão 6**: Linux (`apt-get upgrade` sem perguntas)
+  e cada app (`runtipi-cli app update`), com confirmação, rodinha, últimas linhas do andamento e aviso no
+  sino no fim; roda solto no servidor (`systemd-run`) e o BrunOS retoma o acompanhamento se reiniciar.
+- **Frequência** em Configurações → Sistema → Procurar atualizações (6 h, 12 h, diária, semanal, manual).
+- **Terminal sempre no dock** (pontinho só com Abas abertas); dá para esconder em Apps no dock.
+- **Configurações sem "Tudo"**: abre na última aba usada; a pesquisa procura em todas as abas.
+- **Bug antigo corrigido**: as rotinas do consumo (amostra por minuto), do SMART (6 h / 20 min) e das
+  atualizações nunca eram ligadas desde a 0.11.0 (só rodavam ao clicar). Agora rodam sozinhas.
+- Pegadinha: `.up-row` já existia (lista de envios do Arquivos, `height: 32px`); as classes do painel
+  novo usam o prefixo `upd-`.
+- Testes: `internal/updates` (iniciar, acompanhar, erro, duas ao mesmo tempo, registro antigo),
+  conferência do script 6 (inclui "executar" recusado fora do systemd), linha do `/etc/brunos-host.conf`
+  com caminhos estranhos recusados; apitest 196 ok.
 
 ## Próximas
 Veja `roadmap.md`.

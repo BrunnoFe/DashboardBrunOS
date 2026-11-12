@@ -246,19 +246,30 @@ func TestHostScriptRefuses(t *testing.T) {
 		"smart", "smart sda", "smart sda xyz", "smart ../sda sat", "smart /dev/sda sat", "smart sda sat x",
 		"smart sda1 sat", "smart nvme0n1p1 auto", "smart sdabc sat", "smart SDA sat", "smart sd* sat",
 		"temperatura sda -d", "temperatura sda sat;reboot", "discos sda", "discos; reboot", "protecao on off",
-		"desligar agora já"} {
+		"desligar agora já",
+		"executar atualizar-linux", "executar atualizar-app immich:migrated", "atualizar-app", "atualizar-app immich",
+		"atualizar-app Immich:migrated", "atualizar-app a:b:c", "atualizar-app ../x:y", "atualizar-app -x:y",
+		"atualizar-app immich:migrated;reboot", "atualizar-app immich:migrated x", "atualizar-linux agora",
+		"atualizacao-estado x", "atualizar-app $(id):x"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
 	}
 	// pedidos válidos passam da conferência (como usuário comum vão para o sudo, que falha aqui)
-	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off"} {
+	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off",
+		"atualizar-linux", "atualizar-app immich:migrated", "atualizar-app nextcloud_mini:brunnofe-store", "atualizacao-estado"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 5") {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 6") {
 		t.Fatalf("versao: %d %q", code, out)
+	}
+	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
+	c := exec.Command(sh, script, "executar", "atualizar-linux")
+	c.Env = []string{"INVOCATION_ID=abc"}
+	if out, _ := c.CombinedOutput(); c.ProcessState.ExitCode() != 2 {
+		t.Fatalf("executar sem ser root: %d %s", c.ProcessState.ExitCode(), out)
 	}
 	if strings.Contains(HostScript, "\t") {
 		t.Fatal("o script não pode ter tabs (colado no terminal, vira autocompletar)")
@@ -278,5 +289,15 @@ func TestReadAllowed(t *testing.T) {
 	}
 	if DiskCmd(CmdSmart, "sdb", ModeSAT) != "smart sdb sat" {
 		t.Fatal(DiskCmd(CmdSmart, "sdb", ModeSAT))
+	}
+	for cmd, want := range map[string]bool{
+		"atualizar-linux": true, "atualizacao-estado": true, "atualizar-app immich:migrated": true,
+		"atualizar-app nextcloud_mini:brunnofe-store": true, "atualizar-app": false, "atualizar-app immich": false,
+		"atualizar-app Immich:x": false, "atualizar-app a:b:c": false, "atualizar-linux x": false, "executar atualizar-linux": false,
+		"desligar": false, "smart sda sat": false,
+	} {
+		if got := ActAllowed(cmd); got != want {
+			t.Errorf("ActAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
 	}
 }

@@ -3,6 +3,7 @@ import { paintBattery, batteryDialog } from './battery.js';
 import { SIZES, BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, spanStyle, sizeFor } from './widgets.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
+import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML, driveTempHelp, smartDialog } from './disks.js';
 import { internetDialog } from './internet.js';
@@ -500,8 +501,19 @@ async function refreshEnergy(force = false) {
 }
 async function refreshUpdates() {
   try { S.updates = await api.updates.get(); } catch { return; }
-  paintWidgets(); refreshSettings();
+  paintWidgets(); refreshSettings(); paintUpdates();
 }
+// botão de atualizações ao lado do sino (updates.js) conversa com o resto da interface por aqui
+initUpdates({
+  get: () => S.updates,
+  set: (s) => { S.updates = s; paintWidgets(); refreshSettings(); },
+  appIcon: (urn) => { const a = appById(urn); return a ? appIconHTML(a, 'mini') : `<span class="mini sys">${svg('box')}</span>`; },
+  openApp: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
+  osList: () => osUpdatesDialog(),
+  scriptDialog: () => import('./energy.js').then((m) => m.scriptDialog()),
+  openSettings: () => { setSettingsTab('system'); settingsQuery = ''; openSheet('settings', $('[data-sys="settings"]')); },
+  reloadApps: () => loadApps(),
+});
 setInterval(() => { if (!document.hidden && S.desktopReady && !document.body.classList.contains('is-locked')) refreshEnergy(); }, 60000);
 setInterval(() => { if (S.desktopReady && !document.body.classList.contains('is-locked')) refreshUpdates(); }, 3600e3);
 // widgets com métricas de internet: o servidor mede a cada minuto; aqui só busca o resultado
@@ -978,15 +990,18 @@ const SYS = {
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
   widgets: { label: 'Widgets', glyph: 'grid', tile: 'linear-gradient(160deg,#ffd36e 0%,#ff9f43 50%,#f0643c 100%)', run: (el) => openSheet('widgets', el) },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
-  // só aparece enquanto há Abas do Terminal abertas (minimizadas ou não), com o pontinho
+  // fica sempre (0.12.0; dá para esconder em Apps no dock); o pontinho aparece com Abas abertas
   terminal: { label: 'Terminal', glyph: 'terminal', tile: 'linear-gradient(160deg,#454c5e 0%,#191c24 100%)', run: () => openTerminal() },
 };
 const DOCK = { base: 50, zoom: 80, range: 150 };
 let dockMouseX = null, dockRaf = 0, tipFor = null;
+// Ícones do sistema que o Bruno escondeu do dock (hoje só o Terminal, que fica por padrão)
+const dockHidden = (k) => (set().dockHide || []).includes(k);
 function renderDock() {
   const box = $('.dock-items');
   const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0;
-  const sysHTML = Object.entries(SYS).filter(([k]) => k !== 'terminal' || (S.terminal !== false && tabs > 0)).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : it.label)}">
+  // Terminal sempre no dock (acesso rápido), a não ser que esteja desligado no compose ou escondido
+  const sysHTML = Object.entries(SYS).filter(([k]) => k !== 'terminal' || (S.terminal !== false && (!dockHidden('terminal') || tabs > 0))).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? (tabs ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : 'Terminal') : it.label)}">
     <button style="--tile:${it.tile}" aria-label="${esc(it.label)}">${it.icon ? `<img src="assets/icons/${it.icon}.webp" alt="">` : svg(it.glyph, 'glyph')}</button><span class="open-dot"></span></div>`).join('');
   const pins = set().dock.map(appById).filter(Boolean);
   const pinHTML = pins.map((a) => {
@@ -1048,7 +1063,10 @@ function positionTip() {
     appMenu(appById(item.dataset.app), e.clientX, e.clientY);
   });
 })();
-const markDockOpen = () => $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.sys === 'terminal' || (!!el.dataset.sys && el.dataset.sys === currentSheet)));
+const markDockOpen = () => {
+  const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0; // o pontinho do Terminal = há Abas abertas
+  $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.sys === 'terminal' ? tabs > 0 : !!el.dataset.sys && el.dataset.sys === currentSheet));
+};
 
 /* ── Sheets ────────────────────────────────────────────────────── */
 let currentSheet = null, sheetCleanup = null;
@@ -1107,7 +1125,11 @@ const filesCtx = {
 
 /* ── Configurações ─────────────────────────────────────────────── */
 const SWATCH_HUES = [209, 259, 330, 6, 24, 45, 145, 174];
-let settingsTab = 'all', settingsQuery = '';
+// Abas das Configurações (sem "Tudo"): abre na última usada neste aparelho; a pesquisa procura em todas
+const SETTINGS_TABS = [['look', 'Aparência'], ['apps', 'Apps'], ['account', 'Conta'], ['system', 'Sistema']];
+let settingsTab = (() => { try { const t = localStorage.getItem('brunos.settingsTab'); return SETTINGS_TABS.some(([k]) => k === t) ? t : 'look'; } catch { return 'look'; } })();
+let settingsQuery = '';
+const setSettingsTab = (t) => { settingsTab = t; try { localStorage.setItem('brunos.settingsTab', t); } catch { /* sem storage: só não lembra */ } };
 // Apps no dock: botão com prévia dos ícones que abre uma lista suspensa com caixas de seleção.
 function dockPickerBtn() {
   const pins = set().dock.map(appById).filter(Boolean);
@@ -1122,7 +1144,9 @@ function dockPicker(anchor, onChange) {
   const apps = allApps();
   const pop = html(`<div class="ctx pick-pop" role="listbox" aria-multiselectable="true">
     ${apps.length > 8 ? `<label class="search-field pick-search">${svg('search')}<input placeholder="Procurar app" aria-label="Procurar app"></label>` : ''}
-    <div class="pick-list">${apps.map((a) => `<label class="pick-row" data-name="${esc(a.name.toLowerCase())}">
+    <div class="pick-list">${S.terminal === false ? '' : `<label class="pick-row" data-name="terminal">
+      <input type="checkbox" value="sys:terminal" ${dockHidden('terminal') ? '' : 'checked'}><span class="map-check">${svg('check')}</span>
+      <span class="mini" style="--tile:${SYS.terminal.tile}">${svg('terminal', 'glyph')}</span><span class="pick-name">Terminal <small>(antes do divisor)</small></span></label>`}${apps.map((a) => `<label class="pick-row" data-name="${esc(a.name.toLowerCase())}">
       <input type="checkbox" value="${esc(a.id)}" ${set().dock.includes(a.id) ? 'checked' : ''}><span class="map-check">${svg('check')}</span>
       ${appIconHTML(a, 'mini')}<span class="pick-name">${esc(a.name)}</span></label>`).join('') || '<div class="empty-note">Nenhum app</div>'}</div>
     <div class="pick-foot"><button class="pick-clear" type="button">Limpar</button><span data-count></span></div></div>`);
@@ -1134,10 +1158,15 @@ function dockPicker(anchor, onChange) {
   count();
   pop.addEventListener('change', (e) => {
     const id = e.target.value, st = set();
+    if (id.startsWith('sys:')) { // ícones do sistema (Terminal): ficam por padrão, dá para esconder
+      const k = id.slice(4);
+      st.dockHide = e.target.checked ? (st.dockHide || []).filter((x) => x !== k) : [...new Set([...(st.dockHide || []), k])];
+      save(); renderDock(); return;
+    }
     st.dock = e.target.checked ? [...st.dock.filter((x) => x !== id), id] : st.dock.filter((x) => x !== id);
     save(); renderDock(); count(); onChange();
   });
-  $('.pick-clear', pop).onclick = () => { set().dock = []; $$('input[type="checkbox"]', pop).forEach((i) => { i.checked = false; }); save(); renderDock(); count(); onChange(); };
+  $('.pick-clear', pop).onclick = () => { set().dock = []; $$('input[type="checkbox"]:not([value^="sys:"])', pop).forEach((i) => { i.checked = false; }); save(); renderDock(); count(); onChange(); };
   const search = $('.pick-search input', pop);
   if (search) { search.oninput = () => { const v = search.value.trim().toLowerCase(); $$('.pick-row', pop).forEach((row) => { row.hidden = v && !row.dataset.name.includes(v); }); }; setTimeout(() => search.focus(), 30); }
   const close = () => { pop.remove(); pickClose = null; document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc_, true); };
@@ -1168,7 +1197,7 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
     { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando, vermelho fora do ar', ctrl: sw('showStatus') },
     { group: 'Apps', cat: 'apps', icon: 'bell', title: 'Avisar quando um app cair', desc: 'A cada minuto o BrunOS confere se cada app responde e avisa no sino se algum parar. Dá para desligar por app em Detalhes do app', ctrl: sw('appMonitor', 'Avisar quando um app cair') },
-    { group: 'Apps', cat: 'apps', icon: 'arrowUp', title: 'Avisar atualização de apps', desc: (() => { const n = S.updates?.apps.length || 0; return `Uma vez por dia o BrunOS compara cada app com a loja do Runtipi. ${n ? `Agora: ${n} ${n === 1 ? 'app com atualização' : 'apps com atualização'} (seta ↑ no ícone)` : 'Agora: tudo em dia'}`; })(), ctrl: `<button class="pill-btn" data-act="check-updates">${svg('refresh')}Conferir agora</button>${sw('appUpdateNotify', 'Avisar atualização de apps')}` },
+    { group: 'Apps', cat: 'apps', icon: 'arrowUp', title: 'Avisar atualização de apps', desc: (() => { const n = S.updates?.apps.length || 0; return `Avisa no sino quando um app tem versão nova na loja do Runtipi. ${n ? `Agora: ${n} ${n === 1 ? 'app com atualização' : 'apps com atualização'} (seta ↑ no ícone)` : 'Agora: tudo em dia'}`; })(), ctrl: sw('appUpdateNotify', 'Avisar atualização de apps') },
     { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Páginas na tela inicial', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
     { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'Nova aba ou na mesma aba', ctrl: `<div class="seg"><button class="${st.openIn === 'tab' ? 'on' : ''}" data-openin="tab">Nova aba</button><button class="${st.openIn === 'same' ? 'on' : ''}" data-openin="same">Mesma aba</button></div>` },
     { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? hidden.map((a) => a.name).join(', ') : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
@@ -1187,11 +1216,13 @@ function settingsRows() {
     ...(S.terminal === false ? [] : [{ group: 'Sistema', cat: 'system', icon: 'clock', title: 'Encerrar aba do Terminal sem ninguém olhando', desc: 'Aba minimizada ou janela fechada. Se algo ainda estiver rodando nela (ex.: apt), ela espera o comando terminar', ctrl: `<select class="text-input sm" data-select="termIdleMin" aria-label="Encerrar aba sem uso">${[[3, '3 minutos'], [5, '5 minutos'], [10, '10 minutos'], [15, '15 minutos'], [20, '20 minutos'], [30, '30 minutos'], [0, 'Nunca']].map(([v, l]) => `<option value="${v}" ${(st.termIdleMin ?? 15) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` }]),
     (() => {
       const o = S.updates?.os;
-      const desc = !o ? 'Conferido uma vez por dia pelo script do servidor' : o.err ? esc(o.err)
+      const desc = !o ? 'Conferido pelo script do servidor' : o.err ? esc(o.err)
         : `${o.total ? `${o.total} ${o.total === 1 ? 'atualização' : 'atualizações'}${o.security ? ` (${o.security} de segurança)` : ''}` : 'Tudo em dia'}${o.reboot ? ' · <b class="os-reboot">reinício necessário</b>' : ''}`;
       return { group: 'Sistema', cat: 'system', icon: 'refresh', title: 'Atualizações do Linux', desc,
-        ctrl: `${o?.total ? `<button class="pill-btn" data-act="os-list">Ver lista</button>` : ''}${S.terminal !== false ? `<button class="pill-btn" data-act="os-update">${svg('terminal')}Atualizar no Terminal</button>` : ''}${/script do servidor/.test(o?.err || '') ? `<button class="pill-btn" data-act="script">Mostrar comandos</button>` : ''}` };
+        ctrl: `${o?.total ? `<button class="pill-btn" data-act="os-list">Ver lista</button>` : ''}<button class="pill-btn" data-act="updates">${svg('arrowUp')}Atualizações</button>${/script do servidor/.test(o?.err || '') ? `<button class="pill-btn" data-act="script">Mostrar comandos</button>` : ''}` };
     })(),
+    { group: 'Sistema', cat: 'system', icon: 'clock', title: 'Procurar atualizações', desc: 'De quanto em quanto tempo o BrunOS confere se há versão nova dos apps e do Linux. O botão ao lado do sino confere na hora',
+      ctrl: `<select class="text-input sm" data-upd-every aria-label="Procurar atualizações">${[['6h', 'A cada 6 horas'], ['12h', 'A cada 12 horas'], ['24h', 'Uma vez por dia'], ['168h', 'Uma vez por semana'], ['manual', 'Só quando eu mandar']].map(([v, l]) => `<option value="${v}" ${(S.updates?.every || '24h') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
@@ -1229,7 +1260,7 @@ function renderSettings(body) {
       </div>
       <div class="s-right">
         <div class="s-toolbar">
-          <div class="tabs">${[['all', 'Tudo'], ['look', 'Aparência'], ['apps', 'Apps'], ['account', 'Conta'], ['system', 'Sistema']].map(([k, l]) => `<button data-tab="${k}" class="${settingsTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          <div class="tabs">${SETTINGS_TABS.map(([k, l]) => `<button data-tab="${k}" class="${settingsTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <label class="search-field">${svg('search')}<input data-s-search placeholder="Pesquisar" value="${esc(settingsQuery)}" aria-label="Pesquisar configurações"></label>
         </div>
         <div class="s-groups"></div>
@@ -1242,7 +1273,9 @@ function renderSettings(body) {
 }
 function drawSettingsRows(body) {
   const q = settingsQuery.trim().toLowerCase();
-  const rows = settingsRows().filter((r) => (settingsTab === 'all' || r.cat === settingsTab) && (!q || (r.title + ' ' + r.desc + ' ' + r.group).toLowerCase().includes(q)));
+  // com texto na pesquisa, procura em todas as abas (agrupado por categoria); sem texto, só a aba escolhida
+  const rows = settingsRows().filter((r) => (q ? (r.title + ' ' + r.desc + ' ' + r.group).toLowerCase().includes(q) : r.cat === settingsTab));
+  $('.s-toolbar .tabs', body)?.classList.toggle('searching', !!q);
   const groups = {};
   rows.forEach((r) => (groups[r.group] ||= []).push(r));
   $('.s-groups', body).innerHTML = rows.length ? Object.entries(groups).map(([g, rs]) => `<div class="s-group-title">${g}</div><div class="s-group">${rs.map((r) => `
@@ -1259,7 +1292,11 @@ function wireSettings(body) {
   body.onclick = async (e) => {
     const q = (sel) => e.target.closest(sel);
     let el;
-    if ((el = q('[data-tab]'))) { settingsTab = el.dataset.tab; $$('[data-tab]', body).forEach((b) => b.classList.toggle('on', b === el)); redraw(); }
+    if ((el = q('[data-tab]'))) {
+      setSettingsTab(el.dataset.tab); $$('[data-tab]', body).forEach((b) => b.classList.toggle('on', b === el));
+      const s = $('[data-s-search]', body); if (s && s.value) { s.value = ''; settingsQuery = ''; } // escolher uma aba sai da pesquisa
+      redraw();
+    }
     else if ((el = q('[data-wpmode]'))) {
       st.wallpaperMode = el.dataset.wpmode;
       if (st.wallpaperMode === 'schedule' && !(st.wallpaperSchedule || []).length) {
@@ -1299,8 +1336,7 @@ function wireSettings(body) {
       else if (a === 'open-runtipi') SYS.runtipi.run();
       else if (a === 'terminal') openTerminal();
       else if (a === 'lock-now') { closeSheet(); setTimeout(lockNow, 200); }
-      else if (a === 'check-updates') { el.disabled = true; try { S.updates = await api.updates.check(); await loadApps(); toast('Atualizações conferidas', S.updates.apps.length ? `${S.updates.apps.length} app(s) com atualização.` : 'Tudo em dia.'); } catch (err) { toastError(err); } redraw(); }
-      else if (a === 'os-update') { closeSheet(); openTerminal({ typeCmd: 'sudo apt update && sudo apt upgrade' }); }
+      else if (a === 'updates') { closeSheet(); setTimeout(showUpdates, 230); }
       else if (a === 'os-list') osUpdatesDialog();
       else if (a === 'backups') backupsDialog();
       else if (a === 'script') import('./energy.js').then((m) => m.scriptDialog());
@@ -1328,6 +1364,8 @@ function wireSettings(body) {
       t.style.setProperty('--p', ((t.value - t.min) / (t.max - t.min)) * 100 + '%');
       t.nextElementSibling.textContent = t.value + (t.dataset.unit || '');
       applyPrefs();
+    } else if (t.matches('[data-upd-every]')) { // guardado pelo servidor das atualizações (updates.json)
+      try { S.updates = await api.updates.setEvery(t.value); toast('Frequência salva', t.selectedOptions[0]?.textContent || ''); } catch (err) { toastError(err); }
     } else if (t.matches('[data-select]')) {
       set()[t.dataset.select] = +t.value; save(); // termIdleMin é lido pelo servidor (settings.json)
     } else if (t.matches('[data-hue-range]')) {
@@ -1365,25 +1403,12 @@ function osUpdatesDialog() {
   const d = openDialog(`<h2>${svg('refresh')}Atualizações do Linux</h2>
     <p class="dlg-text">${o.total} ${o.total === 1 ? 'pacote' : 'pacotes'} para atualizar${o.security ? `, ${o.security} de segurança` : ''}.${o.reboot ? ' <b>O servidor precisa reiniciar</b> para valer uma atualização já instalada.' : ''}</p>
     <pre class="pw-cmds os-pkgs">${esc((o.packages || []).join('\n') || '—')}</pre>
-    <p class="dlg-text"><small>O BrunOS não atualiza sozinho: o botão abre o Terminal com o comando digitado, e você confere e aperta Enter.</small></p>
+    <p class="dlg-text"><small>Para instalar, use "Atualizar" no botão de atualizações (ao lado do sino): o servidor atualiza sozinho e mostra o andamento. Se preferir acompanhar tudo, o Terminal abre com o comando já digitado.</small></p>
     <div class="dlg-actions"><button class="pill-btn" data-c="no">Fechar</button>${S.terminal !== false ? `<button class="pill-btn primary" data-c="term">${svg('terminal')}Atualizar no Terminal</button>` : ''}</div>`, { width: 520 });
   d.el.addEventListener('click', (e) => {
     const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
     d.close();
     if (c === 'term') { closeSheet(); openTerminal({ typeCmd: 'sudo apt update && sudo apt upgrade' }); }
-  });
-}
-// Apps com atualização (busca Ctrl+K)
-function appUpdatesDialog() {
-  const list = S.updates?.apps || [];
-  const d = openDialog(`<h2>${svg('arrowUp')}Apps com atualização</h2>
-    ${list.length ? `<div class="s-group">${list.map((u) => { const a = appById(u.urn); return `<button class="s-row clickable" data-upd="${esc(u.urn)}">${a ? appIconHTML(a, 'mini') : svg('box')}<span class="s-text"><b>${esc(u.name)}</b><small>${esc(u.installed || '?')} → ${esc(u.available || '?')}</small></span><span class="chev">${svg('chevR')}</span></button>`; }).join('')}</div>`
-    : '<p class="dlg-text">Tudo em dia.</p>'}
-    <div class="dlg-actions"><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 460 });
-  d.el.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-upd]');
-    if (b) { const a = appById(b.dataset.upd); d.close(); if (a) openAppDetails(a); return; }
-    if (e.target.closest('[data-c]')) d.close();
   });
 }
 function deviceDialog() {
@@ -1677,7 +1702,7 @@ function commandPalette() {
     { icon: 'terminal', label: 'Abrir o terminal (SSH)', hidden: S.terminal === false, run: () => openTerminal() },
     // Comandos salvos: digitam na Aba atual do Terminal (só com a janela aberta)
     ...(termMod?.paletteActions?.() || []),
-    { icon: 'arrowUp', label: `Apps com atualização${S.updates?.apps.length ? ` (${S.updates.apps.length})` : ''}`, run: () => appUpdatesDialog() },
+    { icon: 'arrowUp', label: `Atualizações${S.updates?.apps.length ? ` (${S.updates.apps.length} ${S.updates.apps.length === 1 ? 'app' : 'apps'})` : ''}`, run: () => showUpdates() },
     { icon: 'refresh', label: 'Atualizar o Linux no Terminal', hidden: S.terminal === false, run: () => openTerminal({ typeCmd: 'sudo apt update && sudo apt upgrade' }) },
     { icon: 'bolt', label: 'Consumo e custo do servidor', run: () => openPower() },
     { icon: 'lock', label: 'Bloquear a tela', run: () => lockNow() },
@@ -1913,6 +1938,7 @@ document.addEventListener('keydown', (e) => {
     if (menuOpen()) closeMenu();
     else if (notificationsOpen()) closePanel();
     else if (dialogs.length) dialogs[dialogs.length - 1]();
+    else if (updatesOpen()) closeUpdates();
     else if (currentSheet) closeSheet();
     else if (wEditing) setWidgetEditing(false);
   }
@@ -2022,7 +2048,7 @@ $('#desktop').addEventListener('contextmenu', (e) => {
   if (e.target.closest('.app, input, a')) return;
   e.preventDefault();
   contextMenu(e.clientX, e.clientY, [
-    { icon: 'image', label: 'Trocar papel de parede…', run: () => { settingsTab = 'look'; openSheet('settings', $('[data-sys="settings"]')); } },
+    { icon: 'image', label: 'Trocar papel de parede…', run: () => { setSettingsTab('look'); settingsQuery = ''; openSheet('settings', $('[data-sys="settings"]')); } },
     { icon: 'upload', label: 'Enviar papel de parede…', run: () => $('#wp-file').click() },
     { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },
     { icon: 'sort', label: wEditing ? 'Concluir organização dos widgets' : 'Organizar widgets', run: () => setWidgetEditing(!wEditing) },

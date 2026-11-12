@@ -73,8 +73,9 @@ internal/termkey/           Chave do Terminal: ED25519 cifrada com chave derivad
 internal/notes/             texto dos widgets de Notas (/data/notes.json) + aviso "nota mudou" pelo SSE
 internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa calibrada), kWh e R$ (/data/energy.json)
 internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
-internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux, 1×/dia (/data/updates.json)
-etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 5)
+internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux na frequência escolhida, e
+                            atualizar pela interface com andamento (/data/updates.json)
+etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 6)
 settings.go                 preferências (/data/settings.json): erro de leitura ≠ vazio, trava contra gravar o
                             padrão por cima (409), cópia diária em /data/settings-backup (14 dias) e restaurar
 internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
@@ -100,6 +101,7 @@ web/static/js/lockscreen.js Tela de bloqueio (com senha no servidor ou só visua
 web/static/js/notes.js      widget de Notas (texto livre ou lista de tarefas, salvo no servidor)
 web/static/js/energy.js     seção Consumo e custo da janela Energia e os comandos do script do servidor
 web/static/js/notifications.js  sino e painel de avisos
+web/static/js/updates.js    botão de atualizações ao lado do sino: painel, conferir, atualizar apps/Linux e andamento
 web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
 web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)
 web/static/js/editor.js     editor de texto (CodeMirror 6 de web/static/vendor/codemirror, sob demanda)

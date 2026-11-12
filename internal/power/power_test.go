@@ -323,8 +323,21 @@ func TestSetupVersion(t *testing.T) {
 	}
 	up := UpdateCommands("brunos-power", "x")
 	if !strings.Contains(up, "--check-inhibitors=no") || !strings.Contains(up, "<<'EOF'") || strings.Contains(up, "useradd") ||
-		!strings.Contains(up, "NOPASSWD: /usr/local/sbin/brunos-host'") || strings.Contains(up, "\t") {
-		t.Fatalf("comandos de atualização errados:\n%s", up)
+		!strings.Contains(up, "NOPASSWD: /usr/local/sbin/brunos-host'") || strings.Contains(up, "\t") || strings.Contains(up, "sudo tee /etc/brunos-host.conf") {
+		t.Fatalf("comandos de atualização errados (sem pasta do Runtipi, sem a linha do conf):\n%s", up)
+	}
+	// pasta do Runtipi conhecida: o script fica sabendo onde está o runtipi-cli; caminho estranho fica de fora
+	old := RuntipiHost
+	t.Cleanup(func() { RuntipiHost = old })
+	RuntipiHost = "/home/bruno/runtipi/"
+	if up := UpdateCommands("brunos-power", "x"); !strings.HasSuffix(up, "echo 'RUNTIPI=/home/bruno/runtipi' | sudo tee /etc/brunos-host.conf >/dev/null") {
+		t.Fatalf("linha do conf:\n%s", up)
+	}
+	for _, bad := range []string{"runtipi", "/home/x/../etc", "/home/a b", "/home/x'; rm -rf /", "/home/$(id)"} {
+		RuntipiHost = bad
+		if strings.Contains(UpdateCommands("brunos-power", "x"), "sudo tee /etc/brunos-host.conf") {
+			t.Fatalf("caminho %q deveria ficar de fora", bad)
+		}
 	}
 }
 

@@ -57,7 +57,7 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | E3 | Pastas na tela inicial | M | feito (0.7.0) | Preferência `folders: [{id,name,apps:[...]}]`; arrastar app sobre app cria pasta; janela da pasta estilo iOS/Umbrel. |
 | E4 | Páginas na tela inicial | M | feito (0.7.0) | Deslizar (toque/trackpad/setas); widgets na primeira página; preferência `pages`. |
 | E5 | Uso por app ao longo do tempo | M | feito (0.7.0) | Amostrar `usage` a cada 1 min em segundo plano (custo: stats one-shot de todos os containers; avaliar intervalo), guardar 24 h em memória/disco. |
-| E6 | Botão de atualizações ao lado do sino + frequência + atualizar pela interface | M–A | a fazer (0.12.0) | Clique abre o painel e já confere; frequência 6 h/12 h/diária/semanal/manual; `apt upgrade` e `runtipi-cli app update` pelo script (`systemd-run`), com confirmação e andamento (decisão 47). Script 6. |
+| E6 | Botão de atualizações ao lado do sino + frequência + atualizar pela interface | M–A | **feito (0.12.0)** | Clique abre o painel e já confere; frequência 6 h/12 h/diária/semanal/manual; `apt upgrade` e `runtipi-cli app update` pelo script (`systemd-run`), com confirmação e andamento (decisão 47). Script 6. |
 
 ## F. Arquivos
 
@@ -103,8 +103,8 @@ chave restrita** (`command="..."` no `authorized_keys`, ver decisão 11 em `deci
 | J1 | Tela de bloqueio com relógio grande | B | **feito (0.10.0)** | Com senha (padrão, vale no servidor: 423) ou só visual; Ctrl+Shift+L, busca, botão direito e inatividade (5/15/30/60 min ou nunca). Decisão 39. |
 | J2 | Papel de parede por horário | B | feito (0.9.2), lista livre de horários | Em 08/11/2026 o Bruno tirou as fotos do Immich do papel de parede: elas ficam só no formato Mídia de um Widget (decisão 34). |
 | J3 | Widgets de relógio, clima e bloco de notas | B | **feito (0.10.0)** | Clima = Tipo de integração (Open-Meteo, ícones próprios); Relógio e Notas = Formatos novos; notas em `/data/notes.json` com aviso pelo SSE. |
-| J4 | Configurações sem a aba "Tudo" | B | a fazer (0.12.0) | Abre na última aba; a pesquisa procura em todas. |
-| J5 | Terminal sempre no dock | B | a fazer (0.12.0) | Desmarcável em "Apps no dock". |
+| J4 | Configurações sem a aba "Tudo" | B | **feito (0.12.0)** | Abre na última aba; a pesquisa procura em todas. |
+| J5 | Terminal sempre no dock | B | **feito (0.12.0)** | Desmarcável em "Apps no dock". |
 | J6 | Tela inicial nova: Disposições, Medidas, posição e Tamanho livres, arrastar novo | A | a fazer (0.13.0) | Decisão 48; detalhes em `plano-etapa10.md`. Celular: Área compacta e Página com widgets e apps em duas telas. |
 | — | ~~Tema claro~~ | — | **recusado** | O Bruno não vê necessidade. |
 
@@ -136,7 +136,7 @@ senha, só a chave do BrunOS, `command=` forçado e sudoers com uma linha); **na
 | 8 | 0.10.0 | J1 · J3 · K1 · K2 · K3 — **feito (0.10.0), aguardando teste no servidor** |
 | 9 | 0.11.0 | A1 · B3 · D3 — **feito (0.11.0), aguardando teste no servidor** (B4 já feito na 0.8.1; H4 e I2 adiados em 10/11/2026: "Vamos deixar H4 e I2 para o futuro") |
 | 10a | 0.11.2 | D6 (SMART) — **feito (0.11.2), aguardando teste no servidor** |
-| 10b | 0.12.0 | J4 · J5 · E6 — a fazer |
+| 10b | 0.12.0 | J4 · J5 · E6 — **feito (0.12.0), aguardando teste no servidor** |
 | 10c | 0.13.0 | J6 — a fazer |
 | 3 | futuro | H1 · H2 · F3 (adiados em 08/11/2026: "Gostaria de deixar a etapa 3 para o futuro"; o F3, link público, vai junto porque abre arquivos para fora e dependia da segurança da etapa 3) |
 | — | futuro | C2 · A3 · F6 (celular) · H4 (convidados) · I2 (Wake-on-LAN) · H5 (revisão de segurança) |

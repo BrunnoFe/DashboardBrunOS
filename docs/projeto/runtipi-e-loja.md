@@ -22,6 +22,9 @@
   `created_at`/`updated_at` em **milissegundos**.
 - Campos do formulário: `BRUNOS_RUNTIPI_PATH`, `BRUNOS_PUID` (1000), `BRUNOS_PGID` (1000),
   `BRUNOS_DOCKER_ACTIONS` (booleano, falso), `BRUNOS_TERMINAL` (booleano, verdadeiro).
+- Variável `BRUNOS_RUNTIPI_HOST` (0.12.0) = `${BRUNOS_RUNTIPI_PATH}`: o BrunOS fica sabendo o caminho da
+  pasta do Runtipi **no servidor** e o põe em `/etc/brunos-host.conf` nos comandos do script, para o
+  `runtipi-cli app update` (atualizar apps pela interface).
 - `docker-compose.json` (formato dinâmico do Runtipi): serviço `brunos` (principal, porta interna 8080,
   usuário do formulário, `readOnly`, `capDrop: [ALL]`, `no-new-privileges`, 128M, volumes `/data`,
   `/runtipi` ro, `/home`→`/files/home`, `/mnt`→`/files/mnt`, pasta do Runtipi em `/files<caminho>` ro,

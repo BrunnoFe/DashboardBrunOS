@@ -56,8 +56,9 @@ const (
 	// desligando com a chave nova e só recusa os pedidos que não conhece.
 	SetupVersion = 2
 	// ScriptVersion é a versão do brunos-host (3 = pedido "tailscale", 0.9.2; 4 = "energia", "smart",
-	// "temperatura" e "atualizacoes", 0.11.0; 5 = "discos" e SMART um disco por vez com o modo, 0.11.2).
-	ScriptVersion = 5
+	// "temperatura" e "atualizacoes", 0.11.0; 5 = "discos" e SMART um disco por vez com o modo, 0.11.2;
+	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0).
+	ScriptVersion = 6
 	maxOutput     = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
 	dialTimeout   = 10 * time.Second
 	keyComment    = "brunos-power"
@@ -107,6 +108,30 @@ func ReadAllowed(cmd string) bool {
 // DiskCmd monta "smart sdb sat" / "temperatura sdb auto".
 func DiskCmd(kind, dev, mode string) string { return kind + " " + dev + " " + mode }
 
+// Script 6 (0.12.0): atualizar pela interface (decisão 47). Rodam soltos no servidor (systemd-run).
+const (
+	CmdUpdateOS     = "atualizar-linux"    // apt-get update + upgrade sem perguntas
+	CmdUpdateApp    = "atualizar-app"      // "atualizar-app <app>:<loja>": runtipi-cli app update
+	CmdUpdateStatus = "atualizacao-estado" // rodando|parado + as últimas linhas do registro
+)
+
+var appRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}:[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// ValidApp diz se o nome é um app do Runtipi que o script aceita ("immich:migrated").
+func ValidApp(urn string) bool { return appRe.MatchString(urn) }
+
+// ActAllowed confere um pedido de atualização inteiro (o script confere de novo).
+func ActAllowed(cmd string) bool {
+	f := strings.Fields(cmd)
+	switch {
+	case len(f) == 1:
+		return f[0] == CmdUpdateOS || f[0] == CmdUpdateStatus
+	case len(f) == 2:
+		return f[0] == CmdUpdateApp && ValidApp(f[1])
+	}
+	return false
+}
+
 // CmdLimit e CmdProtect montam os pedidos do limite de carga (o script confere de novo).
 func CmdLimit(pct int) string { return fmt.Sprintf("limite %d", pct) }
 func CmdProtect(on bool) string {
@@ -119,10 +144,12 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 5: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 6: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
-# discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | versao. Recusa todo o resto.
-# Fora desligar/limite/protecao, só lê. Instalado pelos comandos de Configurações -> Energia do BrunOS.
+# discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-linux |
+# atualizar-app <app>:<loja> | atualizacao-estado | versao. Recusa todo o resto.
+# As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
+# /var/log/brunos-atualizar.log. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -133,13 +160,30 @@ if [ "$(id -u)" -ne 0 ]; then
   set +f
 fi
 falha() { echo "$1" >&2; exit "${2:-2}"; }
+# app do Runtipi: "immich:migrated" (letras minúsculas, números, ponto, traço e sublinhado)
+app_ok() {
+  case "$1" in [a-z0-9]*:[a-z0-9]*) ;; *) return 1 ;; esac
+  case "$1" in *[!a-z0-9._:-]*|*:*:*) return 1 ;; esac
+  [ ${#1} -le 129 ]
+}
 if [ $# -lt 1 ] || [ $# -gt 3 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
 modo=${3:-}
 case "$acao" in
-  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 5"; exit 0 ;;
-  desligar|tailscale|energia|atualizacoes|discos) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host 6"; exit 0 ;;
+  desligar|tailscale|energia|atualizacoes|discos|atualizar-linux|atualizacao-estado) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  atualizar-app)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    app_ok "$valor" || falha "app inválido" ;;
+  executar)
+    # só o próprio script, como root, rodando dentro do systemd (o systemd-run abaixo); nunca pelo SSH
+    [ "$(id -u)" -eq 0 ] && [ -n "${INVOCATION_ID:-}" ] || falha "pedido inválido"
+    case "$valor" in
+      atualizar-linux) [ $# -eq 2 ] || falha "pedido inválido" ;;
+      atualizar-app) [ $# -eq 3 ] && app_ok "$modo" || falha "pedido inválido" ;;
+      *) falha "pedido inválido" ;;
+    esac ;;
   smart|temperatura)
     [ $# -eq 3 ] || falha "pedido inválido"
     case "$valor" in sd[a-z]|sd[a-z][a-z]|nvme[0-9]n1) ;; *) falha "disco inválido" ;; esac
@@ -162,6 +206,15 @@ baterias() {
     if [ "$(cat "$b/type" 2>/dev/null)" = Battery ]; then echo "$b"; fi
   done
 }
+# pasta do Runtipi (onde fica o runtipi-cli), gravada pelos comandos de configuração
+pasta_runtipi() {
+  d=$(sed -n 's/^RUNTIPI=//p' /etc/brunos-host.conf 2>/dev/null | head -n 1)
+  case "$d" in /*) ;; *) return 1 ;; esac
+  case "$d" in *..*) return 1 ;; esac
+  [ -x "$d/runtipi-cli" ] || return 1
+  echo "$d"
+}
+LOG=/var/log/brunos-atualizar.log
 feito=0
 case "$acao" in
   desligar)
@@ -196,6 +249,36 @@ case "$acao" in
     if [ -f /var/run/reboot-required ]; then echo "reiniciar"; fi
     echo "=== pacotes"
     apt list --upgradable 2>/dev/null | sed -n '2,301p' || true
+    exit 0 ;;
+  atualizar-linux|atualizar-app)
+    command -v systemd-run >/dev/null 2>&1 || falha "este servidor não tem systemd-run" 3
+    if systemctl is-active --quiet brunos-atualizar; then falha "já tem uma atualização rodando" 4; fi
+    if [ "$acao" = atualizar-app ]; then
+      pasta_runtipi >/dev/null || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+    fi
+    # solta do SSH: se a atualização reiniciar o Docker (e o BrunOS junto), ela continua
+    systemd-run --unit=brunos-atualizar --collect --quiet --description="Atualização pedida pelo BrunOS" /usr/local/sbin/brunos-host executar "$acao" $valor
+    echo "iniciado"
+    exit 0 ;;
+  executar)
+    set +e
+    exec >"$LOG" 2>&1
+    echo "inicio $(date +%s) $valor $modo"
+    if [ "$valor" = atualizar-linux ]; then
+      # sem perguntas; mantém os arquivos de configuração; needrestart só lista (não reinicia serviços)
+      export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
+      apt-get update && apt-get -y --with-new-pkgs -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade
+      s=$?
+    else
+      d=$(pasta_runtipi) && cd "$d" && ./runtipi-cli app update "$modo"
+      s=$?
+    fi
+    echo "fim $s"
+    exit "$s" ;;
+  atualizacao-estado)
+    if systemctl is-active --quiet brunos-atualizar; then echo "rodando"; else echo "parado"; fi
+    echo "=== registro"
+    tail -n 30 "$LOG" 2>/dev/null || true
     exit 0 ;;
   limite)
     for b in $(baterias); do
