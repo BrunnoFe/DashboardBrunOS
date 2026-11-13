@@ -115,6 +115,18 @@ flex (grade não centraliza a última fileira); o ícone Grande arredonda para b
 passavam da Régua por 3 px); a folga do nome nas pontas pode avançar sobre a margem. Na matriz, o mouse
 parado em cima de um ícone e a animação de entrada davam falsos "fora do centro".
 
+## 0.14.0 (13/11): Históricos de 30 dias e gráficos com valores
+`internal/tsdb`: uma série por dado, em três camadas (1 min por 48 h, 5 min por 7 dias, 20 min por 30
+dias, com média e pico), ~45 KB cada. Servidor (CPU, memória, temperatura, rede, ventoinha, bateria),
+cada app (CPU, memória, no ar), internet (latência) e, coleta nova, leitura/escrita e % ocupado de cada
+disco pelo `/proc/diskstats`. Sobrevive ao reinício: foto completa a cada 6 h e diário com só os pontos
+novos a cada 5 min (o SSD não é reescrito em MB à toa). Integrações passam de 7 para 30 dias. Gráficos
+numa peça só (`mountChart`): eixo Y com 3 valores redondos, valor ao passar o mouse ou o dedo, pico nos
+períodos longos, Ponta viva no "5 min" e seletor de Período (1 h a 30 dias) no Uso ao vivo, Detalhes do
+app, Internet (quedas em faixa vermelha) e Energia (barras com data e R$); widgets de Gráfico com balão e
+os Períodos 48 h e 30 dias. Lição: `display: flex/grid` no CSS vence o atributo `hidden` (o aviso "sem
+dados" aparecia junto com o gráfico); regra `[hidden] { display: none !important }` nos componentes.
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

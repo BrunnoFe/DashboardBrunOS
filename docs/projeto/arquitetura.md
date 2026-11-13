@@ -54,11 +54,20 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `Stats` (one-shot; CPU por delta; memória = usage − inactive_file), `Restart`, `Start`, `Stop` (304 não
   é erro), `Logs(id, tail, follow)` + `Demux` (formato multiplexado com cabeçalho de 8 bytes), `Ping`.
 - **`internal/appmon`** (0.7.0): por projeto do compose, 1440 pontos (24 h, um por minuto) de CPU,
-  memória (MB) e disponibilidade (1 no ar, 0 fora, −1 parado/sem medição), só em memória. `Uptime`,
-  `Health` (fora do ar só depois de 2 minutos seguidos), `Alert` (`app-down:<urn>` / `app-up`).
-- **`internal/history`** (0.8.0): `Collector.OnSample` → `Add(cpu, mem%, temp, rx, tx, dt)`; acumula a
-  média ponderada do minuto e da hora; anéis de 1440 minutos e 168 horas; `Series("1h"|"24h"|"7d")`
-  (o período em andamento entra como último ponto); `/data/history.json` a cada 10 min e no desligamento.
+  memória (MB) e disponibilidade (1 no ar, 0 fora, −1 parado/sem medição), só em memória, para o aviso
+  (`Health`: fora do ar só depois de 2 minutos seguidos; `Alert` `app-down:<urn>` / `app-up`). Desde a
+  0.14.0 o gráfico e o % no ar vêm do tsdb (`app.<projeto>.cpu|mem|up`, gravado pelo `watchApps`).
+- **`internal/tsdb`** (0.14.0, decisão 53): os Históricos. Por série, três anéis fixos: 1 min × 2880
+  (48 h, média), 5 min × 2016 (7 dias, média + pico), 20 min × 2160 (30 dias, média + pico); ~45 KB por
+  série, até 400. `Add(nome, v)` faz a média do minuto; `Query(nome, "5m"|"1h"|"24h"|"48h"|"7d"|"30d")`
+  escolhe a camada (o período em andamento entra como último ponto). Disco: `/data/tsdb/snapshot.bin`
+  (foto binária a cada 6 h e no desligamento) + `/data/tsdb/journal.log` (só os pontos novos, a cada
+  5 min; `Tick()` a cada minuto pelo main). Série parada há 30 dias é esquecida. Nomes: `sys.cpu|mem|
+  temp|rx|tx|fan|bat`, `app.<projeto>.*`, `net.lat|up`, `disk.<sda>.rd|wr|busy`.
+- **`internal/history`** (0.8.0; tsdb desde a 0.14.0): `Collector.OnSample(snapshot, mem%)` → séries
+  `sys.*` e `disk.*` (leitura/escrita do `/proc/diskstats`, `sysinfo/diskio.go`); `Series(rng)` monta
+  `/api/stats/history` no formato de sempre (+ `*Max` em 7 e 30 dias). O `/data/history.json` antigo é
+  trazido uma vez e apagado.
 - **`internal/procs`** (0.8.0): `Reader.List(kernel)` lê `/host/proc/<pid>/{stat,status,cmdline,cgroup}`;
   CPU = Δticks ÷ Δtotal do `/proc/stat` × núcleos (primeira chamada lê duas vezes com 400 ms); esconde
   threads do kernel; usuário por `/host/passwd` (`HOST_PASSWD`); id do container (64 hex) no cgroup →
@@ -228,7 +237,10 @@ GET  /api/system                      (info, runtipi, docker, dockerActions, ter
 GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
 GET  /api/apps/containers?urn · /api/apps/history?urn ({points,step,health,uptime?}) · /api/apps/logs?urn&id&tail
 GET  /api/apps/logs/stream?urn&id     (SSE: ready, data = linha em JSON, end)
-GET  /api/stats/history?range=1h|24h|7d ({range,step,points:[{t,cpu,mem,temp?,rx,tx}]})
+GET  /api/stats/history?range=1h|24h|48h|7d|30d ({range,step,points:[{t,cpu,mem,temp?,rx,tx,cpuMax?...}]})
+GET  /api/history?serie=<nome>&serie=...&periodo=5m|1h|24h|48h|7d|30d ({periodo,step,series:{nome:[[t,v,pico?]]}})
+     só prefixos sys., app., net., disk.; até 16 séries; GET /api/history/series?prefixo=disk. lista as que existem
+GET  /api/apps/history?urn=&range= (mesmos períodos; points [{t,cpu,mem,up,cpuMax?,memMax?}], uptime %)
 GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,user,state,threads,cpu,mem,memPct,app?}],summary})
 GET  /api/internet                    ({up,checked,ms,avg,uptime?,points:[{t,ms}],outages:[{start,end}],enabled})
 GET  /api/files/roots · disks · list · raw · zip · search · trash
@@ -267,7 +279,8 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/privado/seguranca.md`),
 `settings.json` (+ `settings-backup/`), `wallpapers/`, `disks.json`, `known_hosts.json`, `events.json`,
 `power.json`, `power-events.json`, `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos
-discos), `uploads.json` (envios em pedaços pendentes), `history.json` (uso por minuto/hora),
+discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 30 dias: `snapshot.bin` +
+`journal.log`; o `history.json` antigo some na primeira vez),
 `internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `metric-history.json`
 (séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`.
 

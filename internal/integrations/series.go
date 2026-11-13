@@ -10,13 +10,13 @@ import (
 )
 
 // Histórico próprio de métricas sem histórico no app (coleta em segundo plano, decisão 32):
-// 24 h a cada 5 min (288 pontos) e 7 dias por hora (168 pontos, média). Alguns KB por métrica.
+// 24 h a cada 5 min (288 pontos) e 30 dias por hora (720 pontos, média). Alguns KB por métrica.
 const (
 	fineStep   = 300
 	fineSlots  = 288
 	hourStep   = 3600
-	hourSlots  = 168
-	staleAfter = 7 * 24 * time.Hour
+	hourSlots  = 720 // 30 dias por hora (0.14.0; era 7 dias)
+	staleAfter = 30 * 24 * time.Hour
 )
 
 type ring struct {
@@ -111,7 +111,7 @@ func (s *SeriesStore) Add(id string, v float64) {
 	r.lastSeen = now
 }
 
-// Series devolve "1h", "24h" (5 min) ou "7d" (hora). ok = false se a métrica não tem histórico.
+// Series devolve "1h", "24h" (5 min) ou "48h", "7d", "30d" (hora). ok = false se a métrica não tem histórico.
 func (s *SeriesStore) Series(id, rng string) (SeriesData, bool) {
 	now := s.Now().Unix()
 	s.mu.Lock()
@@ -127,8 +127,9 @@ func (r *ring) series(now int64, rng string) SeriesData {
 	step, size, n := int64(fineStep), fineSlots, int64(fineSlots)
 	vals, ats := r.fine[:], r.fineAt[:]
 	switch rng {
-	case "7d":
-		step, size, n, vals, ats = hourStep, hourSlots, hourSlots, r.hour[:], r.hourAt[:]
+	case "48h", "7d", "30d":
+		step, size, vals, ats = hourStep, hourSlots, r.hour[:], r.hourAt[:]
+		n = map[string]int64{"48h": 48, "7d": 168, "30d": hourSlots}[rng]
 	case "1h":
 		n = 12
 	}

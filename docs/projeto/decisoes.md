@@ -236,7 +236,10 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     precisam dos dados próprios de qualquer jeito) e Prometheus/InfluxDB (centenas de MB de RAM).
     Camadas escolhidas pelo Bruno: 1 min por 48 h, 5 min por 7 dias, 20 min por 30 dias (média + pico
     nas duas últimas, para os picos não sumirem na média); ~4,5 MB para ~100 séries, binário em
-    `/data/tsdb/`.
+    `/data/tsdb/`. Gravação (0.14.0): reescrever 4,5 MB a cada 5 min daria ~1,3 GB por dia no SSD; em
+    vez disso, foto completa a cada 6 h e no desligamento, e um diário só com os pontos novos a cada 5 min
+    (alguns KB), reaplicado ao abrir. As integrações continuam no armazenamento próprio delas, só
+    ampliado para 30 dias (já funcionava e tem a coleta "só do que os widgets usam").
 54. **Formatar só com a Senha de formatação conferida pelo servidor** (0.16.0, ideia do Bruno com o
     cadastro pela opção A). Se o BrunOS conferisse a senha, quem invadisse o container pularia a
     conferência. Por isso quem confere é o servidor, fora do container, com trava após erros e nova

@@ -151,6 +151,9 @@ const real = {
   },
   system: () => call('GET', '/api/system'),
   statsHistory: (range) => call('GET', `/api/stats/history?${q({ range })}`),
+  // Históricos (0.14.0): várias séries de uma vez; periodo = 5m | 1h | 24h | 48h | 7d | 30d
+  history: (series, periodo) => call('GET', `/api/history?${series.map((s) => `serie=${encodeURIComponent(s)}`).join('&')}&${q({ periodo })}`),
+  historyNames: (prefixo) => call('GET', `/api/history/series?${q({ prefixo })}`),
   internet: () => call('GET', '/api/internet'),
   metricSeries: (id, range) => call('GET', `/api/metrics/series?${q({ id, range })}`),
   integrationImage: (id, ref) => `/api/integrations/${encodeURIComponent(id)}/image?${q({ ref })}`,
@@ -220,7 +223,7 @@ const real = {
     start: (urn) => call('POST', '/api/apps/start', { urn }),
     stop: (urn) => call('POST', '/api/apps/stop', { urn }),
     containers: (urn) => call('GET', `/api/apps/containers?${q({ urn })}`),
-    history: (urn) => call('GET', `/api/apps/history?${q({ urn })}`),
+    history: (urn, range = '24h') => call('GET', `/api/apps/history?${q({ urn, range })}`),
     async logs(urn, id, tail = 300) {
       const res = await fetch(`/api/apps/logs?${q({ urn, id, tail })}`, { headers: H, credentials: 'same-origin' });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erro ${res.status}`); }
@@ -287,6 +290,8 @@ const real = {
 };
 
 /* ══ Modo demonstração ══════════════════════════════════════════ */
+// camadas dos Históricos (iguais às do servidor): passo e quantidade de pontos por período
+const DEMO_P = { '5m': { step: 60, n: 5 }, '1h': { step: 60, n: 60 }, '24h': { step: 60, n: 1440 }, '48h': { step: 60, n: 2880 }, '7d': { step: 300, n: 2016 }, '30d': { step: 1200, n: 2160 } };
 function makeDemo() {
   const LS = 'brunos.demo.settings';
   const load = () => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch { return {}; } };
@@ -702,14 +707,41 @@ function makeDemo() {
         : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
     },
     statsHistory: (range) => {
-      const step = range === '7d' ? 3600 : 60, n = range === '7d' ? 168 : range === '1h' ? 60 : 1440;
+      const { step, n } = DEMO_P[range] || DEMO_P['24h'], long = step > 60;
       const t0 = Math.floor(Date.now() / 1000 / step) * step;
       return wait({ range, step, points: Array.from({ length: n }, (_, i) => {
         const t = t0 - (n - 1 - i) * step, hr = new Date(t * 1000).getHours(), evening = hr >= 19 && hr <= 23;
-        return { t, cpu: +(6 + (evening ? 14 : 3) * Math.random() + Math.sin(i / 20) * 2).toFixed(1), mem: +(33 + Math.sin(i / 90) * 4 + (evening ? 3 : 0)).toFixed(1),
+        const p = { t, cpu: +(6 + (evening ? 14 : 3) * Math.random() + Math.sin(i / 20) * 2).toFixed(1), mem: +(33 + Math.sin(i / 90) * 4 + (evening ? 3 : 0)).toFixed(1),
           temp: +(48 + (evening ? 7 : 1) + Math.random() * 2).toFixed(1), rx: Math.round((evening ? 900e3 : 60e3) * (0.5 + Math.random())), tx: Math.round((evening ? 200e3 : 20e3) * (0.5 + Math.random())) };
+        if (long) Object.assign(p, { cpuMax: +(p.cpu * (1.5 + Math.random() * 2)).toFixed(1), memMax: +(p.mem + 2).toFixed(1), tempMax: +(p.temp + 3).toFixed(1), rxMax: p.rx * 3, txMax: p.tx * 3 });
+        return p;
       }) }, 250);
     },
+    // Históricos (0.14.0): séries sintéticas com o formato da API
+    history: (series, periodo) => {
+      const { step, n } = DEMO_P[periodo] || DEMO_P['24h'], t0 = Math.floor(Date.now() / 1000 / step) * step, long = step > 60;
+      const gen = (name, i, t) => {
+        const hr = new Date(t * 1000).getHours(), ev = hr >= 19 && hr <= 23, r = Math.random();
+        if (name === 'net.lat') return i % 211 === 5 ? null : +(11 + r * 6 + (i % 97 === 0 ? 40 : 0)).toFixed(1);
+        if (name === 'net.up') return i % 211 === 5 ? 0 : 1;
+        if (name.endsWith('.busy')) return +(ev ? 4 + r * 10 : r * 2).toFixed(1);
+        if (name.endsWith('.rd')) return Math.round((ev ? 8e6 : 2e5) * r);
+        if (name.endsWith('.wr')) return Math.round((ev ? 3e6 : 1e5) * r);
+        if (name === 'sys.fan') return Math.round(2100 + (ev ? 600 : 0) + r * 200);
+        if (name === 'sys.bat') return 100;
+        return +(5 + r * 10).toFixed(1);
+      };
+      const out = {};
+      for (const name of series) {
+        out[name] = [];
+        for (let i = 0; i < n; i++) {
+          const t = t0 - (n - 1 - i) * step, v = gen(name, i, t);
+          if (v != null) out[name].push(long ? [t, v, +(v * 1.6).toFixed(1)] : [t, v]);
+        }
+      }
+      return wait({ periodo, step, series: out }, 200);
+    },
+    historyNames: (prefixo) => wait({ series: ['disk.sda.rd', 'disk.sda.wr', 'disk.sda.busy', 'disk.sdb.rd', 'disk.sdb.wr', 'disk.sdb.busy'].filter((s) => s.startsWith(prefixo)) }),
     internet: () => {
       const t0 = Math.floor(Date.now() / 60000) * 60;
       const points = Array.from({ length: 1440 }, (_, i) => ({ t: t0 - (1439 - i) * 60, ms: i > 610 && i < 618 ? -1 : +(11 + Math.random() * 6 + (i % 97 === 0 ? 40 : 0)).toFixed(1) }));
@@ -741,15 +773,19 @@ function makeDemo() {
         containers: (urn) => { const a = apps.find((x) => x.urn === urn); const id = a?.id || 'app'; return wait(urn === 'immich:migrated'
           ? [{ id: 'c1', name: 'immich-server', service: 'immich-server', state: 'running', status: 'Up 2 days', image: 'ghcr.io/immich-app/immich-server:v2' }, { id: 'c2', name: 'immich-db', service: 'immich-db', state: 'running', status: 'Up 2 days (healthy)', image: 'tensorchord/pgvecto-rs:pg16' }, { id: 'c3', name: 'immich-redis', service: 'immich-redis', state: 'running', status: 'Up 2 days', image: 'redis:7' }]
           : [{ id: 'c1', name: `${id}_migrated-${id}-1`, service: id, state: a?.state === 'stopped' ? 'exited' : 'running', status: a?.state === 'stopped' ? 'Exited (0) 3 hours ago' : 'Up 2 days', image: `${id}:latest` }]); },
-        history: (urn) => {
-          const t0 = Math.floor(Date.now() / 60000) * 60, seed = urn.length;
-          const points = Array.from({ length: 1440 }, (_, i) => {
-            const t = t0 - (1439 - i) * 60, hour = new Date(t * 1000).getHours();
+        history: (urn, range = '24h') => {
+          const { step, n } = DEMO_P[range] || DEMO_P['24h'], long = step > 60;
+          const t0 = Math.floor(Date.now() / 1000 / step) * step, seed = urn.length, noUp = urn === 'homarr:migrated';
+          const points = Array.from({ length: n }, (_, i) => {
+            const t = t0 - (n - 1 - i) * step, hour = new Date(t * 1000).getHours();
             const busy = hour >= 19 && hour <= 23 ? 3 : 1;
-            return { t, cpu: Math.max(0, +(busy * (0.6 + Math.sin(i / 37 + seed) * 0.4 + Math.random() * 0.5)).toFixed(2)), mem: +(180 + seed * 9 + Math.sin(i / 200) * 25).toFixed(1), up: urn === 'homarr:migrated' ? -1 : (i > 300 && i < 309 && urn === 'plex:migrated') ? 0 : 1 };
+            const p = { t, cpu: Math.max(0, +(busy * (0.6 + Math.sin(i / 37 + seed) * 0.4 + Math.random() * 0.5)).toFixed(2)), mem: +(180 + seed * 9 + Math.sin(i / 200) * 25).toFixed(1) };
+            if (!noUp) p.up = (i > n * 0.2 && i < n * 0.2 + 9 && urn === 'plex:migrated') ? 0 : 1;
+            if (long) { p.cpuMax = +(p.cpu * 2.2).toFixed(2); p.memMax = +(p.mem + 12).toFixed(1); }
+            return p;
           });
-          const counted = points.filter((p) => p.up >= 0);
-          return wait({ points, step: 60, health: urn === 'homarr:migrated' ? 'unknown' : 'up', ...(counted.length ? { uptime: +(counted.filter((p) => p.up === 1).length / counted.length * 100).toFixed(2) } : {}) }, 250);
+          const counted = points.filter((p) => p.up != null);
+          return wait({ points, step, range, health: noUp ? 'unknown' : 'up', ...(counted.length ? { uptime: +(counted.reduce((s, p) => s + p.up, 0) / counted.length * 100).toFixed(2) } : {}) }, 250);
         },
         logs: (urn) => wait(demoLines(urn.split(':')[0]).join('\n') + '\n', 200),
         follow(urn, id, onLine) { const t = setInterval(() => onLine(`${new Date().toISOString()} [info] GET /api/status 200 ${2 + Math.floor(Math.random() * 6)}ms`), 2500); return () => clearInterval(t); },

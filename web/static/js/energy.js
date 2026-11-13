@@ -3,7 +3,7 @@
 // servidor amostra a cada minuto e esta tela só mostra (e muda o Medidor e a tarifa).
 import { api } from './api.js';
 import { $, esc, fmt, svg, openDialog, toast, toastError } from './ui.js';
-import { lineSVG, barSVG } from './charts.js';
+import { mountChart, fmtTime } from './charts.js';
 
 export const METER_LABEL = { plug: 'pela tomada', battery: 'pela bateria', rapl: 'só o processador', estimate: 'estimativa calibrada', auto: 'automático' };
 const METERS = [['auto', 'Automático', 'tomada → bateria (nas quedas) → estimativa'], ['plug', 'Tomada inteligente', 'o servidor inteiro, direto da tomada'],
@@ -22,11 +22,6 @@ export async function mountEnergy(box, ctx = {}) {
   const draw = () => {
     const n = data.now, c = data.config;
     const w = n.w != null ? `${fmt(n.w, n.w < 100 ? 1 : 0)} W` : '—';
-    const pts = (hist?.minutes || []).filter((p) => p.v != null).map((p) => ({ t: p.t, v: p.v }));
-    const days = (hist?.days || []).slice(-30);
-    const chart = view === 'day'
-      ? (pts.length >= 2 ? lineSVG([{ pts, cls: 'c0' }], { w: 560, h: 110, area: true }) : '<span class="w-empty">ainda sem histórico (aparece em alguns minutos)</span>')
-      : (days.length ? barSVG([{ pts: days.map((d, i) => ({ t: i, v: d.kWh })), cls: 'c0' }], { w: 560, h: 110 }) : '<span class="w-empty">ainda sem dias completos</span>');
     const script = /script do servidor/.test(n.err || '');
     box.innerHTML = `<div class="en-now">
         <div class="en-big"><b>${esc(w)}</b><small>${n.w != null ? `agora · ${esc(METER_LABEL[n.meter] || '')}` : esc(n.err || 'medindo…')}</small></div>
@@ -37,13 +32,24 @@ export async function mountEnergy(box, ctx = {}) {
         </div></div>
       ${script ? `<div class="en-note">${svg('info')}<span>Para o processador e a estimativa, atualize o script do servidor (versão 6).</span><button class="pill-btn sm" data-en="script">Mostrar comandos</button></div>` : ''}
       <div class="en-chart-h"><div class="seg seg-sm"><button class="${view === 'day' ? 'on' : ''}" data-en-view="day">24 horas</button><button class="${view === 'month' ? 'on' : ''}" data-en-view="month">30 dias</button></div></div>
-      <div class="en-chart">${chart}</div>
+      <div class="en-chart"></div>
       <div class="s-row"><span class="s-ico">${svg('activity')}</span><span class="s-text"><b>Medidor</b><small>${esc(METERS.find(([k]) => k === c.meter)?.[2] || '')}</small></span>
         <span class="s-ctrl"><select class="text-input sm" data-en="meter" aria-label="Medidor">${METERS.map(([k, l]) => `<option value="${k}" ${c.meter === k ? 'selected' : ''}>${l}</option>`).join('')}</select></span></div>
       <div class="s-row ${c.meter === 'auto' || c.meter === 'plug' ? '' : 'dim'}"><span class="s-ico">${svg('plug')}</span><span class="s-text"><b>Tomada inteligente</b><small>${plugs.length ? 'A integração Tomada Tuya que mede o servidor' : 'Cadastre em Widgets → Integrações → Tomada Tuya'}</small></span>
         <span class="s-ctrl"><select class="text-input sm" data-en="plug" aria-label="Tomada" ${plugs.length ? '' : 'disabled'}><option value="">${plugs.length ? 'a primeira cadastrada' : 'nenhuma'}</option>${plugs.map((p) => `<option value="${esc(p.id)}" ${c.plugId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></span></div>
       <div class="s-row"><span class="s-ico">${svg('bag')}</span><span class="s-text"><b>Tarifa (R$ por kWh)</b><small>Total da conta de luz ÷ kWh do mês, com impostos${n.offset != null ? ` · resto da máquina aprendido: ${fmt(n.offset, 1)} W` : ''}</small></span>
         <span class="s-ctrl"><input class="text-input sm en-tariff" data-en="tariff" type="number" step="0.01" min="0.01" max="10" value="${c.tariff}" aria-label="Tarifa"></span></div>`;
+    // gráfico (0.14.0): consumo em W (24 h) ou kWh por dia (30 dias), com eixo e valor ao passar o mouse
+    const el = $('.en-chart', box);
+    if (view === 'day') {
+      const pts = (hist?.minutes || []).filter((p) => p.v != null).map((p) => ({ t: p.t, v: p.v }));
+      mountChart(el, [{ pts, cls: 'c0' }], { h: 110, fmt: (v) => `${fmt(v, v < 100 ? 1 : 0)} W`, min: 0, step: 60, empty: 'ainda sem histórico (aparece em alguns minutos)' });
+    } else {
+      const days = (hist?.days || []).slice(-30), byT = new Map();
+      const pts = days.map((d) => { const t = Date.parse(`${d.date}T12:00:00`) / 1000; byT.set(t, d); return { t, v: d.kWh }; });
+      mountChart(el, [{ pts, cls: 'c0' }], { h: 110, kind: 'bar', step: 86400, fmt: (v) => `${fmt(v, 2)} kWh`, empty: 'ainda sem dias completos', xLabel: (t) => fmtTime(t, 0, { day: true }),
+        tLabel: (t) => { const d = byT.get(t); const dt = new Date(t * 1000); const lab = `${dt.getDate()}/${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][dt.getMonth()]}`; return d && d.cost != null ? `${lab} · ${brl(d.cost)}` : lab; } });
+    }
   };
   const save = async (patch) => {
     try { data = await api.energy.setConfig({ ...data.config, ...patch }); draw(); ctx.onChange?.(); setTimeout(async () => { try { data = await api.energy.get(); draw(); } catch { /* depois */ } }, 2500); }

@@ -59,6 +59,8 @@ type Monitor struct {
 	// Dial mede o tempo para abrir uma conexão (trocável nos testes).
 	Dial    func(ctx context.Context, addr string) (time.Duration, error)
 	Enabled func() bool
+	// OnPoint recebe cada medição (para o Histórico de 30 dias). Ms -1 = sem internet.
+	OnPoint func(Point)
 
 	ev        *events.Store
 	mu        sync.Mutex
@@ -145,6 +147,9 @@ func (m *Monitor) Check(ctx context.Context) {
 		m.fails = 0
 	}
 	m.mu.Unlock()
+	if m.OnPoint != nil {
+		m.OnPoint(p)
+	}
 	if m.ev == nil {
 		return
 	}

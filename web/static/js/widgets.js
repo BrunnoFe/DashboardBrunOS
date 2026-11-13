@@ -2,7 +2,7 @@
 // Termos em CONTEXT.md. Este módulo só monta HTML a partir de um item e de um contexto (valores,
 // definições, séries), então serve igual para a tela inicial e para a prévia do editor.
 import { esc, fmt, fmtBytes, fmtRate, fmtDuration, timeAgo, svg, folderSVG, clamp } from './ui.js';
-import { lineSVG, barSVG, donutSVG, sparkSVG, stats } from './charts.js';
+import { lineSVG, barSVG, donutSVG, sparkSVG, stats, initChartTips } from './charts.js';
 import { batteryGlyph, stateText } from './battery.js';
 
 /* ── Tamanhos (em quadros) e Formatos ──────────────────────────── */
@@ -47,7 +47,7 @@ export const TIMEZONES = [['', 'Do aparelho'], ['America/Sao_Paulo', 'Brasília'
   ['Europe/Lisbon', 'Lisboa'], ['Europe/London', 'Londres'], ['Europe/Paris', 'Paris'], ['America/New_York', 'Nova York'], ['America/Los_Angeles', 'Los Angeles'], ['Asia/Tokyo', 'Tóquio'], ['UTC', 'UTC']];
 export const ROTATE = [[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hora'], [360, '6 horas'], [1440, '1 por dia']];
 export const CHART_TYPES = { line: 'Linha', bar: 'Barras', donut: 'Rosca' };
-export const RANGES = { live: '5 min', '1h': '1 hora', '24h': '24 horas', '7d': '7 dias' };
+export const RANGES = { live: '5 min', '1h': '1 hora', '24h': '24 horas', '48h': '48 horas', '7d': '7 dias', '30d': '30 dias' };
 export const WINDOWS = { live: 'Uso ao vivo', battery: 'Bateria', internet: 'Internet', power: 'Energia', files: 'Arquivos', settings: 'Configurações', widgets: 'Widgets' };
 export const ICONS = ['cpu', 'memory', 'temp', 'fan', 'disks', 'disk', 'download', 'upload', 'net', 'globe', 'shield', 'clock', 'activity', 'battery', 'bolt', 'power', 'apps', 'box', 'alert', 'bell', 'star', 'home', 'user', 'image', 'folder', 'wifi', 'network', 'info', 'check', 'sparkles', 'layers', 'link'];
 
@@ -414,6 +414,7 @@ function listHTML(item, ctx) {
 }
 
 function chartHTML(item, ctx) {
+  initChartTips();
   if (!item.slots.length) return `<span class="w-empty">Escolha o que vai no gráfico</span>`;
   const [W, H] = dims(item);
   const type = item.chart?.type || 'line';
@@ -434,7 +435,11 @@ function chartHTML(item, ctx) {
   const headVal = d0?.kind === 'num' && v0 ? `<span class="wf-cval">${esc(fmtText(v0, d0, head0))}</span>` : '';
   const legend = item.slots.length > 1 ? `<span class="wf-legend inline">${item.slots.map((s, i) => `<span class="wf-leg"><i class="c${i}"></i>${esc(labelOf(s, ctx.def(s.metric)))}</span>`).join('')}</span>` : '';
   const chH = Math.round(H * (item.chart?.stats ? 0.62 : 0.72));
-  const svgTxt = !has ? '' : type === 'bar' ? barSVG(series, { w: W, h: chH }) : lineSVG(series, { w: W, h: chH, area: series.length === 1, maxGap: ctx.maxGap?.(head0.metric) });
+  // valor ao passar o mouse (0.14.0) e Ponta viva só no "5 min" (Período ao vivo)
+  const fmtOf = (s) => (v) => fmtText({ n: v }, ctx.def(s.metric)?.kind === 'series' ? { unit: ctx.def(s.metric).unit } : ctx.def(s.metric), s);
+  const tip = { fmts: item.slots.map(fmtOf), names: item.slots.length > 1 ? item.slots.map((s) => labelOf(s, ctx.def(s.metric))) : [] };
+  const liveTxt = (item.chart?.range || '24h') === 'live' && has ? (() => { const l = [...series[0].pts].reverse().find((p) => p.v != null); return l ? fmtOf(head0)(l.v) : null; })() : null;
+  const svgTxt = !has ? '' : type === 'bar' ? barSVG(series, { w: W, h: chH, tip }) : lineSVG(series, { w: W, h: chH, area: series.length === 1, maxGap: ctx.maxGap?.(head0.metric), tip, live: liveTxt });
   let st = '';
   if (item.chart?.stats && has) {
     const s = stats(series[0].pts), def = d0?.kind === 'series' ? { unit: d0.unit } : d0;

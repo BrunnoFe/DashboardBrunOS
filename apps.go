@@ -10,14 +10,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"brunos/internal/appmon"
 	"brunos/internal/dockerc"
 	"brunos/internal/runtipi"
+	"brunos/internal/tsdb"
 )
 
 func healthName(h int8) string {
@@ -154,12 +157,65 @@ func (s *server) hAppHistory(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "app não encontrado"})
 		return
 	}
-	res := map[string]any{"points": s.appmon.History(a.Project), "health": healthName(s.appmon.Health(a.Project)), "step": 60}
-	if pct, ok := s.appmon.Uptime(a.Project); ok {
+	rng := r.URL.Query().Get("range")
+	if _, ok := tsdb.Periods[rng]; !ok {
+		rng = "24h"
+	}
+	step, pts, uptime := s.appSeries(a.Project, rng)
+	res := map[string]any{"points": pts, "health": healthName(s.appmon.Health(a.Project)), "step": step, "range": rng}
+	if uptime != nil {
+		res["uptime"] = *uptime
+	} else if pct, ok := s.appmon.Uptime(a.Project); ok {
 		res["uptime"] = pct
 	}
 	writeJSON(w, 200, res)
 }
+
+// appSeries junta CPU, memória e disponibilidade do app (tsdb) pelo horário. up: 1 no ar, 0 fora (nos
+// períodos longos, a fração do tempo no ar). uptime = % no ar no período (nil sem medição).
+func (s *server) appSeries(project, rng string) (int64, []map[string]any, *float64) {
+	if s.tsdb == nil {
+		return 60, []map[string]any{}, nil
+	}
+	pref := "app." + project + "."
+	by := map[int64]map[string]any{}
+	var order []int64
+	var step int64
+	var upSum float64
+	upN := 0
+	for _, k := range []string{"cpu", "mem", "up"} {
+		st, list := s.tsdb.Query(pref+k, rng)
+		step = st
+		for _, p := range list {
+			m := by[p.T]
+			if m == nil {
+				m = map[string]any{"t": p.T}
+				by[p.T] = m
+				order = append(order, p.T)
+			}
+			m[k] = round2(float64(p.V))
+			if st > tsdb.FineStep && k != "up" {
+				m[k+"Max"] = round2(float64(p.Max))
+			}
+			if k == "up" {
+				upSum += float64(p.V)
+				upN++
+			}
+		}
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
+	pts := make([]map[string]any, 0, len(order))
+	for _, t := range order {
+		pts = append(pts, by[t])
+	}
+	if upN == 0 {
+		return step, pts, nil
+	}
+	pct := math.Round(upSum/float64(upN)*1000) / 10
+	return step, pts, &pct
+}
+
+func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // logTarget confere que o container pedido é mesmo do app (ninguém lê logs de outro container).
 func (s *server) logTarget(r *http.Request) (dockerc.Container, error) {
@@ -465,6 +521,14 @@ func (s *server) checkApps(ctx context.Context) {
 			sample.Up = appmon.Up
 		}
 		s.appmon.Add(a.Project, sample)
+		if s.tsdb != nil && total > 0 { // Histórico de 30 dias (0.14.0); app sem container não grava zeros
+			pref := "app." + a.Project + "."
+			s.tsdb.Add(pref+"cpu", sample.CPU)
+			s.tsdb.Add(pref+"mem", sample.MemMB)
+			if sample.Up != appmon.Unknown {
+				s.tsdb.Add(pref+"up", float64(sample.Up))
+			}
+		}
 		if watch && sample.Up != appmon.Unknown {
 			s.appmon.Alert(s.events, a.Project, a.URN, a.Name)
 		} else if !watch || sample.Up == appmon.Unknown {

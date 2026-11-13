@@ -49,6 +49,7 @@ import (
 	"brunos/internal/sysinfo"
 	"brunos/internal/terminal"
 	"brunos/internal/termkey"
+	"brunos/internal/tsdb"
 	"brunos/internal/updates"
 	"brunos/web"
 )
@@ -115,6 +116,7 @@ type server struct {
 	diskHist  *diskhist.Store
 	appmon    *appmon.Monitor
 	hist      *history.Store
+	tsdb      *tsdb.DB // Históricos de 30 dias (0.14.0)
 	procs     *procs.Reader
 	netmon    *netmon.Monitor
 	integ     *integrations.Hub
@@ -209,7 +211,8 @@ func main() {
 	}
 	am.OnBlock = s.loginBlocked
 	s.diskHist = diskhist.New(filepath.Join(cfg.DataDir, "disk-history.json"))
-	s.hist = history.New(filepath.Join(cfg.DataDir, "history.json"))
+	s.tsdb = tsdb.Open(filepath.Join(cfg.DataDir, "tsdb"))
+	s.hist = history.New(s.tsdb, filepath.Join(cfg.DataDir, "history.json")) // traz o history.json antigo uma vez
 	s.stats.OnSample = s.hist.Add
 	procDir := hostProc
 	if procDir == "" {
@@ -219,6 +222,14 @@ func main() {
 	s.procs.Self = procs.SelfID("/proc/self/mountinfo")
 	s.netmon = netmon.New(filepath.Join(cfg.DataDir, "internet.json"), s.events)
 	s.netmon.Enabled = func() bool { v, ok := s.readSettings()["netMonitor"].(bool); return !ok || v }
+	s.netmon.OnPoint = func(p netmon.Point) { // Histórico de 30 dias da internet
+		if p.Ms >= 0 {
+			s.tsdb.Add("net.lat", float64(p.Ms))
+			s.tsdb.Add("net.up", 1)
+		} else {
+			s.tsdb.Add("net.up", 0)
+		}
+	}
 	box, err := secret.Load(filepath.Join(cfg.DataDir, "secret.key")) // cifra as senhas/tokens das integrações
 	if err != nil {
 		slog.Error("não foi possível ler ou criar a chave das integrações", "erro", err)
@@ -264,6 +275,18 @@ func main() {
 	go s.energy.Run(ctx)  // consumo: uma amostra por minuto
 	go s.smart.Run(ctx)   // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
 	go s.updates.Run(ctx) // atualizações na frequência escolhida e acompanhamento das que estão rodando
+	go func() {           // Históricos: diário a cada 5 min, foto a cada 6 h
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.tsdb.Tick()
+			}
+		}
+	}()
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -283,7 +306,7 @@ func main() {
 		slog.Error("servidor parou", "erro", err)
 		os.Exit(1)
 	}
-	s.hist.Save() // guarda o histórico de 24 h / 7 dias antes de desligar
+	s.tsdb.Save() // foto completa dos Históricos antes de desligar
 	s.integ.Series.Save()
 }
 
@@ -358,6 +381,7 @@ func (s *server) routes() http.Handler {
 	s.power.Register(mux, a)
 	s.diskHist.Register(mux, a)
 	s.hist.Register(mux, a)
+	s.tsdb.Register(mux, a) // GET /api/history (várias séries, períodos de 5 min a 30 dias)
 	s.netmon.Register(mux, a)
 	s.integ.Register(mux, a, s.integrationApps)
 	s.energy.Register(mux, a)

@@ -16,6 +16,7 @@ celular.
 | 0.13.0 | Tela inicial nova: Disposições, Medidas, lugar e Tamanho livres, arrastar novo (decisão 48) |
 | 0.13.1 | Ícones com tamanho fixo pela Régua (decisão 52) |
 | 0.13.2 | Área útil, escala única, correções da tela inicial e submenu Organização (decisão 55) |
+| 0.14.0 | Históricos de 30 dias (tsdb) e gráficos com eixo, valor no mouse, Período e Ponta viva (decisão 53) |
 
 ## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026
 
@@ -28,7 +29,7 @@ nesta ordem, cada uma testada no servidor antes da próxima.
 |---|---|---|
 | 0.13.1 | Ícones com tamanho fixo: Tamanho do ícone (4 degraus pela Régua) e Espaço entre os ícones | feito; testado, virou a 0.13.2 |
 | 0.13.2 | Área útil e correções da tela inicial (widgets repetidos, fileira fora do centro, apps passando do dock) | feito, aguardando teste no servidor |
-| 0.14.0 | Históricos de 30 dias (`internal/tsdb`: servidor, containers, internet, leitura/escrita dos discos, integrações) e gráficos com eixo, valor no mouse, Período e Ponta viva | a fazer |
+| 0.14.0 | Históricos de 30 dias (`internal/tsdb`: servidor, containers, internet, leitura/escrita dos discos, integrações) e gráficos com eixo, valor no mouse, Período e Ponta viva | feito, aguardando teste no servidor |
 | 0.15.0 | Janela Discos: informações, SMART explicado, testes, desempenho, espaço, linha do tempo, ejetar | a fazer |
 | 0.16.0 | Montar, desmontar e Formatar com Senha de formatação | a fazer |
 

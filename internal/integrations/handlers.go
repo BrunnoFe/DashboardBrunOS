@@ -279,7 +279,9 @@ func (h *Hub) hTest(w http.ResponseWriter, r *http.Request) {
 func (h *Hub) hSeries(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	rng := q.Get("range")
-	if rng != "1h" && rng != "7d" {
+	switch rng {
+	case "1h", "24h", "48h", "7d", "30d":
+	default:
 		rng = "24h"
 	}
 	d, _ := h.Series.Series(q.Get("id"), rng) // sem histórico ainda: série vazia

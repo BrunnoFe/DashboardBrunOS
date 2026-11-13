@@ -50,6 +50,7 @@ type Snapshot struct {
 	FanRPM  *int     `json:"fanRpm"`
 	Battery *Battery `json:"battery"`
 	Disks   []Disk   `json:"disks"`
+	DiskIO  []DiskIO `json:"diskIO"`
 	Net     Net      `json:"net"`
 	Uptime  float64  `json:"uptime"`
 }
@@ -71,6 +72,8 @@ type Collector struct {
 
 	prevCPU cpuTimes
 	prevNet netCounters
+	prevIO  map[string]diskCounters
+	ioPath  string
 	prevAt  time.Time
 	disks   []Disk
 	disksAt time.Time
@@ -79,8 +82,8 @@ type Collector struct {
 	ext     map[string]diskTemp // temperatura vinda do SMART (discos USB, sem drivetemp)
 	wake    chan struct{}
 
-	// OnSample recebe cada amostra (para o histórico de 24 h / 7 dias). dt = segundos desde a anterior.
-	OnSample func(cpu, memPct float64, temp *float64, rx, tx, dt float64)
+	// OnSample recebe cada amostra (para os Históricos). memPct = memória usada em %.
+	OnSample func(s Snapshot, memPct float64)
 }
 
 func NewCollector(cfg Config) *Collector {
@@ -95,6 +98,8 @@ func NewCollector(cfg Config) *Collector {
 	}
 	c.prevCPU, _ = readCPU(cfg.Proc)
 	c.prevNet, _ = readNet(c.netPath)
+	c.ioPath = diskstatsPath(cfg)
+	c.prevIO = readDiskstats(c.ioPath)
 	c.prevAt = time.Now()
 	return c
 }
@@ -198,6 +203,10 @@ func (c *Collector) sample() {
 		s.Net.RxTotal, s.Net.TxTotal, s.Net.Ifaces = n.rx, n.tx, n.ifaces
 		c.prevNet = n
 	}
+	if io := readDiskstats(c.ioPath); io != nil {
+		s.DiskIO = diskRates(c.prevIO, io, dt)
+		c.prevIO = io
+	}
 	c.prevAt = now
 
 	if now.Sub(c.disksAt) > diskInterval || c.disks == nil {
@@ -213,7 +222,7 @@ func (c *Collector) sample() {
 	}
 	p := Point{T: s.T, CPU: s.CPU.Percent, Mem: memPct, Temp: s.Temp, Rx: s.Net.Rx, Tx: s.Net.Tx}
 	if c.OnSample != nil {
-		c.OnSample(p.CPU, p.Mem, p.Temp, p.Rx, p.Tx, dt)
+		c.OnSample(s, memPct)
 	}
 
 	msg, _ := json.Marshal(map[string]any{"snapshot": s, "point": p})

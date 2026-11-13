@@ -6,6 +6,7 @@ import {
   MOBILE_W, areaUtil, reguaFor, fitStack, fitSide, rowsFit,
 } from './layout.js';
 import { api, initApi } from './api.js';
+import { mountChart, periodSeg, PERIOD_LONG } from './charts.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
@@ -374,7 +375,7 @@ function cachedSeries(key, maxAge, load) {
   }
   return seriesCache.get(key);
 }
-const RANGE_S = { live: 300, '1h': 3600, '24h': 86400, '7d': 7 * 86400 };
+const RANGE_S = { live: 300, '1h': 3600, '24h': 86400, '48h': 2 * 86400, '7d': 7 * 86400, '30d': 30 * 86400 };
 function downsample(pts, max = 240) {
   if (pts.length <= max) return pts;
   const out = [], step = pts.length / max;
@@ -413,7 +414,13 @@ function widgetCtx() {
       const d = defs.get(id); if (!d) return null;
       const since = Date.now() / 1000 - (RANGE_S[range] || 86400);
       const crop = (pts) => downsample((pts || []).filter((p) => p.t >= since));
-      if (d.hist === 'net') return crop(netPts());
+      if (d.hist === 'net') {
+        if (['48h', '7d', '30d'].includes(range)) { // mais de 24 h: vem dos Históricos
+          const c = cachedSeries(`hist:net.lat:${range}`, 60e3, async () => ((await api.history(['net.lat'], range)).series['net.lat'] || []).map(([t, v]) => ({ t, v })));
+          return c.pts ? crop(c.pts) : null;
+        }
+        return crop(netPts());
+      }
       if (d.hist === 'energy') { const p = energyPts(); return p ? crop(p) : null; }
       if (d.hist) {
         if (range === 'live') return S.history.map((p) => ({ t: p.t, v: p[d.hist] ?? null }));
@@ -1878,7 +1885,7 @@ let liveOpen = false;
 function liveUsageDialog() {
   if (liveOpen) return;
   liveOpen = true;
-  let metric = 'cpu', usageTimer, period = 'live', longPts = [], longTimer, listMode = 'apps', procFilter = '';
+  let metric = 'cpu', usageTimer, period = 'live', longPts = [], longStep = 60, longTimer, listMode = 'apps', procFilter = '';
   const d = openDialog(`<h2>Uso ao vivo</h2>
     <div class="stat-cards">
       <button class="stat-card on" data-m="cpu"><div class="k">CPU</div><div class="v" data-bind="cpu"></div><div class="s" data-bind="cores"></div><div class="track"><i data-bind-w="cpu"></i></div></button>
@@ -1887,9 +1894,7 @@ function liveUsageDialog() {
       <button class="stat-card" data-m="net"><div class="k">Rede</div><div class="v v-sm" data-bind="rx"></div><div class="s">↑ <span data-bind="tx"></span></div><div class="track"><i data-bind-w="net"></i></div></button>
     </div>
     <div class="spark-box"><div class="lbl"><span data-spark-title></span><span data-spark-extra></span><span class="f-spacer"></span>
-      <div class="seg seg-sm"><button class="on" data-period="live">5 min</button><button data-period="24h">24 h</button><button data-period="7d">7 dias</button></div></div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none">
-      <defs><linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--brand-lighter);stop-opacity:.45"/><stop offset="1" style="stop-color:var(--brand-lighter);stop-opacity:0"/></linearGradient></defs>
-      <path data-area fill="url(#sparkFill)"/><path data-line fill="none" style="stroke:var(--brand-lightest)" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path data-line2 fill="none" style="stroke:rgba(255,255,255,.45)" stroke-width="1.2" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/></svg></div>
+      ${periodSeg('live', true)}</div><div class="live-chart"></div></div>
     <div class="live-sec">Discos</div><div class="disk-list"></div>
     <div class="live-sec-row"><span class="live-sec">${'<span data-list-title>Apps</span>'} <small data-list-sub>${S.docker ? 'CPU e memória por app (Docker)' : 'conecte o Docker para ver o consumo por app'}</small></span><span class="f-spacer"></span>
       <input class="text-input sm proc-filter" placeholder="Filtrar" hidden aria-label="Filtrar processos">
@@ -1899,41 +1904,28 @@ function liveUsageDialog() {
   const loadLong = async () => {
     clearTimeout(longTimer);
     if (period === 'live' || !liveOpen) return;
-    try { longPts = (await api.statsHistory(period)).points || []; } catch { longPts = []; }
+    try { const r = await api.statsHistory(period); longPts = r.points || []; longStep = r.step || 60; } catch { longPts = []; }
     drawChart();
     longTimer = setTimeout(loadLong, 60000);
   };
+  // gráfico (0.14.0): peça única com eixo, valor ao passar o mouse e Ponta viva no "5 min"
+  const chart = mountChart($('.live-chart', d.el), [], { h: 120 });
+  const fmts = { cpu: (v) => `${fmt(v, v > 0 && v < 10 ? 1 : 0)}%`, mem: (v) => `${fmt(v, 0)}%`, temp: (v) => `${fmt(v, 0)} °C`, net: (v) => fmtRate(v) };
   const drawChart = () => {
-    let h = period === 'live' ? S.history : longPts;
+    const live = period === 'live';
+    let h = live ? S.history : longPts;
     if (metric === 'temp') h = h.filter((p) => p.temp);
-    if (h.length < 2) {
-      $('[data-line]', d.el).setAttribute('d', ''); $('[data-area]', d.el).setAttribute('d', ''); $('[data-line2]', d.el).setAttribute('d', '');
-      $('[data-spark-title]', d.el).textContent = `${titles[metric]} · ${period === 'live' ? 'aguardando dados' : 'ainda sem histórico (o BrunOS guarda a média de cada minuto)'}`;
-      $('[data-spark-extra]', d.el).textContent = '';
-      return;
-    }
-    const val = (p) => metric === 'net' ? p.rx : p[metric] ?? 0;
-    const vals = h.map(val), vals2 = metric === 'net' ? h.map((p) => p.tx) : null;
-    const all = vals2 ? vals.concat(vals2) : vals;
-    const mx = Math.max(...all), mn = Math.min(...all);
-    const span = Math.max(mx - mn, metric === 'cpu' ? 10 : metric === 'mem' ? 5 : metric === 'temp' ? 4 : 50e3);
-    const lo = Math.max(0, mn - span * 0.25), hi = mx + span * 0.35;
-    const toPath = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${((i / Math.max(1, arr.length - 1)) * 300).toFixed(1)} ${(68 - ((v - lo) / (hi - lo)) * 62).toFixed(1)}`).join('');
-    const line = toPath(vals);
-    $('[data-line]', d.el).setAttribute('d', line);
-    $('[data-area]', d.el).setAttribute('d', `${line}L300 70L0 70Z`);
-    $('[data-line2]', d.el).setAttribute('d', vals2 ? toPath(vals2) : '');
-    const mins = Math.round((h[h.length - 1].t - h[0].t) / 60);
-    if (period !== 'live') {
-      const unit = metric === 'net' ? '' : metric === 'temp' ? ' °C' : '%';
-      const f = (v) => (metric === 'net' ? fmtRate(v) : `${fmt(v, metric === 'cpu' ? 1 : 0)}${unit}`);
+    const pt = (k) => h.map((p) => ({ t: p.t, v: p[k] ?? null, max: live ? undefined : p[`${k}Max`] }));
+    const series = metric === 'net' ? [{ name: 'Download', pts: pt('rx'), cls: 'c0' }, { name: 'Upload', pts: pt('tx'), cls: 'c1', area: false }] : [{ pts: pt(metric), cls: 'c0' }];
+    chart.update(series, { fmt: fmts[metric], live, step: live ? 0 : (longStep || 60), min: metric === 'cpu' || metric === 'mem' ? 0 : undefined, max: metric === 'cpu' || metric === 'mem' ? 100 : undefined,
+      empty: live ? 'aguardando dados' : 'ainda sem histórico (o BrunOS guarda a média de cada minuto)' });
+    const vals = h.map((p) => (metric === 'net' ? p.rx : p[metric])).filter((v) => v != null);
+    $('[data-spark-title]', d.el).textContent = `${titles[metric]} · ${PERIOD_LONG[period]}`;
+    if (!live && vals.length) {
+      const peak = Math.max(...h.map((p) => (metric === 'net' ? p.rxMax ?? p.rx : p[`${metric}Max`] ?? p[metric]) ?? 0));
       const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
-      $('[data-spark-title]', d.el).textContent = `${titles[metric]} · ${period === '24h' ? 'últimas 24 h' : 'últimos 7 dias'}`;
-      $('[data-spark-extra]', d.el).textContent = `máx. ${f(mx)} · média ${f(avg)}${metric === 'net' ? ' (download)' : ''}`;
-      return;
-    }
-    $('[data-spark-title]', d.el).textContent = `${titles[metric]} · últimos ${mins || 1} min`;
-    $('[data-spark-extra]', d.el).textContent = metric === 'cpu' ? `carga ${statValues().vals.load}` : metric === 'net' ? 'linha tracejada: upload' : metric === 'temp' ? (S.snapshot?.battery ? `bateria ${statValues().vals.battery}` : '') : '';
+      $('[data-spark-extra]', d.el).textContent = `pico ${fmts[metric](peak)} · média ${fmts[metric](avg)}${metric === 'net' ? ' (download)' : ''}`;
+    } else $('[data-spark-extra]', d.el).textContent = live ? (metric === 'cpu' ? `carga ${statValues().vals.load}` : metric === 'temp' && S.snapshot?.battery ? `bateria ${statValues().vals.battery}` : '') : '';
   };
   let forecast = [], lastDisks = '', smart = null;
   const drawDisks = () => {

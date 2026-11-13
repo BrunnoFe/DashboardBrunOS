@@ -1,182 +1,185 @@
-// Package history guarda o uso do servidor por longos períodos: média por minuto das últimas 24 h e
-// média por hora dos últimos 7 dias (CPU, memória, temperatura, rede). Recebe cada amostra do
-// coletor (a cada 2 ou 15 s) e faz a média ponderada pelo tempo. Fica em /data/history.json
-// (gravado a cada 10 minutos e ao desligar), uns 100 KB.
+// Package history é o Histórico do servidor (CPU, memória, temperatura, rede, ventoinha, bateria e a
+// leitura/escrita de cada disco). Desde a 0.14.0 os pontos ficam no tsdb (1 min por 48 h, 5 min por 7
+// dias, 20 min por 30 dias, com média e pico); este pacote recebe cada amostra do coletor, dá nome às
+// séries e monta a resposta de /api/stats/history no formato de sempre. O /data/history.json antigo
+// (24 h por minuto e 7 dias por hora) é trazido uma vez e apagado.
 package history
 
 import (
+	"errors"
 	"log/slog"
-	"sync"
-	"time"
+	"math"
+	"os"
 
 	"brunos/internal/store"
+	"brunos/internal/sysinfo"
+	"brunos/internal/tsdb"
 )
 
+// Nomes das séries do servidor.
 const (
-	minuteSlots = 1440 // 24 h
-	hourSlots   = 168  // 7 dias
-	saveEvery   = 10 * time.Minute
+	CPU  = "sys.cpu"
+	Mem  = "sys.mem"
+	Temp = "sys.temp"
+	Rx   = "sys.rx"
+	Tx   = "sys.tx"
+	Fan  = "sys.fan"
+	Bat  = "sys.bat"
 )
 
+// Point é um ponto de /api/stats/history. Os *Max (pico do período) vêm só em 7 e 30 dias.
 type Point struct {
-	T    int64   `json:"t"`
-	CPU  float32 `json:"cpu"`
-	Mem  float32 `json:"mem"`            // % da memória
-	Temp float32 `json:"temp,omitempty"` // °C (0 = sem sensor)
-	Rx   float32 `json:"rx"`             // bytes/s
-	Tx   float32 `json:"tx"`
+	T       int64   `json:"t"`
+	CPU     float32 `json:"cpu"`
+	Mem     float32 `json:"mem"`
+	Temp    float32 `json:"temp,omitempty"` // °C (0 = sem sensor)
+	Rx      float32 `json:"rx"`             // bytes/s
+	Tx      float32 `json:"tx"`
+	CPUMax  float32 `json:"cpuMax,omitempty"`
+	MemMax  float32 `json:"memMax,omitempty"`
+	TempMax float32 `json:"tempMax,omitempty"`
+	RxMax   float32 `json:"rxMax,omitempty"`
+	TxMax   float32 `json:"txMax,omitempty"`
 }
 
-// acc soma as amostras de um período (minuto ou hora), ponderadas pelo tempo.
-type acc struct {
-	start               int64
-	w, cpu, mem, rx, tx float64
-	tempW, temp         float64
-}
+type Store struct{ DB *tsdb.DB }
 
-func (a *acc) add(cpu, mem float64, temp *float64, rx, tx, dt float64) {
-	a.w += dt
-	a.cpu += cpu * dt
-	a.mem += mem * dt
-	a.rx += rx * dt
-	a.tx += tx * dt
-	if temp != nil {
-		a.tempW += dt
-		a.temp += *temp * dt
+// New usa o tsdb e traz o histórico antigo (oldPath), se existir.
+func New(db *tsdb.DB, oldPath string) *Store {
+	s := &Store{DB: db}
+	if oldPath != "" {
+		s.importOld(oldPath)
 	}
-}
-
-func (a *acc) point() (Point, bool) {
-	if a.w <= 0 {
-		return Point{}, false
-	}
-	p := Point{T: a.start, CPU: r1(a.cpu / a.w), Mem: r1(a.mem / a.w), Rx: r1(a.rx / a.w), Tx: r1(a.tx / a.w)}
-	if a.tempW > 0 {
-		p.Temp = r1(a.temp / a.tempW)
-	}
-	return p, true
-}
-
-type file struct {
-	Version int     `json:"version"`
-	Minutes []Point `json:"minutes"`
-	Hours   []Point `json:"hours"`
-}
-
-type Store struct {
-	File string
-	Now  func() time.Time
-
-	mu      sync.Mutex
-	minutes [minuteSlots]Point
-	hours   [hourSlots]Point
-	curMin  acc
-	curHour acc
-	savedAt time.Time
-}
-
-// New lê o arquivo (se existir). path vazio = só em memória (testes).
-func New(path string) *Store {
-	s := &Store{File: path, Now: time.Now}
-	if path == "" {
-		return s
-	}
-	var f file
-	if _, err := store.ReadJSON(path, &f); err != nil {
-		slog.Warn("histórico: arquivo ilegível, começando do zero", "erro", err)
-	}
-	for _, p := range f.Minutes {
-		s.minutes[idx(p.T/60, minuteSlots)] = p
-	}
-	for _, p := range f.Hours {
-		s.hours[idx(p.T/3600, hourSlots)] = p
-	}
-	s.savedAt = s.Now()
 	return s
 }
 
-func idx(n int64, size int) int { return int(((n % int64(size)) + int64(size)) % int64(size)) }
-
-// Add recebe uma amostra do coletor. dt = segundos desde a amostra anterior.
-func (s *Store) Add(cpu, mem float64, temp *float64, rx, tx, dt float64) {
-	if dt <= 0 || dt > 120 { // primeira amostra ou o servidor dormiu: não pondera um buraco
-		dt = 2
+// Add recebe uma amostra do coletor.
+func (s *Store) Add(snap sysinfo.Snapshot, memPct float64) {
+	db := s.DB
+	db.Add(CPU, snap.CPU.Percent)
+	db.Add(Mem, memPct)
+	if snap.Temp != nil {
+		db.Add(Temp, *snap.Temp)
 	}
-	now := s.Now()
-	min, hour := now.Unix()/60*60, now.Unix()/3600*3600
-	s.mu.Lock()
-	if s.curMin.start != min {
-		if p, ok := s.curMin.point(); ok {
-			s.minutes[idx(p.T/60, minuteSlots)] = p
-		}
-		s.curMin = acc{start: min}
+	db.Add(Rx, snap.Net.Rx)
+	db.Add(Tx, snap.Net.Tx)
+	if snap.FanRPM != nil {
+		db.Add(Fan, float64(*snap.FanRPM))
 	}
-	if s.curHour.start != hour {
-		if p, ok := s.curHour.point(); ok {
-			s.hours[idx(p.T/3600, hourSlots)] = p
-		}
-		s.curHour = acc{start: hour}
+	if snap.Battery != nil {
+		db.Add(Bat, float64(snap.Battery.Percent))
 	}
-	s.curMin.add(cpu, mem, temp, rx, tx, dt)
-	s.curHour.add(cpu, mem, temp, rx, tx, dt)
-	due := s.File != "" && now.Sub(s.savedAt) >= saveEvery
-	s.mu.Unlock()
-	if due {
-		s.Save()
+	for _, d := range snap.DiskIO {
+		db.Add("disk."+d.Name+".rd", d.Read)
+		db.Add("disk."+d.Name+".wr", d.Write)
+		db.Add("disk."+d.Name+".busy", d.Busy)
 	}
 }
 
-// Series devolve os pontos do período: "1h" e "24h" por minuto, "7d" por hora. O período em
-// andamento entra como último ponto (parcial).
-func (s *Store) Series(rng string) (step int, pts []Point) {
-	now := s.Now().Unix()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	pts = []Point{}
-	switch rng {
-	case "7d":
-		cur := now / 3600
-		for h := cur - hourSlots + 1; h < cur; h++ {
-			if p := s.hours[idx(h, hourSlots)]; p.T == h*3600 {
-				pts = append(pts, p)
+// Ranges aceitos por /api/stats/history.
+var Ranges = map[string]bool{"1h": true, "24h": true, "48h": true, "7d": true, "30d": true}
+
+// Series monta os pontos do período juntando as séries pelo horário.
+func (s *Store) Series(rng string) (step int64, pts []Point) {
+	if !Ranges[rng] {
+		rng = "24h"
+	}
+	by := map[int64]*Point{}
+	order := []int64{}
+	long := rng == "7d" || rng == "30d"
+	for _, f := range []struct {
+		name  string
+		v, mx func(*Point) *float32
+	}{
+		{CPU, func(p *Point) *float32 { return &p.CPU }, func(p *Point) *float32 { return &p.CPUMax }},
+		{Mem, func(p *Point) *float32 { return &p.Mem }, func(p *Point) *float32 { return &p.MemMax }},
+		{Temp, func(p *Point) *float32 { return &p.Temp }, func(p *Point) *float32 { return &p.TempMax }},
+		{Rx, func(p *Point) *float32 { return &p.Rx }, func(p *Point) *float32 { return &p.RxMax }},
+		{Tx, func(p *Point) *float32 { return &p.Tx }, func(p *Point) *float32 { return &p.TxMax }},
+	} {
+		st, list := s.DB.Query(f.name, rng)
+		step = st
+		for _, q := range list {
+			p := by[q.T]
+			if p == nil {
+				p = &Point{T: q.T}
+				by[q.T] = p
+				order = append(order, q.T)
+			}
+			*f.v(p) = r1(q.V)
+			if long {
+				*f.mx(p) = r1(q.Max)
 			}
 		}
-		// a hora em andamento (ou a última, se ainda não chegou amostra da hora nova) ainda está somando
-		if p, ok := s.curHour.point(); ok && p.T > (cur-hourSlots)*3600 && (len(pts) == 0 || p.T > pts[len(pts)-1].T) {
-			pts = append(pts, p)
+	}
+	sortInts(order)
+	pts = make([]Point, 0, len(order))
+	for _, t := range order {
+		pts = append(pts, *by[t])
+	}
+	return step, pts
+}
+
+func sortInts(a []int64) {
+	for i := 1; i < len(a); i++ {
+		for j := i; j > 0 && a[j] < a[j-1]; j-- {
+			a[j], a[j-1] = a[j-1], a[j]
 		}
-		return 3600, pts
-	default:
-		n := int64(minuteSlots)
-		if rng == "1h" {
-			n = 60
-		}
-		cur := now / 60
-		for m := cur - n + 1; m < cur; m++ {
-			if p := s.minutes[idx(m, minuteSlots)]; p.T == m*60 {
-				pts = append(pts, p)
-			}
-		}
-		if p, ok := s.curMin.point(); ok && p.T > (cur-n)*60 && (len(pts) == 0 || p.T > pts[len(pts)-1].T) {
-			pts = append(pts, p)
-		}
-		return 60, pts
 	}
 }
 
-// Save grava o histórico (chamado a cada 10 min e ao desligar o BrunOS).
-func (s *Store) Save() {
-	if s.File == "" {
+func r1(v float32) float32 { return float32(math.Round(float64(v)*10) / 10) }
+
+// ── Histórico antigo (até a 0.13.x) ──
+
+type oldPoint struct {
+	T    int64   `json:"t"`
+	CPU  float64 `json:"cpu"`
+	Mem  float64 `json:"mem"`
+	Temp float64 `json:"temp,omitempty"`
+	Rx   float64 `json:"rx"`
+	Tx   float64 `json:"tx"`
+}
+
+type oldFile struct {
+	Minutes []oldPoint `json:"minutes"`
+	Hours   []oldPoint `json:"hours"`
+}
+
+func (s *Store) importOld(path string) {
+	var f oldFile
+	ok, err := store.ReadJSON(path, &f)
+	if err != nil {
+		slog.Warn("histórico antigo ilegível; começando do zero", "erro", err)
+	}
+	if !ok && err == nil {
 		return
 	}
-	_, mins := s.Series("24h")
-	_, hours := s.Series("7d")
-	s.mu.Lock()
-	s.savedAt = s.Now()
-	s.mu.Unlock()
-	if err := store.WriteJSON(s.File, file{Version: 1, Minutes: mins, Hours: hours}, 0o600); err != nil {
-		slog.Error("histórico: não foi possível gravar", "erro", err)
+	put := func(tier byte, p oldPoint) {
+		s.DB.Import(CPU, tier, p.T, p.CPU, p.CPU)
+		s.DB.Import(Mem, tier, p.T, p.Mem, p.Mem)
+		if p.Temp > 0 {
+			s.DB.Import(Temp, tier, p.T, p.Temp, p.Temp)
+		}
+		s.DB.Import(Rx, tier, p.T, p.Rx, p.Rx)
+		s.DB.Import(Tx, tier, p.T, p.Tx, p.Tx)
 	}
+	// as horas preenchem as camadas de 5 e 20 min (cada hora vira 12 e 3 pontos iguais); os minutos,
+	// a fina e por cima as outras duas nas últimas 24 h
+	for _, p := range f.Hours {
+		for k := int64(0); k < 3600; k += tsdb.MidStep {
+			put(1, oldPoint{T: p.T + k, CPU: p.CPU, Mem: p.Mem, Temp: p.Temp, Rx: p.Rx, Tx: p.Tx})
+		}
+		for k := int64(0); k < 3600; k += tsdb.CoarseStep {
+			put(2, oldPoint{T: p.T + k, CPU: p.CPU, Mem: p.Mem, Temp: p.Temp, Rx: p.Rx, Tx: p.Tx})
+		}
+	}
+	for _, p := range f.Minutes {
+		put(0, p)
+	}
+	s.DB.Save()
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("não foi possível apagar o histórico antigo", "erro", err)
+	}
+	slog.Info("histórico antigo trazido para o tsdb", "minutos", len(f.Minutes), "horas", len(f.Hours))
 }
-
-func r1(v float64) float32 { return float32(float64(int64(v*10+0.5)) / 10) }
