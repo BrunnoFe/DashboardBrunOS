@@ -30,6 +30,7 @@ import (
 	"brunos/internal/appmon"
 	"brunos/internal/auth"
 	"brunos/internal/diskhist"
+	"brunos/internal/disks"
 	"brunos/internal/dockerc"
 	"brunos/internal/energy"
 	"brunos/internal/events"
@@ -124,6 +125,7 @@ type server struct {
 	notes     *notes.Store
 	energy    *energy.Monitor
 	smart     *smart.Monitor
+	disks     *disks.Monitor // janela Discos (0.15.0)
 	updates   *updates.Checker
 	settingMu sync.Mutex
 
@@ -263,6 +265,7 @@ func main() {
 	for _, r := range fsvc.Roots() {
 		slog.Info("pasta disponível", "nome", r.Name, "id", r.ID, "somenteLeitura", r.ReadOnly)
 	}
+	s.setupDisks(cfg.DataDir, hostProc)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -274,6 +277,7 @@ func main() {
 	go s.integ.Run(ctx)
 	go s.energy.Run(ctx)  // consumo: uma amostra por minuto
 	go s.smart.Run(ctx)   // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
+	go s.disks.Run(ctx)   // janela Discos: lista a cada 10 min e quando um disco liga ou desliga
 	go s.updates.Run(ctx) // atualizações na frequência escolhida e acompanhamento das que estão rodando
 	go func() {           // Históricos: diário a cada 5 min, foto a cada 6 h
 		t := time.NewTicker(time.Minute)
@@ -386,6 +390,7 @@ func (s *server) routes() http.Handler {
 	s.integ.Register(mux, a, s.integrationApps)
 	s.energy.Register(mux, a)
 	s.smart.Register(mux, a)
+	s.disks.Register(mux, a) // janela Discos (GET /api/disks e as ações)
 	s.updates.Register(mux, a)
 	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
 	if s.term != nil {

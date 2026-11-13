@@ -107,7 +107,8 @@ const real = {
     setConfig: (c) => call('PUT', '/api/energy/config', c),
     history: () => call('GET', '/api/energy/history'),
   },
-  smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}), retry: (key) => call('POST', '/api/smart/retry', { key }) },
+  smart: { get: () => call('GET', '/api/smart'), refresh: () => call('POST', '/api/smart/refresh', {}), retry: (key) => call('POST', '/api/smart/retry', { key }),
+    selftest: (key, kind) => call('POST', '/api/smart/selftest', { key, kind }) },
   updates: {
     get: () => call('GET', '/api/updates'),
     check: (part = '') => call('POST', `/api/updates/check${part ? `?${q({ part })}` : ''}`, {}),
@@ -174,6 +175,14 @@ const real = {
   },
   disks: {
     forecast: () => call('GET', '/api/disks/forecast'),
+    // janela Discos (0.15.0)
+    list: () => call('GET', '/api/disks'),
+    refresh: () => call('POST', '/api/disks/refresh', {}),
+    timeline: (key) => call('GET', `/api/disks/timeline?${q({ key })}`),
+    state: (dev) => call('GET', `/api/disks/state?${q({ dev })}`),
+    errors: (dev) => call('GET', `/api/disks/errors?${q({ dev })}`),
+    speed: (dev) => call('POST', '/api/disks/speed', { dev }),
+    eject: (dev) => call('POST', '/api/disks/eject', { dev }),
   },
   power: {
     get: () => call('GET', '/api/power'),
@@ -323,6 +332,8 @@ function makeDemo() {
     sensors: [{ chip: 'coretemp', label: 'Package id 0', value: s.temp }, { chip: 'dell_smm', label: 'Ambient', value: 47 }],
     fanRpm: 2321, battery: { percent: 86, status: 'Charging', ac: true, energyWh: 35.4, fullWh: 41.2, designWh: 48.8, powerW: 7.6, health: 84, cycles: 213, minutesFull: 46, voltage: 12.4, tech: 'Li-ion', manufacturer: 'SMP', model: 'DELL 0X5', chargeLimit: null, history: Array.from({ length: 96 }, (_, i) => ({ t: Math.floor(Date.now() / 1000) - (95 - i) * 300, p: Math.round(i < 40 ? 100 - i * 1.3 : i < 50 ? 48 + (i - 40) * 0.2 : Math.min(86, 50 + (i - 50) * 0.9)), ac: !(i >= 10 && i < 50) })) }, disks,
     net: { rx: s.rx, tx: s.tx, ifaces: ['enp2s0'] }, uptime: 2 * 86400 + 4 * 3600,
+    // leitura e escrita de cada disco (janela Discos, ao vivo)
+    diskIO: ['sda', 'sdb', 'sdc', 'sdd'].map((name, i) => { const busy = Math.random() < 0.3; return { name, read: busy ? Math.round(Math.random() * 40e6 / (i + 1)) : Math.round(Math.random() * 2e5), write: busy ? Math.round(Math.random() * 12e6) : Math.round(Math.random() * 1e5), busy: busy ? +(5 + Math.random() * 30).toFixed(1) : +(Math.random() * 2).toFixed(1) }; }),
   });
   const tick = () => {
     s.cpu = walk(s.cpu, 8, 3, 40); s.mem = walk(s.mem, 0.1 * GB, 2.2 * GB, 3.2 * GB); s.temp = walk(s.temp, 1.5, 46, 62);
@@ -363,6 +374,54 @@ function makeDemo() {
   };
   const rootsMeta = [['home', 'Home', 312, 33], ['1tb-hdd', '1TB_HDD', 984, 463], ['1tb-hdd2', '1TB_HDD2', 984, 246], ['1tb-hdd3', '1TB_HDD3', 984, 462], ['ssd', 'SSD', 0, 0], ['ssd-nvme', 'SSD_NVME', 0, 0]];
   let demoMapped = ['1TB_HDD', '1TB_HDD2', '1TB_HDD3'];
+  // Janela Discos (0.15.0): SMART com atributos e testes, e a lista detalhada dos discos
+  const at = (id, name, value, worst, thresh, raw, extra = {}) => ({ id, name, value, worst, thresh, raw, ...extra });
+  const hdAttrs = (realloc, pending, temp, hours, crc = 0) => [at(1, 'Raw_Read_Error_Rate', 100, 100, 62, 0, { prefail: true }), at(3, 'Spin_Up_Time', 140, 133, 33, 1820, { prefail: true }),
+    at(4, 'Start_Stop_Count', 92, 92, 0, 8120), at(5, 'Reallocated_Sector_Ct', realloc ? 98 : 100, realloc ? 98 : 100, 5, realloc, { prefail: true }), at(9, 'Power_On_Hours', 12, 12, 0, hours),
+    at(12, 'Power_Cycle_Count', 95, 95, 0, 5400), at(191, 'G-Sense_Error_Rate', 100, 100, 0, 37), at(192, 'Power-Off_Retract_Count', 100, 100, 0, 211), at(193, 'Load_Cycle_Count', 61, 61, 0, 391204),
+    at(194, 'Temperature_Celsius', 100 - temp, 45, 0, temp, { rawStr: `${temp} (Min/Max 18/52)` }), at(197, 'Current_Pending_Sector', 100, 100, 0, pending), at(198, 'Offline_Uncorrectable', 100, 100, 0, 0),
+    at(199, 'UDMA_CRC_Error_Count', 200, 200, 0, crc), at(241, 'Total_LBAs_Written', 100, 100, 0, 9.1e10), at(242, 'Total_LBAs_Read', 100, 100, 0, 2.3e11)];
+  const demoSmartDisks = [
+    { key: 'D-SDA', dev: 'sda', tran: 'usb', mode: 'sat', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, tempAt: now - 600, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+      history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }],
+      attrs: hdAttrs(8, 1, 39, 38900, 3), shortMin: 2, longMin: 182, tests: [{ kind: 'Short offline', status: 'Completed without error', passed: true, hours: 38750 }, { kind: 'Extended offline', status: 'Completed: read failure', passed: false, hours: 38020 }] },
+    { key: 'D-SDB', dev: 'sdb', tran: 'usb', model: 'JMicron Tech', health: '', noSmart: true, noSmartWhy: 'travou', noSmartAt: now - 7200, failMode: 'sat', reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: 0 },
+    { key: 'D-SDC', dev: 'sdc', tran: 'sata', mode: 'auto', model: 'SSD 360GB', health: 'ok', passed: true, temp: 34, tempAt: now - 300, powerOnHours: 9100, powerCycles: 880, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+      attrs: [at(5, 'Reallocated_Sector_Ct', 100, 100, 10, 0, { prefail: true }), at(9, 'Power_On_Hours', 99, 99, 0, 9100), at(12, 'Power_Cycle_Count', 99, 99, 0, 880), at(174, 'Unexpect_Power_Loss_Ct', 100, 100, 0, 41),
+        at(177, 'Wear_Leveling_Count', 94, 94, 0, 61, { prefail: true }), at(194, 'Temperature_Celsius', 66, 52, 0, 34), at(199, 'UDMA_CRC_Error_Count', 100, 100, 0, 0), at(241, 'Total_LBAs_Written', 99, 99, 0, 3.4e10)],
+      shortMin: 2, longMin: 30, tests: [] },
+    { key: 'D-SDD', dev: 'sdd', tran: 'sata', mode: 'auto', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, tempAt: now - 900, powerOnHours: 17200, powerCycles: 2100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+      attrs: hdAttrs(0, 0, 33, 17200), shortMin: 2, longMin: 160, tests: [{ kind: 'Short offline', status: 'Completed without error', passed: true, hours: 17100 }] },
+  ];
+  const demoSpeeds = { 'D-SDD': { mbps: 112.4, bytes: 1073741824, secs: 9.55, at: now - 86400 * 2 } };
+  let demoSpeedBusy = '';
+  const demoEjected = new Set();
+  const P = (name, size, fsType, label, mounts, used, extra = {}) => ({ name, path: `/dev/${name}`, fsType, label, size: size * GB, mounts, ...(used != null ? { used: used * GB, avail: (size * 0.985 - used) * GB } : {}), ...extra });
+  const demoDiskList = () => [
+    { key: 'D-SDA', dev: 'sda', model: 'TOSHIBA MQ01ABD100', vendor: 'TOSHIBA', serial: 'D-SDA', rev: 'AX1P5E', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-TOSHIBA_MQ01ABD100_D-SDA-0:0',
+      parts: [P('sda1', 1000, 'ext4', '1TB_HDD2', ['/mnt/1TB_HDD2'], 246, { fstab: '/mnt/1TB_HDD2', hist: '1TB_HDD2', root: '1tb-hdd2' })], first: now - 86400 * 210,
+      apps: [{ urn: 'syncthing:migrated', name: 'Syncthing', folders: ['/mnt/1TB_HDD2/Backups'] }] },
+    { key: 'D-SDB', dev: 'sdb', model: 'JMicron Tech', vendor: 'JMicron', serial: 'D-SDB', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-JMicron_Tech_D-SDB-0:0',
+      parts: [P('sdb1', 1000, 'ext4', '1TB_HDD3', ['/mnt/1TB_HDD3'], 462, { fstab: '/mnt/1TB_HDD3', hist: '1TB_HDD3', root: '1tb-hdd3' })], first: now - 86400 * 180,
+      apps: [{ urn: 'immich:migrated', name: 'Immich', folders: ['/mnt/1TB_HDD3/Immich'] }, { urn: 'nextcloud-mini:migrated', name: 'Nextcloud', folders: ['/mnt/1TB_HDD3/Nextcloud'] }] },
+    { key: 'D-SDC', dev: 'sdc', model: 'SSD 360GB', serial: 'D-SDC', rev: 'S0516A0', tran: 'sata', ptType: 'gpt', size: 360 * GB, rotational: false, system: true, byId: '/dev/disk/by-id/ata-SSD_360GB_D-SDC',
+      parts: [P('sdc1', 1.1, 'vfat', '', ['/boot/efi'], 0.006), P('sdc2', 312, 'ext4', '', ['/'], 33, { hist: 'Sistema' }), P('sdc3', 46, 'swap', '', ['[SWAP]'])], first: now - 86400 * 240, apps: [] },
+    { key: 'D-SDD', dev: 'sdd', model: 'WDC WD10JPVX-75J', vendor: 'ATA', serial: 'D-SDD', rev: '01.01A01', tran: 'sata', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/ata-WDC_WD10JPVX-75J_D-SDD',
+      parts: [P('sdd1', 1000, 'ext4', '1TB_HDD', ['/mnt/1TB_HDD'], 463, { fstab: '/mnt/1TB_HDD', hist: '1TB_HDD', root: '1tb-hdd' })], first: now - 86400 * 240,
+      apps: [{ urn: 'plex:migrated', name: 'Plex', folders: ['/mnt/1TB_HDD/Filmes', '/mnt/1TB_HDD/Séries'] }, { urn: 'transmission:migrated', name: 'Transmission', folders: ['/mnt/1TB_HDD/Downloads'] }] },
+    { key: 'D-SDE', dev: 'sde', model: 'Ultra Fit', vendor: 'SanDisk', serial: 'D-SDE', rev: '1.00', tran: 'usb', ptType: 'dos', size: 64 * GB, rotational: false, removable: true, byId: '/dev/disk/by-id/usb-SanDisk_Ultra_Fit_D-SDE-0:0',
+      parts: [P('sde1', 64, 'exfat', 'PENDRIVE', [], null)], first: now - 3 * 3600, apps: [] },
+  ].filter((d) => !demoEjected.has(d.key)).map((d) => {
+    const sm = demoSmartDisks.find((x) => x.key === d.key);
+    return { ...d, smart: sm, temp: sm?.temp, tempAt: sm?.tempAt, speed: demoSpeeds[d.key], speedBusy: demoSpeedBusy === d.dev };
+  });
+  const demoTimeline = {
+    'D-SDA': [{ at: now - 3600, kind: 'smart', level: 'aviso', text: 'Saúde (SMART) mudou de OK para Atenção' }, { at: now - 3600, kind: 'smart', level: 'aviso', text: 'Setores com problema: 8 realocados, 1 pendentes' },
+      { at: now - 86400 * 4, kind: 'temperatura', text: 'Esfriou: 48 °C' }, { at: now - 86400 * 4 - 5400, kind: 'temperatura', level: 'aviso', text: 'Chegou a 56 °C (alerta a partir de 55 °C)' },
+      { at: now - 86400 * 9, kind: 'montado', text: 'Montado em /mnt/1TB_HDD2' }, { at: now - 86400 * 9 - 60, kind: 'conectado', text: 'Conectado de novo como /dev/sda' },
+      { at: now - 86400 * 9 - 900, kind: 'sumiu', level: 'aviso', text: 'Sumiu da lista de discos (desligado ou desconectado)' }, { at: now - 86400 * 210, kind: 'visto', text: 'Visto pela primeira vez pelo BrunOS como /dev/sda' }],
+    'D-SDE': [{ at: now - 3 * 3600, kind: 'novo', text: 'Conectado pela primeira vez como /dev/sde' }],
+  };
   const demoRoots = () => rootsMeta.filter(([id, name]) => id === 'home' || demoMapped.includes(name)).map(([id, name, t, u]) => ({ id, name, kind: id === 'home' ? 'place' : 'disk', readOnly: false, total: t * GB, free: (t - u) * GB }));
   const trashItems = [];
 
@@ -582,13 +641,11 @@ function makeDemo() {
       return { get: () => wait({ config: cfg, now: now() }), setConfig: (c) => { cfg = { ...cfg, ...c }; return wait({ config: cfg, now: now() }); }, history: () => wait({ minutes, days }, 150) };
     })(),
     smart: (() => {
-      const disks = [
-        { key: 'D-SDA', dev: 'sda', tran: 'usb', mode: 'sat', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600, history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }] },
-        { key: 'D-SDB', dev: 'sdb', tran: 'usb', model: 'JMicron Tech', health: '', noSmart: true, noSmartWhy: 'travou', noSmartAt: now - 7200, failMode: 'sat', reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: 0 },
-        { key: 'D-SDC', dev: 'sdc', tran: 'sata', mode: 'auto', model: 'SSD 360GB', health: 'ok', passed: true, temp: 40, powerOnHours: 9100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
-        { key: 'D-SDD', dev: 'sdd', tran: 'sata', mode: 'auto', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, powerOnHours: 17200, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600 },
-      ];
-      return { get: () => wait({ disks, checkedAt: now - 3600 }), refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900), retry: () => wait({ disks, checkedAt: now - 3600 }, 1500) };
+      const disks = demoSmartDisks;
+      // teste do próprio disco: o andamento cai 10% a cada leitura e termina sem erros
+      const step = () => disks.forEach((d) => { if (d.test) { d.test.remaining -= 10; if (d.test.remaining <= 0) { d.tests = [{ kind: d.test.kind === 'longo' ? 'Extended offline' : 'Short offline', status: 'Completed without error', passed: true, hours: d.powerOnHours }, ...(d.tests || [])].slice(0, 5); d.test = null; } } });
+      return { get: () => { step(); return wait({ disks, checkedAt: now - 3600 }); }, refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900), retry: () => wait({ disks, checkedAt: now - 3600 }, 1500),
+        selftest: (key, kind) => { const d = disks.find((x) => x.key === key); if (d?.test) return Promise.reject(Object.assign(new Error('este disco já está fazendo um teste: espere terminar'), { status: 409 })); d.test = { kind, remaining: 100 }; return wait({ disks, checkedAt: now - 3600 }, 700); } };
     })(),
     updates: (() => {
       const s = { apps: [{ urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' }],
@@ -647,6 +704,16 @@ function makeDemo() {
     },
     disks: {
       forecast: () => wait({ disks: forecast }),
+      list: () => wait({ disks: demoDiskList(), checkedAt: Math.floor(Date.now() / 1000) - 40 }, 150),
+      refresh: () => wait({ disks: demoDiskList(), checkedAt: Math.floor(Date.now() / 1000) }, 700),
+      timeline: (key) => wait({ events: demoTimeline[key] || [{ at: now - 86400 * 240, kind: 'visto', text: 'Visto pela primeira vez pelo BrunOS' }] }, 150),
+      state: (dev) => wait(dev === 'sdb' ? { state: 'desconhecido', why: 'o adaptador deste disco travou com pedidos especiais, então o BrunOS não pergunta' } : { state: dev === 'sda' ? 'dormindo' : 'acordado', why: '' }, 500),
+      errors: (dev) => wait({ lines: dev === 'sda' ? [
+        { at: '2026-11-04T09:12:40-0300', text: 'sd 6:0:0:0: [sda] tag#7 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=3s' },
+        { at: '2026-11-04T09:12:40-0300', text: 'critical medium error, dev sda, sector 1213472 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2' },
+        { at: '2026-11-04T09:12:38-0300', text: 'usb 2-1: reset high-speed USB device number 4 using xhci_hcd' }] : [] }, 900),
+      speed: (dev) => { const k = demoDiskList().find((d) => d.dev === dev)?.key; demoSpeedBusy = dev; setTimeout(() => { demoSpeedBusy = ''; demoSpeeds[k] = { mbps: dev === 'sdc' ? 512.3 : 96.8, bytes: 1073741824, secs: 10.2, at: Math.floor(Date.now() / 1000) }; }, 5000); return wait({ disks: demoDiskList() }, 300); },
+      eject: (dev) => { const d = demoDiskList().find((x) => x.dev === dev); if (!d || d.tran !== 'usb' || d.parts.some((p) => p.mounts.length)) return Promise.reject(new Error('o disco ainda está montado: desmonte antes de ejetar')); demoEjected.add(d.key); return wait({ ok: true }, 900); },
     },
     power: {
       get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50', needsUpdate: !!powerCfg.testedAt && powerCfg.hostSetup < 2, charge: demoCharge() }),
@@ -725,6 +792,7 @@ function makeDemo() {
         if (name === 'net.lat') return i % 211 === 5 ? null : +(11 + r * 6 + (i % 97 === 0 ? 40 : 0)).toFixed(1);
         if (name === 'net.up') return i % 211 === 5 ? 0 : 1;
         if (name.endsWith('.busy')) return +(ev ? 4 + r * 10 : r * 2).toFixed(1);
+        if (name.endsWith('.temp')) return i % 20 ? null : +(34 + Math.sin(i / 400) * 3 + (ev ? 4 : 0) + r).toFixed(1); // SMART: um ponto a cada 20 min
         if (name.endsWith('.rd')) return Math.round((ev ? 8e6 : 2e5) * r);
         if (name.endsWith('.wr')) return Math.round((ev ? 3e6 : 1e5) * r);
         if (name === 'sys.fan') return Math.round(2100 + (ev ? 600 : 0) + r * 200);

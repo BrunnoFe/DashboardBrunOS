@@ -222,7 +222,13 @@ func TestHostScriptRefuses(t *testing.T) {
 		"atualizacao-estado x", "atualizar-app $(id):x", "atualizar-app immich:migrated", "atualizar-app immich:migrated talvez",
 		"tamanho-backup", "tamanho-backup ../x:y", "tamanho-backup immich", "tamanho-backup immich:migrated x",
 		"atualizar-script", "atualizar-script abc;def", "atualizar-script a b", "atualizar-script $(id)",
-		"atualizar-lojas x", "atualizar-lojas; reboot"} {
+		"atualizar-lojas x", "atualizar-lojas; reboot",
+		// script 10 (janela Discos)
+		"discos-detalhe sda", "discos-detalhe; reboot", "estado", "estado sda1", "estado /dev/sda", "estado sda x", "estado sd*",
+		"erros", "erros ../sda", "erros sda;reboot", "erros nvme0n1p1", "velocidade", "velocidade sda1", "velocidade sda 2048",
+		"velocidade /dev/sda", "ejetar", "ejetar sda1", "ejetar sda agora", "ejetar $(id)", "smart-teste", "smart-teste sda",
+		"smart-teste sda sat", "smart-teste sda sat medio", "smart-teste sda xyz curto", "smart-teste sda1 sat curto",
+		"smart-teste sda sat curto x", "smart-teste sda sat longo;reboot"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
@@ -230,12 +236,13 @@ func TestHostScriptRefuses(t *testing.T) {
 	// pedidos válidos passam da conferência (como usuário comum vão para o sudo, que falha aqui)
 	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off",
 		"atualizar-linux", "atualizar-app immich:migrated sim", "atualizar-app nextcloud_mini:brunnofe-store nao", "atualizacao-estado",
-		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas"} {
+		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas",
+		"discos-detalhe", "estado sdb", "erros nvme0n1", "velocidade sdab", "ejetar sdc", "smart-teste sda sat curto", "smart-teste nvme0n1 auto longo"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 9") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 10") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
@@ -257,6 +264,8 @@ func TestReadAllowed(t *testing.T) {
 		"discos sda": false, "desligar": false, "limite 80": false, "": false, "tailscale up": false,
 		"versao": true, "tamanho-backup immich:migrated": true, "tamanho-backup immich": false, "tamanho-backup a:b x": false,
 		"atualizar-script X": false,
+		"discos-detalhe":     true, "discos-detalhe x": false, "estado sdb": true, "estado sdb1": false, "estado": false,
+		"erros nvme0n1": true, "erros nvme0n1p2": false, "velocidade sda": false, "ejetar sda": false, "smart-teste sda sat curto": false,
 	} {
 		if got := ReadAllowed(cmd); got != want {
 			t.Errorf("ReadAllowed(%q) = %v, queria %v", cmd, got, want)
@@ -274,6 +283,16 @@ func TestReadAllowed(t *testing.T) {
 	} {
 		if got := ActAllowed(cmd); got != want {
 			t.Errorf("ActAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
+	}
+	for cmd, want := range map[string]bool{
+		"velocidade sda": true, "velocidade nvme0n1": true, "ejetar sdb": true, "smart-teste sda sat curto": true, "smart-teste nvme0n1 auto longo": true,
+		"velocidade": false, "velocidade sda1": false, "velocidade sda x": false, "ejetar": false, "ejetar /dev/sdb": false,
+		"smart-teste sda sat": false, "smart-teste sda sat medio": false, "smart-teste sda xyz curto": false, "smart-teste sda1 sat curto": false,
+		"estado sda": false, "desligar": false, "atualizar-linux": false, "": false,
+	} {
+		if got := DiskActAllowed(cmd); got != want {
+			t.Errorf("DiskActAllowed(%q) = %v, queria %v", cmd, got, want)
 		}
 	}
 }

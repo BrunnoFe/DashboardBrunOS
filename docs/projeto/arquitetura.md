@@ -137,6 +137,20 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   aviso `disk-smart-unsupported` (Key `smart-unsupported:<série>`) e nunca mais é lido sozinho. Rotas:
   `GET /api/smart` (com `running`), `POST /api/smart/refresh` e `POST /api/smart/retry {key}` (tenta o
   outro modo); as duas rodam em segundo plano e respondem 200/erro se terminarem em 1,5 s, senão 202.
+  Desde a 0.15.0 (script 10) a leitura completa traz `attrs` (todos os atributos ATA ou os campos do
+  registro de saúde do NVMe), `test` (andamento), `tests` (até 5 resultados), `shortMin`/`longMin`;
+  `POST /api/smart/selftest {key,kind:curto|longo}` pede o teste ao disco, e o disco em teste é lido de
+  novo a cada 3 min (aviso `disk-selftest` ao terminar). `Note` manda SMART mudou e testes para a Linha do
+  tempo do `internal/disks`. A temperatura lida vira a série `disk.<dev>.temp` no tsdb.
+- **`internal/disks`** (0.15.0, decisão 56): a janela Discos. `discos-detalhe` (lsblk JSON + fstab só com
+  identificador e pasta + `/dev/disk/by-id`) a cada 10 min e quando a lista do `/proc/diskstats` muda.
+  Junta SMART, temperatura (SMART ou drivetemp), `hist` (nome no `diskhist`), `root` (raiz do Arquivos) e
+  os apps (pastas `bind` dos containers, pelo `containers/json`, dentro das montagens do disco, menos a
+  raiz). Linha do tempo em `/data/disk-events.json` (`{"v":1,"known":{"<série>":{dev,name,first,last,
+  present,mounts,hot,ejected,speed,events:[{at,kind,level,text}]}}}`, até 200 eventos por disco, discos
+  esquecidos após 180 dias ausentes). Avisos `disk-new`, `disk-gone` (resolvido quando volta) e `disk-hot`
+  (só discos fora do Uso ao vivo). Ações: `velocidade` (em segundo plano, um por vez) e `ejetar` (USB, não
+  sistema, nada montado; o script confere de novo).
   Atualizações (script 6+): o script roda a atualização solta da conexão SSH (`systemd-run`) e grava um
   registro; o BrunOS acompanha por `atualizacao-estado`. O app recebe `BRUNOS_RUNTIPI_HOST` (preenchido
   pelo compose com `BRUNOS_RUNTIPI_PATH`) para o script achar a pasta do Runtipi no servidor.
@@ -255,6 +269,9 @@ GET  /api/events                      POST /api/events/read {ids:[]} (vazio = to
 GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
 PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}
 GET  /api/disks/forecast              ({disks:[{name,perDay,daysLeft?,enough,points:[{d,u,f}]}]})
+GET  /api/disks                       ({disks:[disco+parts+smart+temp+apps+speed],checkedAt,err,oldScript,loading})
+POST /api/disks/refresh               GET /api/disks/timeline?key · /api/disks/state?dev · /api/disks/errors?dev
+POST /api/disks/speed {dev} (202)     POST /api/disks/eject {dev}   POST /api/smart/selftest {key,kind}
 GET  /api/files/text?root&path        ({text,mtime(ms),size,readOnly}; 413 grande, 415 binário/não-UTF-8)
 PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   POST /api/files/newfile
 POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})
@@ -282,7 +299,8 @@ Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/p
 discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 30 dias: `snapshot.bin` +
 `journal.log`; o `history.json` antigo some na primeira vez),
 `internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `metric-history.json`
-(séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`.
+(séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`,
+`disk-events.json` (Linha do tempo dos discos; não confundir com `disks.json`, os discos mapeados).
 
 ## Frontend (`web/static`)
 
@@ -309,7 +327,13 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço
   mostra a faixa de contagem.
 - `js/disks.js` (0.5.0): `diskRowsHTML(disks, forecast)` (lista de discos do Uso ao vivo, com
-  temperatura e previsão), `forecastText(f)`, `driveTempHelp()` (comandos do drivetemp).
+  temperatura e previsão), `forecastText(f)`, `driveTempHelp()` (comandos do drivetemp). Desde a 0.15.0
+  cada linha é um botão (`data-open-dev`) que abre o disco na janela Discos.
+- `js/disksapp.js` (0.15.0): janela Discos (`openSheet('disks')`, ícone fixo na dock depois de Arquivos).
+  `mountDisks(body, {ctx, key|dev, tab})`, `focusDisk(opts)`. Lista + abas Visão geral, Saúde (tabelas
+  `ATA`/`NVME` com nome, explicação e regra normal/preocupante), Desempenho (`mountChart` com Período e
+  amostras ao vivo do `snapshot.diskIO`), Espaço (`diskhist` + `filetools.js`) e Linha do tempo. Atualiza
+  a cada 20 s (3 s com algo andando) e só refaz o que mudou. Lembra a aba e o disco no `localStorage`.
 - `js/editor.js` (0.6.0): `openEditor({root, path, name, onSaved})`; importa
   `vendor/codemirror/codemirror.mjs` (bundle gerado por `tools/codemirror`, ver o README de lá) só ao abrir.
 - `js/filetools.js` (0.6.0): `spaceDialog` (treemap "squarified" em divs + lista) e `duplicatesDialog`.

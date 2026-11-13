@@ -127,6 +127,22 @@ app, Internet (quedas em faixa vermelha) e Energia (barras com data e R$); widge
 os Períodos 48 h e 30 dias. Lição: `display: flex/grid` no CSS vence o atributo `hidden` (o aviso "sem
 dados" aparecia junto com o gráfico); regra `[hidden] { display: none !important }` nos componentes.
 
+## 0.15.0 (13/11): janela Discos
+Ícone fixo na dock logo depois de Arquivos. Lista dos discos (com o grupo "Sem pasta de montagem") e cinco
+abas por disco: Visão geral (identificação, caminho fixo `/dev/disk/by-id`, barra de partições com
+montagem e fstab, apps que usam o disco, dormindo/acordado sem acordar), Saúde (todos os atributos do
+SMART explicados em pt-BR com "normal/preocupante", ATA e NVMe, e o teste curto/longo do próprio disco com
+andamento e aviso no sino ao terminar), Desempenho (leitura/escrita e % ocupado com Período e Ponta viva,
+temperatura, teste de velocidade que só lê 1 GB), Espaço (histórico, previsão, atalhos para Mapa do espaço
+e Duplicados) e Linha do tempo (conectado, sumiu, montado, SMART mudou, teste, pico de temperatura,
+velocidade, ejetado, em `/data/disk-events.json`, e os erros do registro do Linux daquele disco).
+"Ejetar com segurança" para disco USB desmontado. Avisos novos: disco novo conectado e disco sumiu. O Uso
+ao vivo virou um resumo que abre a janela. Script do servidor 10 (troca automática): `discos-detalhe`,
+`estado`, `erros`, `smart-teste`, `velocidade`, `ejetar`; o `smart` traz o andamento e o registro dos
+testes. Testes: `internal/disks`, `tests/script-discos.sh` (o script de verdade como root com `lsblk`,
+`hdparm`, `journalctl`, `smartctl` e `dd` falsos). Lição: o plano dizia `/data/disks.json`, mas esse
+arquivo já guarda os discos mapeados do Arquivos; conferir os nomes em `/data` antes de criar um.
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

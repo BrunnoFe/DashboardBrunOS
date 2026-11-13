@@ -68,6 +68,14 @@ type Container struct {
 	Status  string            `json:"Status"`
 	Labels  map[string]string `json:"Labels"`
 	Created int64             `json:"Created"`
+	Mounts  []Mount           `json:"Mounts"` // pastas montadas (a janela Discos mostra quais apps usam cada disco)
+}
+
+// Mount é uma pasta montada num container (Source = caminho no servidor).
+type Mount struct {
+	Type        string `json:"Type"` // bind, volume
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
 }
 
 func (c Container) Name() string {

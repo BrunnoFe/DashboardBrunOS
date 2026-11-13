@@ -60,8 +60,10 @@ const (
 	// 6 = "atualizar-linux", "atualizar-app <app>:<loja>" e "atualizacao-estado", 0.12.0;
 	// 7 = backup antes de atualizar app, "tamanho-backup", repositório quebrado vira aviso e
 	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1; 8 = o andamento manda a
-	// primeira linha do registro, 0.12.2; 9 = "atualizar-lojas" (runtipi-cli appstore update), 0.12.3).
-	ScriptVersion = 9
+	// primeira linha do registro, 0.12.2; 9 = "atualizar-lojas" (runtipi-cli appstore update), 0.12.3;
+	// 10 = janela Discos: "discos-detalhe", "estado", "erros", "smart-teste", "velocidade", "ejetar" e o
+	// "smart" com o andamento e o registro dos testes, 0.15.0).
+	ScriptVersion = 10
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -109,9 +111,25 @@ var scriptSig string
 // ScriptSignature devolve a assinatura do HostScript desta compilação ("" se não houver).
 func ScriptSignature() string { return strings.TrimSpace(scriptSig) }
 
+// Script 10 (0.15.0): janela Discos. Leituras (não mudam nada no disco):
+const (
+	CmdDiskDetail = "discos-detalhe" // lsblk completo (partições, montagens, espaço), fstab (só UUID e pasta) e /dev/disk/by-id
+	CmdDiskState  = "estado"         // "estado <disco>": dormindo ou acordado (hdparm -C, não acorda o disco)
+	CmdDiskErrors = "erros"          // "erros <disco>": linhas do registro do kernel daquele disco (30 dias, até 200)
+)
+
+// Script 10 (0.15.0): ações seguras da janela Discos (não apagam nem gravam nada no disco).
+const (
+	CmdSelfTest = "smart-teste" // "smart-teste <disco> <sat|auto> <curto|longo>": o disco testa a si mesmo
+	CmdSpeed    = "velocidade"  // "velocidade <disco>": lê 1 GiB direto do disco (dd para /dev/null)
+	CmdEject    = "ejetar"      // "ejetar <disco>": só USB e só sem nada montado; sync + desliga o disco
+	TestShort   = "curto"
+	TestLong    = "longo"
+)
+
 // ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
 var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true,
-	CmdVersion: true, CmdBackupSize: true}
+	CmdVersion: true, CmdBackupSize: true, CmdDiskDetail: true, CmdDiskState: true, CmdDiskErrors: true}
 
 // ParseVersion lê "brunos-host 7" (0 se não der).
 func ParseVersion(out []byte) int {
@@ -139,8 +157,22 @@ func ReadAllowed(cmd string) bool {
 		return len(f) == 3 && ValidDisk(f[1]) && (f[2] == ModeSAT || f[2] == ModeAuto)
 	case CmdBackupSize:
 		return len(f) == 2 && ValidApp(f[1])
+	case CmdDiskState, CmdDiskErrors:
+		return len(f) == 2 && ValidDisk(f[1])
 	}
 	return len(f) == 1
+}
+
+// DiskActAllowed confere um pedido de ação da janela Discos (o script confere de novo).
+func DiskActAllowed(cmd string) bool {
+	f := strings.Fields(cmd)
+	switch {
+	case len(f) == 2:
+		return (f[0] == CmdSpeed || f[0] == CmdEject) && ValidDisk(f[1])
+	case len(f) == 4:
+		return f[0] == CmdSelfTest && ValidDisk(f[1]) && (f[2] == ModeSAT || f[2] == ModeAuto) && (f[3] == TestShort || f[3] == TestLong)
+	}
+	return false
 }
 
 // DiskCmd monta "smart sdb sat" / "temperatura sdb auto".
@@ -195,18 +227,21 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 9: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 10: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
-# atualizar-script <assinatura> | versao. Recusa todo o resto.
+# discos-detalhe | estado <disco> | erros <disco> | smart-teste <disco> <sat|auto> <curto|longo> |
+# velocidade <disco> | ejetar <disco> | atualizar-script <assinatura> | versao. Recusa todo o resto.
+# Nenhum pedido apaga, formata ou grava no disco: "velocidade" só lê e "ejetar" só aceita disco USB
+# sem nada montado.
 # As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
 # /var/log/brunos-atualizar.log. O script só se troca por outro assinado pela chave de publicação do
 # BrunOS (abaixo) e de versão maior. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=9
+VERSAO=10
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 if [ "$(id -u)" -ne 0 ]; then
   # chamado pelo SSH (usuário brunos-power): o pedido vem em SSH_ORIGINAL_COMMAND
@@ -221,6 +256,11 @@ app_ok() {
   case "$1" in *[!a-z0-9._:-]*|*:*:*) return 1 ;; esac
   [ ${#1} -le 129 ]
 }
+# disco inteiro: sda, sdab, nvme0n1 (nunca partição, caminho ou curinga)
+disco_ok() {
+  case "$1" in sd[a-z]|sd[a-z][a-z]|nvme[0-9]n1) return 0 ;; esac
+  return 1
+}
 if [ $# -lt 1 ] || [ $# -gt 4 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
@@ -228,7 +268,15 @@ modo=${3:-}
 extra=${4:-}
 case "$acao" in
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
-  desligar|tailscale|energia|atualizacoes|discos|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  estado|erros|velocidade|ejetar)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    disco_ok "$valor" || falha "disco inválido" ;;
+  smart-teste)
+    [ $# -eq 4 ] || falha "pedido inválido"
+    disco_ok "$valor" || falha "disco inválido"
+    case "$modo" in sat|auto) ;; *) falha "modo inválido (use sat ou auto)" ;; esac
+    case "$extra" in curto|longo) ;; *) falha "teste inválido (use curto ou longo)" ;; esac ;;
   atualizar-app)
     [ $# -eq 3 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido"
@@ -253,7 +301,7 @@ case "$acao" in
     esac ;;
   smart|temperatura)
     [ $# -eq 3 ] || falha "pedido inválido"
-    case "$valor" in sd[a-z]|sd[a-z][a-z]|nvme[0-9]n1) ;; *) falha "disco inválido" ;; esac
+    disco_ok "$valor" || falha "disco inválido"
     case "$modo" in sat|auto) ;; *) falha "modo inválido (use sat ou auto)" ;; esac ;;
   limite)
     [ $# -eq 2 ] || falha "pedido inválido"
@@ -305,9 +353,87 @@ case "$acao" in
     [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
     # um disco por pedido; só o que o BrunOS usa (saúde, identificação e atributos)
     # -n standby: não acorda HD parado; sat = disco SATA atrás de um adaptador USB
-    if [ "$acao" = smart ]; then o="-H -i -A"; else o="-A"; fi
+    # -c e -l selftest (script 10): andamento do teste do próprio disco e os últimos resultados
+    if [ "$acao" = smart ]; then o="-H -i -A -c -l selftest"; else o="-A"; fi
     if [ "$modo" = sat ]; then o="$o -d sat"; fi
     smartctl -j -n standby $o "/dev/$valor" 2>/dev/null || true
+    exit 0 ;;
+  discos-detalhe)
+    # só o que o Linux já sabe (udev e montagens): não fala com o disco
+    c=NAME,PATH,TYPE,SIZE,MODEL,VENDOR,SERIAL,WWN,REV,TRAN,ROTA,RM,FSTYPE,LABEL,UUID,PARTUUID,FSUSED,FSAVAIL,PTTYPE
+    echo "=== lsblk"
+    lsblk -J -b -o "$c,MOUNTPOINTS" 2>/dev/null || lsblk -J -b -o "$c,MOUNTPOINT"
+    echo "=== fstab"
+    # de cada linha, só o que identifica o disco e a pasta (opções e o resto ficam de fora)
+    awk '$1 !~ /^#/ && NF >= 2 && $1 ~ /^(UUID=|LABEL=|PARTUUID=|\/dev\/)/ { print $1, $2 }' /etc/fstab 2>/dev/null || true
+    echo "=== by-id"
+    for l in /dev/disk/by-id/*; do
+      [ -L "$l" ] || continue
+      echo "${l##*/} $(readlink -f "$l")"
+    done
+    exit 0 ;;
+  estado)
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    # NVMe não para de girar como um HD: está sempre pronto
+    case "$valor" in nvme*) echo "estado acordado"; exit 0 ;; esac
+    command -v hdparm >/dev/null 2>&1 || { echo "estado desconhecido sem-hdparm"; exit 0; }
+    # -C só pergunta o estado: não acorda o disco
+    r=$(timeout 15 hdparm -C "/dev/$valor" 2>/dev/null | sed -n 's/.*drive state is: *//p' | head -n 1)
+    case "$r" in
+      *standby*|*sleeping*) echo "estado dormindo" ;;
+      *active*|*idle*) echo "estado acordado" ;;
+      *) echo "estado desconhecido" ;;
+    esac
+    exit 0 ;;
+  erros)
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    command -v journalctl >/dev/null 2>&1 || falha "este servidor não tem o journalctl" 3
+    # a porta USB do disco (ex.: 2-1) aparece nas linhas de reset e de desconexão do USB
+    porta=$(readlink -f "/sys/block/$valor/device" 2>/dev/null | tr '/' '\n' | grep -E '^[0-9]+-[0-9]+(\.[0-9]+)*$' | tail -n 1)
+    re="\\b${valor}p?[0-9]*\\b"
+    if [ -n "$porta" ]; then re="$re|usb $porta:"; fi
+    timeout 40 journalctl -k --since=-30d --no-pager -q -o short-iso 2>/dev/null | grep -E "$re" \
+      | grep -iE 'error|fail|reset|disconnect|offline|timeout|timed out|abort|critical|sense key|i/o' | tail -n 200 || true
+    exit 0 ;;
+  smart-teste)
+    command -v smartctl >/dev/null 2>&1 || falha "o smartmontools não está instalado (sudo apt install smartmontools)" 3
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    if [ "$extra" = curto ]; then t=short; else t=long; fi
+    o=""
+    if [ "$modo" = sat ]; then o="-d sat"; fi
+    # o disco testa a si mesmo em segundo plano; o andamento vem no pedido "smart"
+    r=$(LC_ALL=C timeout 60 smartctl -t "$t" $o "/dev/$valor" 2>&1 || true)
+    case "$r" in
+      *"has begun"*) echo "teste iniciado" ;;
+      *) echo "$r" | tail -n 4 >&2; exit 1 ;;
+    esac
+    exit 0 ;;
+  velocidade)
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    command -v flock >/dev/null 2>&1 || falha "falta o flock no servidor (pacote util-linux)" 3
+    exec 9>/run/brunos-velocidade.lock
+    flock -n 9 || falha "já tem um teste de velocidade rodando" 4
+    # lê 1 GiB do começo do disco, direto do disco (sem a memória do Linux no meio); não grava nada
+    r=$(LC_ALL=C timeout 150 dd if="/dev/$valor" of=/dev/null bs=1M count=1024 iflag=direct 2>&1 | tail -n 1)
+    case "$r" in
+      *copied*) echo "velocidade $r" ;;
+      "") falha "o disco demorou mais de 150 s para ler 1 GiB" 1 ;;
+      *) falha "$r" 1 ;;
+    esac
+    exit 0 ;;
+  ejetar)
+    [ -b "/dev/$valor" ] || falha "o disco $valor não existe" 3
+    [ "$(lsblk -dno TRAN "/dev/$valor" 2>/dev/null | tr -d ' ')" = usb ] || falha "só dá para ejetar disco USB" 3
+    if lsblk -nro MOUNTPOINT "/dev/$valor" 2>/dev/null | grep -q .; then
+      falha "o disco ainda está montado: desmonte antes de ejetar" 3
+    fi
+    for h in /sys/block/"$valor"/holders/* /sys/block/"$valor"/"$valor"*/holders/*; do
+      if [ -e "$h" ]; then falha "o disco está em uso (RAID, LVM ou criptografia): não dá para ejetar" 3; fi
+    done
+    [ -w "/sys/block/$valor/device/delete" ] || falha "este disco não pode ser ejetado por aqui" 3
+    sync
+    echo 1 >"/sys/block/$valor/device/delete" || falha "o Linux recusou ejetar o disco" 1
+    echo "ejetado"
     exit 0 ;;
   atualizacoes)
     if [ -x /usr/lib/update-notifier/apt-check ]; then

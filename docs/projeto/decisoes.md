@@ -254,3 +254,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     máximo, limitada à Área útil): o desenho não precisa mais ser refeito para descobrir o zoom. As
     escolhas de gosto viraram opções (última fileira, encolher widgets ou mandar apps para a próxima
     tela), como o Bruno pediu.
+56. **Janela Discos só lê, com três ações que não apagam nada** (0.15.0, plano da etapa 11). Teste do
+    próprio disco (o disco se lê), teste de velocidade (lê 1 GB para `/dev/null`, um por vez) e ejetar
+    (só USB e só sem nada montado). Tudo pelo script do servidor, conferido no BrunOS e no script; a lista
+    detalhada vem do lsblk (não fala com o disco) a cada 10 min e quando o `/proc/diskstats` muda (disco
+    ligou ou desligou), sem SSH a cada minuto. Disco cujo adaptador travou com o SMART (decisão 46) não
+    recebe nem o "dormindo/acordado" (o `hdparm -C` passa pelo mesmo adaptador). A Linha do tempo fica em
+    `/data/disk-events.json` (o `disks.json` já era do Arquivos). Explicações dos atributos ficam na
+    interface (tabela por número ATA e campo NVMe), para o backend continuar enxuto.

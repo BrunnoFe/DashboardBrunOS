@@ -10,7 +10,7 @@ import { mountChart, periodSeg, PERIOD_LONG } from './charts.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
-import { diskRowsHTML, driveTempHelp, smartDialog } from './disks.js';
+import { diskRowsHTML } from './disks.js';
 import { internetDialog } from './internet.js';
 import { initLock, lockNow, showLock, hideLock, isScreenLocked } from './lockscreen.js';
 import { mountNotes, noteFocus, restoreNoteFocus, noteChanged, deleteNote, refreshNotes } from './notes.js';
@@ -751,6 +751,7 @@ function openWindow(t) {
   else if (t === 'internet') internetDialog();
   else if (t === 'power') openPower();
   else if (t === 'files') openSheet('files', $('[data-sys="files"]'));
+  else if (t === 'disks') openDisks();
   else if (t === 'settings') openSheet('settings', $('[data-sys="settings"]'));
   else if (t === 'widgets') openWidgets();
 }
@@ -1327,6 +1328,8 @@ async function restartApp(a) {
 /* ── Dock (ampliação igual à do Umbrel: 50 → 80 px em ±150 px) ─── */
 const SYS = {
   files: { label: 'Arquivos', glyph: 'folder', tile: 'linear-gradient(160deg,#ffb199 0%,#ff6a88 45%,#c04fd0 100%)', run: (el) => openSheet('files', el) },
+  // janela Discos (0.15.0): fixa, logo depois de Arquivos
+  disks: { label: 'Discos', glyph: 'disks', tile: 'linear-gradient(160deg,#9fe3d0 0%,#3fb1a8 45%,#2a6f8f 100%)', run: (el) => openSheet('disks', el) },
   runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => openUrl(runtipiBase()) },
   store: { label: 'Loja de apps', glyph: 'bag', tile: 'linear-gradient(160deg,#5fd0ff 0%,#3a7bff 48%,#5b3df0 100%)', run: () => openUrl(`${runtipiBase()}/app-store`) },
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
@@ -1417,12 +1420,13 @@ export function openSheet(kind, originEl, opts = {}) {
   if (currentSheet === kind) {
     if (kind === 'files' && opts.root) import('./files.js').then((m) => m.navigate(opts));
     if (kind === 'widgets') import('./widgetsapp.js').then((m) => m.focusWidgets(opts));
+    if (kind === 'disks') import('./disksapp.js').then((m) => m.focusDisk(opts));
     return;
   }
   sheetCleanup?.(); sheetCleanup = null;
   host.innerHTML = '';
   const backdrop = html('<div class="sheet-backdrop"></div>');
-  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${{ files: 'Arquivos', widgets: 'Widgets' }[kind] || 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
+  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${{ files: 'Arquivos', widgets: 'Widgets', disks: 'Discos' }[kind] || 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
   if (originEl) {
     const r = originEl.getBoundingClientRect(), w = Math.min(1100, innerWidth - 32), left = (innerWidth - w) / 2;
     sheet.style.setProperty('--origin', `${r.left + r.width / 2 - left}px ${innerHeight - 20}px`);
@@ -1441,8 +1445,23 @@ export function openSheet(kind, originEl, opts = {}) {
     body.innerHTML = '<div class="sheet-loading"></div>';
     import('./widgetsapp.js').then((m) => { if (currentSheet === 'widgets') sheetCleanup = m.mountWidgets(body, { ...opts, ctx: widgetsCtx }); })
       .catch((e) => toastError(e, 'Não deu para abrir os widgets'));
+  } else if (kind === 'disks') {
+    body.innerHTML = '<div class="sheet-loading"></div>';
+    import('./disksapp.js').then((m) => { if (currentSheet === 'disks') sheetCleanup = m.mountDisks(body, { ...opts, ctx: disksCtx }); })
+      .catch((e) => toastError(e, 'Não deu para abrir os discos'));
   } else renderSettings(body);
 }
+// O que a janela Discos precisa do resto da interface
+const disksCtx = {
+  get snapshot() { return S.snapshot; },
+  onStats: (fn) => on('stats', fn),
+  appIcon: (urn) => { const a = urn && appById(urn); return a ? appIconHTML(a, 'mini') : `<span class="mini sys">${svg('box')}</span>`; },
+  openApp: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
+  openFiles: (root, path) => openSheet('files', $('[data-sys="files"]'), { root, path }),
+  scriptDialog: () => import('./energy.js').then((m) => m.scriptDialog()),
+  mapDisks: () => import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); })),
+};
+const openDisks = (opts = {}) => openSheet('disks', $('[data-sys="disks"]'), opts);
 export function closeSheet() {
   pickClose?.();
   const sheet = $('#sheet-host .sheet');
@@ -1895,7 +1914,8 @@ function liveUsageDialog() {
     </div>
     <div class="spark-box"><div class="lbl"><span data-spark-title></span><span data-spark-extra></span><span class="f-spacer"></span>
       ${periodSeg('live', true)}</div><div class="live-chart"></div></div>
-    <div class="live-sec">Discos</div><div class="disk-list"></div>
+    <div class="live-sec-row"><span class="live-sec">Discos <small>clique num disco para ver os detalhes</small></span><span class="f-spacer"></span>
+      <button class="pill-btn" data-disk="open">${svg('disks')}Abrir Discos</button></div><div class="disk-list"></div>
     <div class="live-sec-row"><span class="live-sec">${'<span data-list-title>Apps</span>'} <small data-list-sub>${S.docker ? 'CPU e memória por app (Docker)' : 'conecte o Docker para ver o consumo por app'}</small></span><span class="f-spacer"></span>
       <input class="text-input sm proc-filter" placeholder="Filtrar" hidden aria-label="Filtrar processos">
       <div class="seg seg-sm"><button class="on" data-list="apps">Apps</button><button data-list="procs">Processos</button></div></div>
@@ -1933,22 +1953,8 @@ function liveUsageDialog() {
     if (rows !== lastDisks) { $('.disk-list', d.el).innerHTML = rows; lastDisks = rows; } // não refaz à toa (o botão perderia o clique)
   };
   if (set().diskForecast) api.disks.forecast().then((r) => { forecast = r.disks || []; if (liveOpen) drawDisks(); }).catch(() => { /* sem previsão: só não mostra */ });
-  // a leitura roda em segundo plano no servidor: acompanha a cada 2 s até terminar
-  const showSmart = (r) => { smart = r; lastDisks = ''; if (liveOpen) drawDisks(); };
-  const followSmart = async (r) => {
-    showSmart(r);
-    for (let i = 0; r.running && i < 150 && liveOpen; i++) { await new Promise((ok) => setTimeout(ok, 2000)); r = await api.smart.get(); showSmart(r); }
-    return r;
-  };
-  const retrySmart = async (s) => {
-    try {
-      const r = await followSmart(await api.smart.retry(s.key));
-      const d = r.disks.find((x) => x.key === s.key);
-      if (d?.noSmart) toast(`${s.dev}: continua sem SMART`, 'O adaptador também não aceitou do outro jeito.');
-      else toast(`${s.dev}: SMART funcionando`, 'O BrunOS volta a ler a saúde deste disco.');
-    } catch (err) { toastError(err, 'Não deu para tentar de novo'); throw err; }
-  };
-  api.smart.get().then((r) => (r.running ? followSmart(r) : showSmart(r))).catch(() => { /* sem SMART: só não mostra */ });
+  // resumo (0.15.0): o selo do SMART aparece aqui; os detalhes, testes e "Ler agora" ficam na janela Discos
+  api.smart.get().then((r) => { smart = r; lastDisks = ''; if (liveOpen) drawDisks(); }).catch(() => { /* sem SMART: só não mostra */ });
   const drawProcs = async () => {
     const r = await api.processes();
     if (!liveOpen || listMode !== 'procs') return;
@@ -1985,18 +1991,9 @@ function liveUsageDialog() {
     drawChart(); drawDisks();
   };
   d.el.addEventListener('click', (e) => {
-    if (e.target.closest('[data-disk="temp-help"]')) { driveTempHelp(); return; }
-    const sb = e.target.closest('[data-smart]'); if (sb) { const s = smart?.disks.find((x) => x.dev === sb.dataset.smart); if (s) smartDialog(s, retrySmart); return; }
-    if (e.target.closest('[data-disk="script"]')) { import('./energy.js').then((m) => m.scriptDialog()); return; }
-    const sn = e.target.closest('[data-disk="smart-now"]');
-    if (sn) {
-      sn.disabled = true; sn.classList.add('busy');
-      api.smart.refresh().then(followSmart).then((r) => {
-        if (r.err) toast('Não deu para ler os discos', r.err, null, { error: true });
-        else toast('Discos lidos', r.disks.some((x) => x.noSmart) ? 'Discos com "sem SMART" não são lidos (clique na etiqueta para os detalhes).' : 'Os que estavam parados ficam para a próxima.');
-      }).catch((err) => { toastError(err, 'Não deu para ler os discos'); api.smart.get().then(showSmart).catch(() => {}); });
-      return;
-    }
+    if (e.target.closest('[data-disk="open"]')) { d.close(); openDisks(); return; }
+    const row = e.target.closest('[data-open-dev]');
+    if (row) { d.close(); openDisks({ dev: row.dataset.openDev, tab: e.target.closest('.smart-badge') ? 'health' : undefined }); return; }
     const pa = e.target.closest('[data-proc-app]'); if (pa) { openAppDetails(appById(pa.dataset.procApp)); return; }
     const pe = e.target.closest('[data-period]');
     if (pe) { period = pe.dataset.period; $$('[data-period]', d.el).forEach((x) => x.classList.toggle('on', x === pe)); if (period === 'live') { clearTimeout(longTimer); drawChart(); } else loadLong(); return; }
@@ -2022,6 +2019,7 @@ function commandPalette() {
   if ($('.cmdk')) return;
   const actions = [
     { icon: 'folder', label: 'Abrir Arquivos', run: () => openSheet('files', $('[data-sys="files"]')) },
+    { icon: 'disks', label: 'Abrir Discos (saúde, partições, desempenho)', run: () => openDisks() },
     { icon: 'sliders', label: 'Abrir Configurações', run: () => openSheet('settings', $('[data-sys="settings"]')) },
     { icon: 'grid', label: 'Abrir Widgets (criar e editar)', run: () => openWidgets() },
     { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },

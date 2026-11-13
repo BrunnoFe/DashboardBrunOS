@@ -1,4 +1,5 @@
-// Discos na janela "Uso ao vivo": temperatura (HD com drivetemp ou NVMe) e previsão de disco cheio.
+// Discos no Uso ao vivo (resumo: nome, selo do SMART, temperatura e espaço) e peças que a janela Discos
+// também usa (previsão de disco cheio, ajuda do drivetemp). Os detalhes ficam na janela Discos (0.15.0).
 import { $, esc, fmtBytes, svg, toast, openDialog } from './ui.js';
 
 // Mesmos limites dos avisos do servidor (watch.go): HD 55 °C, SSD/NVMe 70 °C.
@@ -23,87 +24,28 @@ export function forecastText(f) {
   return `+${fmtBytes(f.perDay)}/dia · cheio ${when}`;
 }
 
-// SMART (D3): sda1 → sda, nvme0n1p2 → nvme0n1
-const baseDev = (dev) => String(dev || '').replace('/dev/', '').replace(/^(nvme\d+n\d+)p\d+$/, '$1').replace(/^([a-z]+)\d+$/, '$1');
+// sda1 → sda, nvme0n1p2 → nvme0n1
+export const baseDev = (dev) => String(dev || '').replace('/dev/', '').replace(/^(nvme\d+n\d+)p\d+$/, '$1').replace(/^([a-z]+)\d+$/, '$1');
 const HEALTH = { ok: ['OK', 'ok'], atencao: ['Atenção', 'warn'], falhando: ['Falhando', 'bad'] };
 function smartBadge(s) {
-  if (s?.noSmart) return `<button class="smart-badge bad" data-smart="${esc(s.dev)}" title="O adaptador deste disco não deixa ler a saúde (SMART): clique para os detalhes">sem SMART</button>`;
+  if (s?.noSmart) return '<span class="smart-badge bad" title="O adaptador deste disco não deixa ler a saúde (SMART)">sem SMART</span>';
   const h = s && HEALTH[s.health];
-  return h ? `<button class="smart-badge ${h[1]}" data-smart="${esc(s.dev)}" title="Saúde do disco (SMART): clique para os detalhes">${h[0]}</button>` : '';
+  return h ? `<span class="smart-badge ${h[1]}" title="Saúde do disco (SMART): clique para os detalhes">${h[0]}</span>` : '';
 }
 
+/** Linhas do Uso ao vivo: cada uma abre o disco na janela Discos (data-open-dev). */
 export function diskRowsHTML(disks, forecast = [], smart = null) {
   if (!disks.length) return '<div class="empty-note">Nenhum disco encontrado</div>';
   const fc = Object.fromEntries(forecast.map((f) => [f.name, f]));
   const sm = Object.fromEntries((smart?.disks || []).map((s) => [s.dev, s]));
-  const rows = disks.map((k) => {
-    const f = fc[k.name], ft = forecastText(f), soon = f?.daysLeft != null && f.daysLeft <= 30;
-    return `<div class="disk-row">
+  return disks.map((k) => {
+    const f = fc[k.name], ft = forecastText(f), soon = f?.daysLeft != null && f.daysLeft <= 30, dev = baseDev(k.device);
+    return `<button class="disk-row clickable" data-open-dev="${esc(dev)}" title="Abrir ${esc(k.name)} na janela Discos">
       <span class="disk-ico">${svg(k.system ? 'cpu' : 'disk')}</span>
-      <span class="disk-name"><b>${esc(k.name)}${tempHTML(k)}${smartBadge(sm[baseDev(k.device)])}</b><small>${esc(k.device.replace('/dev/', ''))}${k.model ? ' · ' + esc(k.model) : ''} · ${k.rotational ? 'HD' : 'SSD'}</small>${ft ? `<small class="disk-fc ${soon ? 'soon' : ''}">${esc(ft)}</small>` : ''}</span>
+      <span class="disk-name"><b>${esc(k.name)}${tempHTML(k)}${smartBadge(sm[dev])}</b><small>${esc(k.device.replace('/dev/', ''))}${k.model ? ' · ' + esc(k.model) : ''} · ${k.rotational ? 'HD' : 'SSD'}</small>${ft ? `<small class="disk-fc ${soon ? 'soon' : ''}">${esc(ft)}</small>` : ''}</span>
       <span class="track"><i style="width:${(k.used / k.total) * 100}%" class="${k.used / k.total > 0.9 ? 'warn' : ''}"></i></span>
-      <span class="disk-val">${fmtBytes(k.used)} <small>/ ${fmtBytes(k.total)}</small></span></div>`;
+      <span class="disk-val">${fmtBytes(k.used)} <small>/ ${fmtBytes(k.total)}</small></span></button>`;
   }).join('');
-  // HD sem temperatura: o driver drivetemp não está carregado no servidor
-  const hint = disks.some((k) => k.rotational && k.temp == null)
-    ? `<div class="disk-hint">${svg('info')}<span>Para ver a temperatura dos HDs, ative o sensor no servidor.</span><button class="pill-btn" data-disk="temp-help">Como ativar</button></div>` : '';
-  // saúde dos discos: quando foi lida, "Ler agora" e o que falta instalar
-  const when = smart?.checkedAt ? new Date(smart.checkedAt * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-  const text = smart?.running ? 'Lendo a saúde dos discos (SMART), um de cada vez…' : smart?.err ? esc(smart.err)
-    : when ? `Saúde dos discos (SMART) lida em ${esc(when)}. HD parado não é acordado: fica para a próxima.` : 'A saúde dos discos (SMART) é lida a cada 6 horas.';
-  const smartRow = smart ? `<div class="disk-hint smart-row">${svg('shield')}<span>${text}</span>
-    ${/script do servidor|smartmontools/.test(smart.err || '') && !smart.running ? `<button class="pill-btn" data-disk="script">Mostrar comandos</button>` : ''}<button class="pill-btn ${smart.running ? 'busy' : ''}" data-disk="smart-now" ${smart.running ? 'disabled' : ''}>${svg('refresh')}${smart.running ? 'Lendo…' : 'Ler agora'}</button></div>` : '';
-  return rows + hint + smartRow;
-}
-
-const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
-
-/** Disco sem SMART: o que aconteceu e "Tentar de novo" (onRetry devolve uma Promise). */
-function noSmartDialog(s, onRetry) {
-  const usb = s.tran === 'usb';
-  const why = s.noSmartWhy === 'travou'
-    ? 'O adaptador deste disco não respondeu ao pedido da saúde do disco (SMART). Quando isso acontece, o Linux costuma reiniciar a conexão USB do disco.'
-    : 'O adaptador deste disco respondeu, mas sem nenhum dado da saúde do disco (SMART).';
-  const when = s.noSmartAt ? new Date(s.noSmartAt * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-  const d = openDialog(`<h2>${svg('shield')}Saúde de ${esc(s.dev)}</h2>
-    <p class="dlg-text"><span class="smart-badge bad">sem SMART</span> ${esc(s.model || '')}${when ? ` · desde ${esc(when)}` : ''}</p>
-    <p class="dlg-text">${esc(why)} O disco em si não tem problema por causa disso: ler e gravar arquivos continua normal. Para não forçar o adaptador, o BrunOS parou de perguntar a este disco.</p>
-    ${usb ? '<p class="dlg-text">Isso é comum em cases USB: o chip do case nem sempre aceita os comandos do SMART. Um case com chip <b>ASMedia</b> costuma funcionar.</p>' : ''}
-    <p class="dlg-text"><small>"Tentar de novo" pede do outro jeito (${s.failMode === 'sat' ? 'automático' : 'como disco SATA'}). Se o adaptador também não aceitar, ele pode reiniciar a conexão USB do disco por alguns segundos: faça com o disco parado (nada copiando nem tocando).</small></p>
-    <div class="dlg-actions"><button class="pill-btn" data-c="retry">${svg('refresh')}Tentar de novo</button><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 480 });
-  d.el.addEventListener('click', async (e) => {
-    const c = e.target.closest('[data-c]'); if (!c) return;
-    if (c.dataset.c === 'ok') { d.close(); return; }
-    c.disabled = true; c.classList.add('busy'); c.lastChild.textContent = 'Tentando…';
-    try { await onRetry(s); d.close(); } catch { c.disabled = false; c.classList.remove('busy'); c.lastChild.textContent = 'Tentar de novo'; }
-  });
-}
-
-/** Detalhes do SMART de um disco. */
-export function smartDialog(s, onRetry) {
-  if (s.noSmart) { noSmartDialog(s, onRetry); return; }
-  const [label, cls] = HEALTH[s.health] || ['—', ''];
-  const row = (k, v, bad) => `<div class="kv ${bad ? 'bad' : ''}"><span>${k}</span><span>${v}</span></div>`;
-  const years = s.powerOnHours != null ? ` (${(s.powerOnHours / 8766).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} anos)` : '';
-  const text = { ok: 'O disco não relata problemas.', atencao: 'Apareceram setores com problema. Não é falha imediata, mas é o sinal clássico de que o disco começou a se desgastar: confira o backup do que está nele.', falhando: 'O próprio disco avisa que está falhando. Copie o que está nele para outro lugar o quanto antes.' }[s.health] || '';
-  const d = openDialog(`<h2>${svg('shield')}Saúde de ${esc(s.dev)}</h2>
-    <p class="dlg-text"><span class="smart-badge ${cls}">${label}</span> ${esc(s.model || '')}${s.serial ? ` · série ${esc(s.serial)}` : ''}</p>
-    <p class="dlg-text">${esc(text)}</p>
-    <div class="card smart-card">
-      ${row('Temperatura', s.temp != null ? `${Math.round(s.temp)} °C` : '—')}
-      ${row('Horas ligado', `${fmtN(s.powerOnHours)}${years}`)}
-      ${row('Vezes ligado', fmtN(s.powerCycles))}
-      ${row('Setores realocados', fmtN(s.reallocated), s.reallocated > 0)}
-      ${row('Setores pendentes', fmtN(s.pending), s.pending > 0)}
-      ${row('Setores incorrigíveis', fmtN(s.uncorrectable), s.uncorrectable > 0)}
-      ${row('Erros de cabo (CRC)', fmtN(s.crcErrors))}
-      ${s.percentUsed != null ? row('Desgaste (NVMe)', `${s.percentUsed}%`, s.percentUsed >= 90) + row('Erros de mídia (NVMe)', fmtN(s.mediaErrors), s.mediaErrors > 0) : ''}
-      ${row('Última leitura completa', s.checkedAt ? new Date(s.checkedAt * 1000).toLocaleString('pt-BR') : '—')}
-    </div>
-    ${(s.history || []).length > 1 ? `<p class="dlg-text"><small>Mudanças: ${s.history.map((h) => `${new Date(h.at * 1000).toLocaleDateString('pt-BR')}: ${h.reallocated} realocados, ${h.pending} pendentes`).map(esc).join(' · ')}</small></p>` : ''}
-    <p class="dlg-text"><small>Erros de cabo (CRC) costumam ser cabo ou adaptador USB ruim, não o disco.</small></p>
-    <div class="dlg-actions"><button class="pill-btn primary" data-c="ok">Fechar</button></div>`, { width: 480 });
-  d.el.addEventListener('click', (e) => { if (e.target.closest('[data-c="ok"]')) d.close(); });
 }
 
 const TEMP_CMDS = 'sudo modprobe drivetemp\necho drivetemp | sudo tee /etc/modules-load.d/drivetemp.conf';

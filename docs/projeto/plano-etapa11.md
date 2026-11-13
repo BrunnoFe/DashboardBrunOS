@@ -162,6 +162,11 @@ RAM. Playwright: cada gráfico migrado com o balão aberto e a ponta viva, em 14
 
 ## 0.15.0: janela Discos (leitura e ações seguras)
 
+> Entregue em 13/11/2026 (resumo no `historico.md`). Mudança em relação ao plano: a Linha do tempo ficou
+> em `/data/disk-events.json` (o `disks.json` já era dos discos mapeados), e o teste com `lsblk`,
+> `hdparm`, `journalctl` e `dd` falsos virou o `tests/script-discos.sh` (script de verdade como root num
+> contêiner), no lugar do OpenSSH do `smoke.sh`.
+
 ### Script do servidor (próxima versão do `brunos-host`, assinado, troca automática)
 
 Pedidos novos, todos validados como os de hoje (disco `sd[a-z]{1,2}` ou `nvme[0-9]n1`, `[ -b /dev/$d ]`):

@@ -49,6 +49,8 @@ jobs:
         run: bash tests/smoke.sh brunos:ci
       - name: Script do servidor se atualiza só com assinatura válida (como root, num contêiner)
         run: bash tests/script-selfupdate.sh
+      - name: Pedidos da janela Discos no script do servidor (como root, num contêiner)
+        run: bash tests/script-discos.sh
 
   publish:
     name: publica a imagem

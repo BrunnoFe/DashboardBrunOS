@@ -10,6 +10,9 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"regexp"
+	"strings"
+	"time"
 
 	"brunos/internal/store"
 	"brunos/internal/sysinfo"
@@ -74,7 +77,20 @@ func (s *Store) Add(snap sysinfo.Snapshot, memPct float64) {
 		db.Add("disk."+d.Name+".wr", d.Write)
 		db.Add("disk."+d.Name+".busy", d.Busy)
 	}
+	// temperatura dos discos com drivetemp/NVMe (0.15.0); a do SMART chega pelo monitors.go. Medida
+	// velha (HD parado) não entra, para não desenhar uma linha reta falsa.
+	now := time.Now().Unix()
+	for _, d := range snap.Disks {
+		if d.Temp != nil && now-d.TempAt < 120 {
+			if dev := baseDev.FindString(strings.TrimPrefix(d.Device, "/dev/")); dev != "" {
+				db.Add("disk."+dev+".temp", *d.Temp)
+			}
+		}
+	}
 }
+
+// baseDev: sda1 → sda, nvme0n1p2 → nvme0n1.
+var baseDev = regexp.MustCompile(`^(nvme\d+n\d+|sd[a-z]+)`)
 
 // Ranges aceitos por /api/stats/history.
 var Ranges = map[string]bool{"1h": true, "24h": true, "48h": true, "7d": true, "30d": true}
