@@ -127,6 +127,8 @@ export const ICON_SIZES = {
 };
 export const CASA = 1.58;
 export const ICON_GAPS = { fixo: 'Fixo', elastico: 'Elástico', preencher: 'Preencher' };
+export const LAST_ROW = { centro: 'Centralizada', celular: 'Como no celular' };
+export const HOME_FIT = { encolher: 'Encolher os widgets', widgets: 'Widgets grandes' };
 const ELASTIC_MAX = 1.6; // o Elástico estica a casa até 1,6 × a mínima
 
 /** Largura da Régua para o zoom k do Quadro. */
@@ -142,12 +144,73 @@ export function iconSizeKey(v) {
 
 export const CASA_CELULAR = 1.3; // no celular a casa é mais justa (≈ 6 / 5 / 4 / 3 colunas em 360 px)
 
-/** Ícone e casa (px) de um Tamanho do ícone para uma Régua. `ratio`: casa ÷ ícone. */
-export function iconMetrics(regua, size, ratio = CASA) {
+/* ── Área útil e escala (0.13.2) ─────────────────────────────────────────────────────────────────
+   Área útil = retângulo de cada tela (margem dos lados, de baixo da saudação até em cima da pesquisa).
+   O Quadro estica para a grade encher a largura dela, entre KMIN e KMAX (150 a 340 px). No computador
+   os ícones acompanham pela Régua, com mínimo de 60 % do tamanho normal; no celular, piso fixo em px. */
+export const KMIN = 150 / Q.w, KMAX = 340 / Q.w;
+export const MOBILE_W = 640;
+export const TILE_EXTRA = 46; // altura de um app além do ícone (folga, espaço e nome)
+export const ROW_GAP = 14;    // entre fileiras de apps
+const BIG1 = (6 * Q.w + 5 * Q.gapX) / (15 * CASA + 1); // ícone Grande com o Quadro no tamanho normal (~64 px)
+
+/** Área útil na largura: margem de ~7 % de cada lado (16 px no celular). */
+export function areaUtil(vw) {
+  const margin = vw < MOBILE_W ? 16 : Math.max(24, Math.round(vw * 0.07));
+  return { margin, width: Math.max(200, vw - 2 * margin) };
+}
+
+/** Régua para uma Área útil: 6 colunas de widgets no Quadro máximo, sem passar da Área útil. */
+export const reguaFor = (auW, mobile = false) => (mobile ? auW : Math.min(auW, reguaW(KMAX)));
+
+/** Ícone e casa (px) de um Tamanho do ícone para uma Régua. */
+export function iconMetrics(regua, size, { mobile = false } = {}) {
   const t = ICON_SIZES[iconSizeKey(size)];
   const big = regua / (15 * CASA + 1);
-  const icon = Math.round(Math.max(t.floor, t.k * big));
-  return { icon, casa: Math.round(icon * ratio * 100) / 100 };
+  const floor = mobile ? t.floor : 0.6 * t.k * BIG1; // computador: escala até 60 %
+  const icon = Math.floor(Math.max(floor, t.k * big)); // para baixo: 16 colunas nunca passam da Régua por 1 px
+  return { icon, casa: Math.round(icon * (mobile ? CASA_CELULAR : CASA) * 100) / 100 };
+}
+
+/** Tamanho da grade de widgets (px com o Quadro normal, k = 1). */
+export const areaSize = (cols, rows) => ({ w: cols * Q.w + (cols - 1) * Q.gapX, h: rows * (Q.h + Q.label) + (rows - 1) * Q.gapY });
+/** Altura de `rows` fileiras de apps. */
+export const appRowsH = (rows, icon) => (rows > 0 ? rows * (icon + TILE_EXTRA) + (rows - 1) * ROW_GAP : 0);
+/** Quantas fileiras de apps cabem em `h` px. */
+export const rowsFit = (h, icon) => Math.max(0, Math.floor((h + ROW_GAP) / (icon + TILE_EXTRA + ROW_GAP)));
+
+/**
+ * Tela com a Área de widgets em cima (ou embaixo) da Área de apps: zoom do Quadro e fileiras de apps.
+ * auW × auH: Área útil (px); cols × rows: grade de widgets (linhas em uso); nApps: apps ainda sem tela;
+ * appCols: colunas de apps; maxRows: fileiras da Medida (Infinity = Automática); gapH: entre as duas Áreas;
+ * mode: 'encolher' (os widgets diminuem até caberem as fileiras de apps) | 'widgets' (widgets do maior
+ * tamanho; os apps ficam com o que sobrar). Devolve { k, appRows } (appRows 0 = os apps vão para a tela
+ * seguinte) ou null quando nem no Quadro mínimo a grade cabe na largura (Área compacta).
+ */
+export function fitStack({ auW, auH, cols, rows, nApps = 0, appCols: ac = 1, maxRows = Infinity, icon = 64, gapH = 24, mode = 'encolher' }) {
+  const a = areaSize(cols, rows), kW = auW / a.w;
+  if (kW < KMIN - 1e-9) return null;
+  const kTop = Math.min(kW, KMAX);
+  const want = nApps > 0 ? Math.min(maxRows, Math.ceil(nApps / Math.max(1, ac))) : 0;
+  const kFor = (r) => Math.min(kTop, (auH - (r ? appRowsH(r, icon) + gapH : 0)) / a.h);
+  if (mode === 'widgets' || !want) {
+    const k = Math.max(KMIN, kFor(0));
+    return { k, appRows: want ? Math.min(want, rowsFit(auH - a.h * k - gapH, icon)) : 0 };
+  }
+  for (let r = want; r >= 1; r--) { const k = kFor(r); if (k >= KMIN - 1e-9) return { k: Math.max(KMIN, k), appRows: r }; }
+  return { k: Math.max(KMIN, kFor(0)), appRows: 0 };
+}
+
+/**
+ * Widgets ao lado dos apps: zoom do Quadro e a largura que sobra para os apps. Os apps ficam com pelo
+ * menos 3 casas ou 30 % da Área útil. null = lado a lado não cabe (a tela vira "widgets em cima").
+ */
+export function fitSide({ auW, auH, cols, rows, casa, gap = 32 }) {
+  const a = areaSize(cols, rows), appsMin = Math.max(3 * casa, auW * 0.3);
+  const kW = (auW - appsMin - gap) / a.w;
+  if (kW < KMIN - 1e-9) return null;
+  const k = Math.max(KMIN, Math.min(kW, KMAX, auH / a.h));
+  return { k, appsW: auW - a.w * k - gap };
 }
 
 /**
@@ -159,12 +222,13 @@ export function iconMetrics(regua, size, ratio = CASA) {
  * largura); width = (cols − 1) × casa + casa mínima. Quando a Medida não cabe, menos colunas (Área
  * compacta); o ícone nunca encolhe.
  */
-export function appCols({ avail, target, icon, casa, medida, gap = 'fixo' }) {
+export function appCols({ avail, target, icon, casa, medida, gap = 'fixo', overhang = 0 }) {
   target = Math.min(target, avail);
+  avail += overhang; // a folga do nome nas pontas pode avançar sobre a margem da Área útil (computador)
   const maxCols = Math.max(1, Math.floor((avail + 0.5) / casa));
   const want = Array.isArray(medida)
     ? Math.max(1, medida[0])
-    : Math.min(16, Math.max(1, Math.floor((target - icon + 0.5) / casa) + 1));
+    : Math.min(20, Math.max(1, Math.floor((target - icon + 0.5) / casa) + 1));
   const cols = Math.min(want, maxCols);
   // casa que deixa a borda do primeiro e do último ícone nas bordas do alvo
   const fill = cols > 1 ? (target - icon) / (cols - 1) : casa;

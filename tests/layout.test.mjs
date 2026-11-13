@@ -2,7 +2,11 @@
 // Rodar: node --test tests/layout.test.mjs   (ferramenta de desenvolvimento; não vai para a imagem)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fits, firstFree, nearestFree, place, dragPlan, compact, quadro, usedRows, overlaps, reguaW, iconSizeKey, iconMetrics, appCols, CASA, CASA_CELULAR } from '../web/static/js/layout.js';
+import {
+  fits, firstFree, nearestFree, place, dragPlan, compact, quadro, usedRows, overlaps, reguaW, iconSizeKey, iconMetrics, appCols, CASA,
+  KMIN, KMAX, areaUtil, reguaFor, areaSize, appRowsH, rowsFit, fitStack, fitSide,
+} from '../web/static/js/layout.js';
+const MOB = { mobile: true };
 
 // ── Ícones pela Régua (0.13.1) ──
 test('iconSizeKey aceita as letras e converte o número antigo', () => {
@@ -18,7 +22,8 @@ test('iconSizeKey aceita as letras e converte o número antigo', () => {
 test('Grande: 16 colunas com as bordas dos ícones nas bordas da Régua', () => {
   const regua = reguaW(1); // 1580 px
   const { icon, casa } = iconMetrics(regua, 'g');
-  assert.ok(Math.abs(15 * casa + icon - regua) < 16, `15 casas + ícone ≈ Régua (${15 * casa + icon} × ${regua})`);
+  const span = 15 * casa + icon;
+  assert.ok(span <= regua && regua - span < 25, `15 casas + ícone cabe na Régua e quase a enche (${span} × ${regua})`);
   assert.ok(Math.abs(casa / icon - CASA) < 0.01);
 });
 
@@ -27,7 +32,63 @@ test('os Tamanhos seguem a ordem e o piso vale no celular', () => {
   const s = ['p', 'm', 'g', 'e'].map((k) => iconMetrics(r, k).icon);
   assert.deepEqual([...s].sort((a, b) => a - b), s);
   // celular: Régua de 358 px → todos no piso
-  assert.deepEqual(['p', 'm', 'g', 'e'].map((k) => iconMetrics(358, k).icon), [44, 52, 60, 72]);
+  assert.deepEqual(['p', 'm', 'g', 'e'].map((k) => iconMetrics(358, k, MOB).icon), [44, 52, 60, 72]);
+});
+
+test('computador: os ícones acompanham a escala até 60 % (sem piso fixo)', () => {
+  const g1 = iconMetrics(reguaW(1), 'g').icon;
+  const g7 = iconMetrics(reguaW(0.7), 'g').icon;
+  assert.ok(Math.abs(g7 / g1 - 0.7) < 0.03, 'Régua 70 % → ícone ~70 %');
+  const tiny = iconMetrics(300, 'g').icon;
+  assert.equal(tiny, Math.round(0.6 * g1), 'nunca menos de 60 % do normal');
+});
+
+test('Área útil: ~7 % de margem; Régua não passa dela nem do Quadro máximo', () => {
+  assert.deepEqual(areaUtil(2540), { margin: 178, width: 2184 });
+  assert.equal(areaUtil(390).margin, 16);
+  assert.equal(reguaFor(1240), 1240);
+  assert.equal(Math.round(reguaFor(5000)), Math.round(reguaW(KMAX)));
+  assert.equal(reguaFor(358, true), 358);
+});
+
+test('fitStack: o Quadro enche a largura e os apps cabem embaixo', () => {
+  // monitor do Bruno: Área útil 2184 × 1100, widgets 6 × 3, 18 apps em 16 colunas
+  const f = fitStack({ auW: 2184, auH: 1100, cols: 6, rows: 3, nApps: 18, appCols: 16, icon: 88, gapH: 30 });
+  assert.equal(f.appRows, 2);
+  const a = areaSize(6, 3);
+  assert.ok(a.h * f.k + 30 + appRowsH(2, 88) <= 1100 + 0.5, 'widgets + 2 fileiras cabem');
+  assert.ok(f.k <= KMAX && f.k >= KMIN);
+});
+
+test('fitStack Encolher: Medida 2 × 6 encolhe os widgets e, se não der, reduz as fileiras', () => {
+  const f = fitStack({ auW: 2184, auH: 1100, cols: 6, rows: 3, nApps: 18, appCols: 2, maxRows: 6, icon: 88, gapH: 30 });
+  const a = areaSize(6, 3);
+  assert.ok(a.h * f.k + 30 + appRowsH(f.appRows, 88) <= 1100 + 0.5, 'nunca passa da Área útil');
+  assert.ok(f.appRows >= 1 && f.appRows < 6, `fileiras: ${f.appRows}`);
+  assert.ok(a.h * KMIN + 30 + appRowsH(f.appRows + 1, 88) > 1100, 'uma fileira a mais não caberia nem no mínimo');
+});
+
+test('fitStack Widgets grandes: os apps ficam com o que sobrar', () => {
+  const enc = fitStack({ auW: 2184, auH: 1100, cols: 6, rows: 3, nApps: 40, appCols: 16, maxRows: 4, icon: 88, gapH: 30 });
+  const big = fitStack({ auW: 2184, auH: 1100, cols: 6, rows: 3, nApps: 40, appCols: 16, maxRows: 4, icon: 88, gapH: 30, mode: 'widgets' });
+  assert.ok(big.k >= enc.k);
+  assert.ok(big.appRows <= enc.appRows);
+});
+
+test('fitStack: sem fileira que caiba → apps na tela seguinte; estreito → null (compacta)', () => {
+  const f = fitStack({ auW: 1240, auH: 300, cols: 6, rows: 3, nApps: 10, appCols: 10, icon: 50, gapH: 20 });
+  assert.equal(f.appRows, 0);
+  assert.equal(fitStack({ auW: 600, auH: 900, cols: 6, rows: 3 }), null);
+});
+
+test('fitSide: sobra largura para os apps; lado a lado impossível → null', () => {
+  const s = fitSide({ auW: 2184, auH: 1100, cols: 6, rows: 3, casa: 139 });
+  assert.ok(s.k >= KMIN && s.appsW >= 2184 * 0.3 - 1);
+  assert.equal(fitSide({ auW: 880, auH: 600, cols: 6, rows: 3, casa: 90 }), null);
+});
+
+test('rowsFit e appRowsH conversam', () => {
+  for (const icon of [44, 60, 88]) for (let r = 1; r <= 6; r++) assert.equal(rowsFit(appRowsH(r, icon), icon), r);
 });
 
 test('o ícone não muda com a Medida; o que muda são as colunas e a largura', () => {
@@ -40,7 +101,7 @@ test('o ícone não muda com a Medida; o que muda são as colunas e a largura', 
 });
 
 test('Medida que não cabe mostra menos colunas, sem encolher', () => {
-  const { icon, casa } = iconMetrics(358, 'g', CASA_CELULAR); // celular
+  const { icon, casa } = iconMetrics(358, 'g', MOB); // celular
   const r = appCols({ avail: 358, target: 358, icon, casa, medida: [16, 2] });
   assert.equal(r.cols, Math.floor(358 / casa));
   assert.ok(r.width <= 358);
@@ -49,7 +110,7 @@ test('Medida que não cabe mostra menos colunas, sem encolher', () => {
 
 test('celular de 360 px: 6 / 5 / 4 / 3 colunas', () => {
   const cols = ['p', 'm', 'g', 'e'].map((k) => {
-    const { icon, casa } = iconMetrics(358, k, CASA_CELULAR);
+    const { icon, casa } = iconMetrics(358, k, MOB);
     return appCols({ avail: 358, target: 358, icon, casa, medida: [16, 2] }).cols;
   });
   assert.deepEqual(cols, [6, 5, 4, 3]);
@@ -68,13 +129,13 @@ test('Elástico estica até o limite; Preencher vai de ponta a ponta', () => {
   assert.ok(Math.abs(span(p4) - regua) < 1);
 });
 
-test('Automática: quantas couberem na Régua, no máximo 16', () => {
+test('Automática: quantas couberem na Régua, no máximo 20', () => {
   const regua = 1500, { icon, casa } = iconMetrics(regua, 'g');
   const r = appCols({ avail: 1700, target: regua, icon, casa, medida: 'auto' });
   assert.ok((r.cols - 1) * casa + icon <= regua + 0.5);
   assert.ok(r.cols * casa + icon > regua);
   const big = appCols({ avail: 5000, target: 5000, icon: 44, casa: 70, medida: 'auto' });
-  assert.equal(big.cols, 16);
+  assert.equal(big.cols, 20);
 });
 
 const A = (id, x, y, w = 1, h = 1) => ({ id, x, y, w, h });

@@ -43,20 +43,29 @@ O espaço dos ícones dos apps (e das pastas) de uma Página, com a sua própria
 _Evite_: grade de apps, grade de ícones (Grade é um Formato)
 
 **Medida**:
-Quantas colunas por quantas linhas tem uma Área: em Quadros na Área de widgets (até 6 × 4), em ícones
-na Área de apps (até 16 × 6, ou Automática: quantos couberem). É o máximo: linhas vazias no fim não
+Quantas colunas por quantas linhas tem uma Área: em Quadros na Área de widgets (até 8 × 5), em ícones
+na Área de apps (até 20 × 8, ou Automática: quantos couberem). É o máximo: linhas vazias no fim não
 ocupam espaço na tela. Telas estreitas demais (ou, na Área de apps, um Tamanho do ícone grande demais)
 mostram a Área compacta (menos colunas, na ordem de leitura) sem mudar a Medida guardada.
 _Evite_: grade, conformação, tamanho (Tamanho é de um Widget)
 
+**Área útil**:
+O retângulo de cada tela onde ficam a Área de widgets e a Área de apps: com margem dos lados, de baixo da
+saudação até em cima da pesquisa. Tudo de uma tela cabe nele; o Quadro cresce ou diminui (dentro de uma
+faixa) para a grade da Medida encher a largura dele.
+_Evite_: tela útil, espaço livre, viewport
+
 **Régua**:
-A largura que a Área de widgets teria com 6 colunas naquela tela, seja qual for a Medida da Página. Os
-Tamanhos do ícone e o Espaço entre os ícones são medidos por ela; muda só quando a tela muda.
+A largura que a Área de widgets teria com 6 colunas naquela tela, sem passar da Área útil, seja qual for
+a Medida da Página. Os Tamanhos do ícone e o Espaço entre os ícones são medidos por ela; muda só quando a
+tela muda.
 _Evite_: largura da tela, largura útil
 
 **Tamanho do ícone**:
 Pequeno, Médio, Grande ou Enorme, o mesmo em todas as Páginas. O Grande é o maior em que 16 colunas de
-apps ainda cabem na Régua; os outros são proporções dele (o Enorme não deixa caber 16 colunas).
+apps ainda cabem na Régua; os outros são proporções dele (o Enorme não deixa caber 16 colunas). No
+computador e na TV, ícones e widgets crescem e encolhem juntos (escala); só no celular cada tamanho tem
+um mínimo fixo em px.
 _Evite_: zoom, escala, tamanho (sozinho, que é de um Widget)
 
 **Espaço entre os ícones**:
@@ -80,7 +89,9 @@ _Evite_: layout (o arranjo de dentro de um Widget é o Formato), estilo, tema, m
 
 **Página de continuação**:
 Tela criada sozinha logo depois de uma Página cujos apps não cabem na tela, ou, no celular, a tela com os
-apps de uma Página que também tem widgets; conta como a mesma Página.
+apps de uma Página que também tem widgets; conta como a mesma Página. Não repete os widgets e usa a Área
+útil inteira (as colunas da Medida, com quantas fileiras couberem); só é criada quando a anterior está
+cheia.
 _Evite_: página extra, página automática
 
 **App solto**:

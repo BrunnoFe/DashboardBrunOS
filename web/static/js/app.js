@@ -1,7 +1,10 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { paintBattery, batteryDialog } from './battery.js';
 import { BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
-import { fits, firstFree, place, dragPlan, compact, quadro, usedRows, Q, reguaW, iconSizeKey, iconMetrics, appCols, ICON_SIZES, ICON_GAPS, CASA, CASA_CELULAR } from './layout.js';
+import {
+  fits, firstFree, place, dragPlan, compact, usedRows, Q, iconSizeKey, iconMetrics, appCols, ICON_SIZES, ICON_GAPS, LAST_ROW, HOME_FIT,
+  MOBILE_W, areaUtil, reguaFor, fitStack, fitSide, rowsFit,
+} from './layout.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
@@ -19,7 +22,7 @@ import {
 const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '6', '13', '10'];
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
-  wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 'g', iconGap: 'fixo',
+  wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 'g', iconGap: 'fixo', lastRow: 'centro', homeFit: 'encolher',
   widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, pageCfg: {}, mobileSplit: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
   // 0.10.0: Bloqueio (J1) e Terminal (K1–K3)
@@ -274,7 +277,7 @@ function pageCfg(p) {
   return {
     disp: DISPS.includes(c.disp) ? c.disp : 'wtop',
     wm: Array.isArray(c.wm) ? pair(c.wm, MAX_W, MAX_H) : [...DEF_WM],
-    am: Array.isArray(c.am) ? pair(c.am, 16, 6) : 'auto',
+    am: Array.isArray(c.am) ? pair(c.am, 20, 8) : 'auto',
   };
 }
 function setPageCfg(p, patch) { (set().pageCfg ||= {})[p] = { ...pageCfg(p), ...patch }; }
@@ -285,6 +288,7 @@ function W2() {
   if ((st.widgets2.v || 1) < 3) { migrateAreas(st); save(); }
   return st.widgets2;
 }
+const OLD_W = 6, OLD_H = 4; // limites da 0.13.0: a conversão antiga continua igual
 // v1/v2 → v3: cada Página vira uma grade (colunas fixas de antes, ou a soma das larguras, até 6; até 4
 // linhas) e os widgets são encaixados na ordem de hoje; o que não couber vai para uma Página nova.
 function migrateAreas(st) {
@@ -294,16 +298,16 @@ function migrateAreas(st) {
   for (const p of pages) {
     const ids = (w.areas[p] || []).map((x) => (typeof x === 'string' ? x : x?.id)).filter((id) => id && w.items[id]);
     const items = ids.map((id) => { const it = normalize(w.items[id]); return { id, w: it.w, h: it.h, full: w.items[id].size === 'f' }; });
-    const cols = clamp(oldCols[p] || items.reduce((s, it) => s + (it.full ? 1 : it.w), 0), Math.max(1, ...items.map((it) => (it.full ? 1 : it.w))), MAX_W);
+    const cols = clamp(oldCols[p] || items.reduce((s, it) => s + (it.full ? 1 : it.w), 0), Math.max(1, ...items.map((it) => (it.full ? 1 : it.w))), OLD_W);
     for (const it of items) if (it.full) it.w = cols; // a Faixa antiga ocupa a largura da Área
     let rest = items, page = p;
     while (rest.length) {
-      const { list, overflow } = place([], cols, MAX_H, rest);
+      const { list, overflow } = place([], cols, OLD_H, rest);
       if (!list.length) break;
       areas[page] = list.map(({ id, x, y }) => ({ id, x, y }));
       for (const o of list) { Object.assign(w.items[o.id], { w: o.w, h: o.h }); delete w.items[o.id].size; }
       // linhas: as usadas + 1 vazia para crescer (2 a 4); a Medida dá para mudar depois
-      cfg[page] = { disp: 'wtop', wm: [cols, clamp(usedRows(list) + 1, 2, MAX_H)], am: 'auto', ...(cfg[page] || {}) };
+      cfg[page] = { disp: 'wtop', wm: [cols, clamp(usedRows(list) + 1, 2, OLD_H)], am: 'auto', ...(cfg[page] || {}) };
       rest = overflow; page = next++;
     }
   }
@@ -458,8 +462,44 @@ function dispSVG(d) {
   };
   return `<svg class="disp-ico" viewBox="0 0 44 28" aria-hidden="true"><rect x=".5" y=".5" width="43" height="27" rx="5" class="df"/>${parts[d] || parts.wtop}</svg>`;
 }
+/* Organização da tela inicial (0.13.2): submenu da Aparência com Tamanho do ícone, Espaço entre os
+   ícones, Última fileira e "Quando não cabe tudo". Cada escolha tem um desenho e uma frase. */
+function hlSVG(kind, v) {
+  const W = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" class="dw"/>`;
+  const I = (x, y, s = 4) => `<rect x="${x - s / 2}" y="${y - s / 2}" width="${s}" height="${s}" rx="${s / 4}" class="da"/>`;
+  const row = (y, xs, s) => xs.map((x) => I(x, y, s)).join('');
+  const body = {
+    size: () => { const s = { p: 4.5, m: 6, g: 7.5, e: 9.5 }[v]; return row(14, [10, 22, 34], s); },
+    gap: () => W(5, 5, 34, 6) + row(19, v === 'fixo' ? [13, 19, 25, 31] : v === 'elastico' ? [9, 17.7, 26.3, 35] : [6, 16.7, 27.3, 38], 4),
+    last: () => row(11, [6, 14, 22, 30, 38], 4) + row(20, v === 'centro' ? [18, 26] : [6, 14], 4),
+    fit: () => (v === 'encolher' ? W(8, 4, 12, 7) + W(22, 4, 14, 7) + row(16, [10, 17, 24, 31], 3.5) + row(22.5, [10, 17, 24, 31], 3.5)
+      : W(4, 4, 17, 12) + W(23, 4, 17, 12) + row(21, [10, 17, 24], 3.5) + '<path d="M31 21h7m-2.5-2.5L38 21l-2.5 2.5" class="hl-arrow"/>'),
+  }[kind];
+  return `<svg class="disp-ico" viewBox="0 0 44 28" aria-hidden="true"><rect x=".5" y=".5" width="43" height="27" rx="5" class="df"/>${body()}</svg>`;
+}
+const HL_SECTIONS = [
+  { key: 'iconSize', kind: 'size', title: 'Tamanho dos ícones', desc: 'O mesmo em todas as páginas. No Grande, 16 colunas vão de uma ponta à outra dos widgets.',
+    opts: { p: ['Pequeno', ''], m: ['Médio', ''], g: ['Grande', ''], e: ['Enorme', 'Menos colunas cabem'] } },
+  { key: 'iconGap', kind: 'gap', title: 'Espaço entre os ícones', desc: 'Como os apps usam a largura dos widgets.',
+    opts: { fixo: ['Fixo', 'Sempre o mesmo espaço, no centro'], elastico: ['Elástico', 'Estica um pouco para alinhar'], preencher: ['Preencher', 'De uma ponta à outra'] } },
+  { key: 'lastRow', kind: 'last', title: 'Última fileira de apps', desc: 'Quando ela não fica completa.',
+    opts: { centro: ['Centralizada', 'No meio da tela'], celular: ['Como no celular', 'Começa na esquerda'] } },
+  { key: 'homeFit', kind: 'fit', title: 'Quando não cabe tudo na tela', desc: 'Widgets e apps de uma página dividem a mesma tela.',
+    opts: { encolher: ['Encolher os widgets', 'Para caberem as fileiras de apps'], widgets: ['Widgets grandes', 'Os apps que sobram vão para a próxima tela'] } },
+];
+function homeLayoutDialog(after) {
+  const cur = (key) => (key === 'iconSize' ? iconSizeKey(set().iconSize) : set()[key] || DEFAULTS[key]);
+  const body = () => HL_SECTIONS.map((s) => `<div class="hl-sec"><div class="hl-head"><b>${s.title}</b><small>${s.desc}</small></div>
+    <div class="dpick hl-pick" style="--n:${Object.keys(s.opts).length}">${Object.entries(s.opts).map(([v, [l, d]]) => `<button type="button" class="dp-opt ${cur(s.key) === v ? 'on' : ''}" data-hl="${s.key}" data-v="${v}" aria-pressed="${cur(s.key) === v}">${hlSVG(s.kind, v)}<span>${l}</span>${d ? `<small>${d}</small>` : ''}</button>`).join('')}</div></div>`).join('');
+  const d = openDialog(`<h2>Organização da tela inicial</h2><div class="hl-body">${body()}</div>`, { width: 640, onClose: () => after?.() });
+  d.el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-hl]'); if (!b) return;
+    set()[b.dataset.hl] = b.dataset.v; save(); renderApps();
+    $('.hl-body', d.el).innerHTML = body();
+  });
+}
 /* Seletores (0.13.0). Quadradinhos: acende do canto até onde o mouse (ou o dedo) está, com "4 × 3", e o
-   clique escolhe — usado na Medida da Área de widgets (6 × 4), na de apps (16 × 6, + Automático) e no
+   clique escolhe — usado na Medida da Área de widgets (8 × 5), na de apps (20 × 8, + Automático) e no
    Tamanho do widget. Disposições: os 6 desenhos. Funcionam soltos (no painel das Configurações) ou num
    balão (modo Organizar, menu do widget). */
 function gridPickHTML({ maxC, maxR, cur, min = [1, 1], auto = false, isAuto = false, label = '' }) {
@@ -559,7 +599,7 @@ function pagePicker(kind, p, anchor, after) {
   const c = pageCfg(p);
   if (kind === 'disp') popover(anchor, `<b class="pp-title">Disposição da Página ${p + 1}</b>${dispPickHTML(c.disp)}`, (pop, close) => pop.addEventListener('click', (e) => { const b = e.target.closest('[data-disp]'); if (b) { close(); setDisp(p, b.dataset.disp); after?.(); } }));
   else if (kind === 'wm') popover(anchor, `<b class="pp-title">Área de widgets da Página ${p + 1}</b>${gridPickHTML({ maxC: MAX_W, maxR: MAX_H, cur: c.wm, label: 'colunas × linhas de Quadros' })}`, (pop, close) => wireGridPick(pop, async (cc, rr) => { close(); await setWidgetMedida(p, cc, rr); after?.(); }));
-  else popover(anchor, `<b class="pp-title">Área de apps da Página ${p + 1}</b>${gridPickHTML({ maxC: 16, maxR: 6, cur: c.am === 'auto' ? null : c.am, auto: true, isAuto: c.am === 'auto', label: 'colunas × linhas de ícones' })}`, (pop, close) => wireGridPick(pop, (cc, rr) => { close(); setAppsMedida(p, [cc, rr]); after?.(); }, () => { close(); setAppsMedida(p, 'auto'); after?.(); }));
+  else popover(anchor, `<b class="pp-title">Área de apps da Página ${p + 1}</b>${gridPickHTML({ maxC: 20, maxR: 8, cur: c.am === 'auto' ? null : c.am, auto: true, isAuto: c.am === 'auto', label: 'colunas × linhas de ícones' })}`, (pop, close) => wireGridPick(pop, (cc, rr) => { close(); setAppsMedida(p, [cc, rr]); after?.(); }, () => { close(); setAppsMedida(p, 'auto'); after?.(); }));
 }
 // Modo Organizar: em cima de cada Página, a Disposição e as Medidas (abrem os seletores num balão)
 function areaBarHTML(p) {
@@ -822,28 +862,29 @@ function renderApps() {
    apps" com os dois tipos, e o celular com "telas separadas", dividem a Página em telas seguidas (a
    segunda conta como continuação). Apps que não cabem seguem em telas de continuação, como antes.
    "Páginas" desligado: as Páginas ficam uma embaixo da outra e a tela rola. */
-const MOBILE_W = 640;
-/* Régua (0.13.1, decisão 52): a largura da Área de widgets com 6 colunas, pelo zoom do Quadro da
-   primeira Área de widgets desenhada (refK). O tamanho do ícone sai dela, igual em todas as Páginas.
-   Como o zoom só é conhecido depois de desenhar os widgets, o desenho usa a Régua do anterior e, se ela
-   mudou (tela, Medida, primeira vez), desenha de novo na hora (antes de a tela pintar). */
-let curRegua = 0, refK = null;
-function reguaSemWidgets(grid) { // nenhuma Área de widgets (ou celular): só a largura conta
-  const pw = Math.min(grid.clientWidth || innerWidth - 32, 1700);
-  const q = innerWidth < MOBILE_W ? null : quadro(pw, Infinity, 6, 1);
-  return q ? reguaW(q.k) : pw;
+/* Área útil e Régua (0.13.2): cada tela tem um retângulo (margem dos lados, de baixo da saudação até em
+   cima da pesquisa) onde tudo cabe. A Régua sai só da largura dela (6 colunas no Quadro máximo), então o
+   ícone é o mesmo em todas as Páginas e muda só quando a tela muda. */
+let curRegua = 0, AU = areaUtil(1280), ICON = { icon: 64, casa: 101 };
+function setIconVars() {
+  const mobile = innerWidth < MOBILE_W, r = document.documentElement.style;
+  AU = areaUtil(innerWidth);
+  curRegua = reguaFor(AU.width, mobile);
+  ICON = iconMetrics(curRegua, set().iconSize, { mobile });
+  r.setProperty('--app-icon', ICON.icon + 'px');
+  r.setProperty('--app-w', ICON.casa + 'px');
 }
-function setIconVars(regua) {
-  const { icon, casa } = iconMetrics(regua, set().iconSize, innerWidth < MOBILE_W ? CASA_CELULAR : CASA), r = document.documentElement.style;
-  r.setProperty('--app-icon', icon + 'px');
-  r.setProperty('--app-w', casa + 'px');
+// Altura da Área útil a partir do topo de `el` (até a pesquisa, descontando os pontinhos das telas)
+function auHeight(el) {
+  const desk = $('#desktop'), top = el.getBoundingClientRect().top - desk.getBoundingClientRect().top + desk.scrollTop;
+  const search = $('#search-pill')?.getBoundingClientRect().top || innerHeight - 110;
+  return Math.max(120, search - 36 - top);
 }
-function drawHome(again = 0) {
+function drawHome() {
   const grid = $('#app-grid');
-  const regua = curRegua || reguaSemWidgets(grid);
-  curRegua = regua; refK = null;
-  setIconVars(regua);
+  setIconVars();
   const items = homeItems(), paged = !!set().appPages, mobile = innerWidth < MOBILE_W;
+  const fitMode = set().homeFit === 'widgets' ? 'widgets' : 'encolher';
   $$('#desktop > .w-area-bar').forEach((x) => x.remove());
   const row = $('#widgets'); row.style.display = 'none'; row.innerHTML = '';
   grid.classList.add('paged'); grid.classList.toggle('stacked', !paged);
@@ -869,32 +910,33 @@ function drawHome(again = 0) {
     let k = 0, first = true;
     for (let si = 0; si < screens.length; si++) {
       const kind = screens[si];
-      do { // apps que não cabem: telas de continuação logo depois (só apps)
-        const showW = kind === 'w' || kind === 'both', showA = kind !== 'w' && kind !== 'new';
-        const pg = html(`<div class="app-page disp-${showW && showA ? disp : showW ? 'wonly' : 'aonly'}" data-real="${real}" ${first ? '' : 'data-cont="1"'}>${first ? areaBarHTML(real) : ''}<div class="page-body">${showW ? '<div class="page-widgets"></div>' : ''}${showA || kind === 'new' ? '<div class="page-apps" role="list"></div>' : ''}</div></div>`);
+      let again = false; // telas de continuação deste tipo: só apps (os widgets nunca se repetem)
+      do {
+        const showW = (kind === 'w' || kind === 'both') && !again, showA = kind !== 'w' && kind !== 'new';
+        let side = showW && showA && (disp === 'wleft' || disp === 'wright');
+        const pg = html(`<div class="app-page disp-${showW && showA ? disp : showW ? 'wonly' : 'aonly'}" data-real="${real}" ${first ? '' : 'data-cont="1"'}>${first ? areaBarHTML(real) : ''}<div class="page-body" style="max-width:${Math.round(AU.width)}px">${showW ? '<div class="page-widgets"></div>' : ''}${showA || kind === 'new' ? '<div class="page-apps" role="list"></div>' : ''}</div></div>`);
         track.append(pg);
+        let rows = Infinity, sideW = 0;
         if (showW) {
-          const fits = fillWidgets(pg, real, list, { both: showA && hasA, side: showA && (disp === 'wleft' || disp === 'wright'), mobile });
-          if (!fits && kind === 'both' && !mobile) { // Área alta demais para dividir a tela com os apps: eles vão para a tela seguinte
+          const f = fillWidgets(pg, real, list, { nApps: showA ? apps.length - k : 0, side, mobile, am: cfg.am, mode: fitMode });
+          side = f.side; sideW = f.appsW || 0;
+          if (showA && hasA && f.appRows === 0) { // não sobra fileira para os apps: eles vão para a tela seguinte
             $('.page-apps', pg)?.remove(); pg.className = pg.className.replace(/\bdisp-\w+/, 'disp-wonly');
             screens.splice(si + 1, 0, 'a'); first = false; break;
           }
+          rows = f.appRows;
         }
         const box = $('.page-apps', pg);
         if (kind === 'new') { box.innerHTML = '<div class="page-new-hint">Página nova: arraste widgets ou apps para cá</div>'; break; }
         if (!showA) { first = false; break; }
-        const side = showW && (disp === 'wleft' || disp === 'wright');
-        const fit = appsPer(pg, box, cfg.am, showW, side);
-        const per = paged ? fit : Infinity;
-        const slice = apps.slice(k, k + per);
+        const lay = layoutApps(box, { am: cfg.am, rows: paged ? rows : Infinity, side, sideW, withW: showW, cont: !first, mobile });
+        const slice = apps.slice(k, k + lay.per);
         box.innerHTML = slice.map((it, i) => itemHTML(it, n + i)).join('');
-        k += slice.length; n += slice.length; first = false;
+        finishApps(box, lay, slice.length);
+        k += slice.length; n += slice.length; first = false; again = true;
       } while (k < apps.length);
     }
   }
-  // a Régua deste desenho (no modo Organizar fica a de antes: os ícones não mudam ao organizar)
-  const real = wEditing ? regua : refK ? reguaW(refK) : reguaSemWidgets(grid);
-  if (Math.abs(real - regua) > 1) { curRegua = real; if (again < 2) return drawHome(again + 1); }
   const pages = $$('.app-page', track), total = pages.length;
   pages.forEach((el, i) => el.setAttribute('aria-label', `Página ${i + 1} de ${total}`));
   page = clamp(page, 0, total - 1);
@@ -907,47 +949,56 @@ function drawHome(again = 0) {
     $$('.page-dots button', grid).forEach((b, i) => b.classList.toggle('on', i === page));
   }, 60), { passive: true });
 }
-// Espaço livre para a página (descontando dock, pesquisa e os pontinhos) a partir do topo do elemento
-function freeHeight(el) {
-  const desk = $('#desktop'), top = el.getBoundingClientRect().top + desk.scrollTop - desk.getBoundingClientRect().top;
-  return Math.max(160, innerHeight - top - 150 - 26);
-}
-// Desenha a Área de widgets numa tela: escala do Quadro pelo espaço que a Disposição dá, ou compacta.
-function fillWidgets(pg, real, list, { both, side, mobile }) {
+// Desenha a Área de widgets numa tela (0.13.2). O Quadro estica para a grade encher a Área útil, entre
+// o mínimo e o máximo; com apps embaixo, "Encolher os widgets" diminui o Quadro até caberem as fileiras
+// de apps (as que eles usam, até a Medida). Estreito demais (ou celular): Área compacta. Lado a lado que
+// não cabe vira "widgets em cima". Devolve { side, appRows, appsW }.
+function fillWidgets(pg, real, list, { nApps, side, mobile, am, mode }) {
   const box = $('.page-widgets', pg), [mc, mr] = pageCfg(real).wm;
-  const pageW = Math.min(pg.clientWidth || innerWidth - 32, 1700);
-  const appW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-w')) || 116;
-  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
-  // lado a lado: os apps ficam com pelo menos 3 colunas; em coluna: sobra pelo menos uma fileira de apps
-  const spaceW = side ? pageW - Math.max(appW * 3, pageW * 0.3) - 24 : pageW;
-  const spaceH = freeHeight(box) - (both && !side ? icon + 60 : 0);
   const rows = wEditing ? mr : Math.max(1, usedRows(list.map(([, , p]) => p)));
-  const q = mobile ? null : quadro(spaceW, spaceH, mc, rows);
-  if (q && !side && refK == null) refK = q.k; // a primeira Área de widgets dá a Régua
-  let k = q?.k ?? 1, cc = 0;
-  if (!q) { // estreito demais: compacta em menos colunas (2 no celular), na ordem de leitura
-    cc = mobile ? 2 : clamp(Math.floor((spaceW + Q.gapX) / (175 + Q.gapX)), 1, mc);
-    k = Math.min(260 / Q.w, spaceW / (cc * Q.w + (cc - 1) * Q.gapX));
+  const auW = Math.min(AU.width, pg.clientWidth || AU.width);
+  const auH = auHeight($('.page-body', pg)) - clamp(innerHeight * 0.025, 10, 28); // menos a margem de cima dos widgets
+  const gapH = clamp(innerHeight * 0.03, 12, 32);
+  if (side && !mobile) {
+    const s = fitSide({ auW, auH, cols: mc, rows, casa: ICON.casa, gap: clamp(innerWidth * 0.03, 16, 44) });
+    if (s) { box.innerHTML = areaHTML(real, list, { k: s.k }); return { side: true, appRows: Infinity, appsW: s.appsW }; }
+    pg.className = pg.className.replace(/\bdisp-\w+/, 'disp-wtop'); // lado a lado não cabe nesta tela
   }
+  const ac = nApps ? appCols({ avail: auW, target: curRegua, icon: ICON.icon, casa: ICON.casa, medida: am, gap: set().iconGap, overhang: appOverhang(false) }).cols : 1;
+  const f = mobile ? null : fitStack({ auW, auH, cols: mc, rows, nApps, appCols: ac, maxRows: Array.isArray(am) ? am[1] : Infinity, icon: ICON.icon, gapH, mode });
+  if (f) { box.innerHTML = areaHTML(real, list, { k: f.k }); return { side: false, appRows: f.appRows }; }
+  // estreito demais: compacta em menos colunas (2 no celular), na ordem de leitura
+  const cc = mobile ? 2 : clamp(Math.floor((auW + Q.gapX) / (175 + Q.gapX)), 1, mc);
+  const k = Math.min(260 / Q.w, auW / (cc * Q.w + (cc - 1) * Q.gapX));
   box.innerHTML = areaHTML(real, list, { k, compactCols: cc });
-  // cabe na altura que sobra (com uma fileira de apps embaixo, quando divide a tela)? false = transbordou
-  return !!cc || side || (rows * (Q.h + Q.label) + (rows - 1) * Q.gapY) * k <= spaceH + 1;
+  const h = box.firstElementChild?.getBoundingClientRect().height || 0;
+  return { side: false, appRows: nApps ? rowsFit(auH - h - gapH, ICON.icon) : 0 };
 }
-// Colunas e largura da Área de apps nesta tela, e quantos apps cabem nela (0.13.1). O ícone tem sempre
-// o Tamanho escolhido; a Medida que não cabe mostra menos colunas. O Espaço entre os ícones diz se a casa
-// estica até a Régua (ou até a sobra ao lado dos widgets). Medida fixa: colunas × linhas. Automática: o
-// que couber na Régua e na altura.
-function appsPer(pg, box, am, withWidgets, side) {
-  const cs = getComputedStyle(document.documentElement);
-  const icon = parseFloat(cs.getPropertyValue('--app-icon')) || 60, casa = parseFloat(cs.getPropertyValue('--app-w')) || 95;
-  const avail = (side ? box.clientWidth : box.parentElement?.clientWidth) || innerWidth - 32;
-  const lay = appCols({ avail, target: side ? avail : curRegua || avail, icon, casa, medida: am, gap: set().iconGap });
-  box.style.gridTemplateColumns = `repeat(${lay.cols}, var(--app-w))`;
-  box.style.columnGap = `${lay.extra}px`;
-  box.style.width = side ? '' : `${lay.width}px`;
-  if (Array.isArray(am)) return am[0] * am[1];
-  const rows = Math.floor(freeHeight(box) / (icon + 60));
-  return Math.max(1, lay.cols * Math.max(withWidgets ? 1 : 2, rows)); // nunca 0 (senão as telas de continuação não acabam)
+// Folga que a caixa de apps pode avançar sobre a margem: a meia casa do nome em cada ponta (os ícones em
+// si ficam dentro da Área útil). No celular e ao lado dos widgets, nenhuma.
+const appOverhang = (side) => (side || innerWidth < MOBILE_W ? 0 : Math.min(ICON.casa - ICON.icon, AU.margin));
+// Colunas, casa e quantos apps cabem nesta tela (0.13.2). O ícone tem sempre o Tamanho escolhido; a
+// Medida que não cabe mostra menos colunas. Fileiras: as que sobram embaixo dos widgets (rows); sem
+// widgets, as da Medida (Automática = quantas couberem); telas de continuação e celular usam a Área útil
+// inteira. Nunca menos de 1 fileira (senão as telas de continuação não acabam).
+function layoutApps(box, { am, rows, side, sideW, withW, cont, mobile }) {
+  const avail = side ? sideW : Math.min(AU.width, box.parentElement?.clientWidth || AU.width);
+  const lay = appCols({ avail, target: side ? avail : curRegua, icon: ICON.icon, casa: ICON.casa, medida: am, gap: set().iconGap, overhang: appOverhang(side) });
+  let r = rows;
+  if (!set().appPages) r = Infinity; // Páginas desligado: tudo numa tela que rola
+  else if (!withW || side) {
+    const fit = rowsFit(auHeight(box), ICON.icon);
+    r = cont || mobile || !Array.isArray(am) ? fit : Math.min(am[1], fit);
+  }
+  return { ...lay, overhang: appOverhang(side), per: lay.cols * Math.max(1, r) };
+}
+// Depois de pôr os apps: largura da caixa (fileira única encolhe para o centro) e alinhamento da última.
+function finishApps(box, lay, n) {
+  const cols = Math.max(1, Math.min(lay.cols, n));
+  box.style.setProperty('--gap-x', `${lay.extra}px`);
+  box.style.width = `${Math.ceil((cols - 1) * lay.casa + ICON.casa) + 1}px`; // +1: arredondamento não quebra a fileira
+  box.style.maxWidth = lay.overhang ? 'none' : ''; // a folga do nome pode passar da Área útil (centralizada)
+  box.classList.toggle('last-left', set().lastRow === 'celular' && n > lay.cols);
 }
 
 /* Pastas (E3) e páginas (E4) */
@@ -1471,10 +1522,8 @@ function settingsRows() {
       ctrl: `<div class="wp-ctrl"><div class="seg wp-mode"><button class="${st.wallpaperMode !== 'schedule' ? 'on' : ''}" data-wpmode="single">Um só</button><button class="${st.wallpaperMode === 'schedule' ? 'on' : ''}" data-wpmode="schedule">Por horário</button></div>${st.wallpaperMode === 'schedule' ? scheduleHTML(wps) : `<div class="wp-thumbs">${wps.map((id) => `<span class="wp-thumb-wrap"><button class="wp-thumb ${st.wallpaper === id ? 'on' : ''}" data-wp="${esc(id)}" style="background-image:url('${esc(wallpaperUrl(id, { thumb: true }))}')" aria-label="Papel de parede"></button>${id.startsWith('upload:') ? `<button class="wp-del" data-wp-del="${esc(id.slice(7))}" aria-label="Apagar">${svg('x')}</button>` : ''}</span>`).join('')}<button class="wp-thumb add" data-wp-add aria-label="Enviar imagem">${svg('plus')}</button></div>`}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip" title="Cor atual"><i></i></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
-    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'O mesmo em todas as páginas, medido pela largura dos widgets: no Grande, 16 colunas de apps vão de uma ponta à outra dos widgets. Não muda com a Medida; quando as colunas não cabem, aparecem menos',
-      ctrl: `<div class="seg">${Object.entries(ICON_SIZES).map(([k, s]) => `<button class="${iconSizeKey(st.iconSize) === k ? 'on' : ''}" data-iconsize="${k}">${s.name}</button>`).join('')}</div>` },
-    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Espaço entre os ícones', desc: 'Fixo: sempre o mesmo espaço, apps centralizados. Elástico: estica um pouco para alinhar com os widgets. Preencher: os apps vão sempre de uma ponta à outra dos widgets',
-      ctrl: `<div class="seg">${Object.entries(ICON_GAPS).map(([k, l]) => `<button class="${(st.iconGap || 'fixo') === k ? 'on' : ''}" data-icongap="${k}">${l}</button>`).join('')}</div>` },
+    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Organização da tela inicial', desc: `Tamanho e espaço dos ícones, última fileira de apps e o que fazer quando não cabe tudo. Agora: ${ICON_SIZES[iconSizeKey(st.iconSize)].name} · ${ICON_GAPS[st.iconGap] || 'Fixo'} · ${LAST_ROW[st.lastRow] || LAST_ROW.centro} · ${HOME_FIT[st.homeFit] || HOME_FIT.encolher}`,
+      ctrl: `<button class="pill-btn" data-act="home-layout">${svg('apps')}Ajustar</button>` },
     { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets e as integrações com os apps na janela Widgets', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
     (() => {
       const total = realPageCount(), p = Math.min(cfgPage, total - 1), c = pageCfg(p);
@@ -1621,12 +1670,11 @@ function wireSettings(body) {
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
-    else if ((el = q('[data-iconsize]'))) { st.iconSize = el.dataset.iconsize; save(); renderApps(); redraw(); }
-    else if ((el = q('[data-icongap]'))) { st.iconGap = el.dataset.icongap; save(); renderApps(); redraw(); }
     else if ((el = q('[data-lockmode]'))) { st.lockMode = el.dataset.lockmode; save(); redraw(); }
     else if ((el = q('[data-act]'))) {
       const a = el.dataset.act;
       if (a === 'live') liveUsageDialog();
+      else if (a === 'home-layout') homeLayoutDialog(redraw);
       else if (a === 'widgets') openWidgets();
       else if (a === 'logout') logout();
       else if (a === 'device') deviceDialog();

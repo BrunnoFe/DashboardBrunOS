@@ -104,6 +104,17 @@ que só se conhece depois de desenhar os widgets; o desenho usa a do anterior e 
 sobra do Elástico/Preencher vai como espaço entre as colunas (cada coluna fica com a casa mínima), senão
 poucas colunas largas passavam da tela.
 
+## 0.13.2 (13/11): Área útil e correções da tela inicial
+Depois do teste da 0.13.1 (fileira de 15 apps fora do centro, widgets repetidos na tela seguinte, 2 × 6
+passando do dock), uma matriz de 252 combinações no Playwright achou 7 defeitos. Agora: Área útil (margem
+de ~7 % dos lados, até a pesquisa) onde tudo cabe; o Quadro estica de 150 a 340 px para encher a largura;
+ícones e widgets na mesma escala no computador; "Encolher os widgets" ou "Widgets grandes" quando não cabe;
+telas de continuação sem widgets e usando a altura toda; última fileira centralizada (ou "como no
+celular"); Medidas até 8 × 5 e 20 × 8; submenu "Organização da tela inicial". Lições: a Área de apps virou
+flex (grade não centraliza a última fileira); o ícone Grande arredonda para baixo (para cima, 16 colunas
+passavam da Régua por 3 px); a folga do nome nas pontas pode avançar sobre a margem. Na matriz, o mouse
+parado em cima de um ícone e a animação de entrada davam falsos "fora do centro".
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

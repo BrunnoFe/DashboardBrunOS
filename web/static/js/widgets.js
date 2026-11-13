@@ -9,7 +9,7 @@ import { batteryGlyph, stateText } from './battery.js';
 // 0.13.0: Tamanho livre, largura × altura em Quadros (w × h, de 1 × 1 até a Medida da Área). Os nomes
 // ficam para os tamanhos conhecidos. As letras antigas (s, w, t, l, f) só existem para converter widgets
 // guardados antes e como "classe" que os Formatos usam para se arrumar (sizeKey).
-export const MAX_W = 6, MAX_H = 4;
+export const MAX_W = 8, MAX_H = 5; // 0.13.2: Medida até 8 × 5 (vale quando cabe; senão a Área fica compacta)
 export const SIZES = {
   s: { label: 'Pequeno', c: 1, r: 1 },
   w: { label: 'Largo', c: 2, r: 1 },

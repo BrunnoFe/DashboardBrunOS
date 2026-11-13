@@ -350,7 +350,8 @@ discos), `uploads.json` (envios em pedaços pendentes), `history.json` (uso por 
 
 `wallpaper` (`builtin:24` | `upload:<nome>` | `local`), `accentMode` (`auto`|`vibrant`|`manual`),
 `manualHue`, `glass`, `blur`, `iconSize` (`p`|`m`|`g`|`e`, Tamanho do ícone pela Régua; o número antigo
-48–88 é lido como o degrau mais próximo), `iconGap` (`fixo`|`elastico`|`preencher`), `widgets` (`files`, `storage`, `system`, `network`, `battery`),
+48–88 é lido como o degrau mais próximo), `iconGap` (`fixo`|`elastico`|`preencher`), `lastRow`
+(`centro`|`celular`), `homeFit` (`encolher`|`widgets`), `widgets` (`files`, `storage`, `system`, `network`, `battery`),
 `showStatus`, `reduceMotion`, `openIn` (`tab`|`same`), `urlMode` (`auto`|`domain`|`port`), `serverHost`,
 `runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
 (atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,

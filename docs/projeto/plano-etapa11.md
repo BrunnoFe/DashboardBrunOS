@@ -51,6 +51,38 @@ centralizado; nada de rolagem horizontal. Unitário de `regua()` e da migração
 
 ---
 
+## 0.13.2: Área útil e correções da tela inicial
+
+Combinado em 12/11/2026 depois do teste da 0.13.1 ("Pode começar"). Uma matriz de 252 combinações (5
+telas × 6 Disposições × 8 Medidas, Organizar, Elástico/Preencher) com a configuração do Bruno achou:
+widgets repetidos nas telas de continuação, fileira incompleta encostada à esquerda, apps passando da
+pesquisa/dock (Medida fixa sem conferir a altura), mais fileiras que a Medida, lado a lado transbordando,
+apps mais largos que os widgets em telas médias (piso fixo do ícone) e celular com widgets atrás do dock.
+
+- **Área útil** (`areaUtil`): margem de ~7 % de cada lado, de baixo da saudação até em cima da pesquisa.
+  Tudo de uma tela cabe nela. Sai o limite de 1.700 px.
+- **Escala**: o Quadro estica para a grade encher a largura (150 a 340 px). Régua = 6 colunas no Quadro
+  máximo, sem passar da Área útil (só depende da largura da tela). Ícones no computador acompanham a
+  escala até 60 % (sem piso fixo); celular mantém o piso (6/5/4/3 colunas).
+- **Encaixe na altura** (`fitStack`, `fitSide`): "Encolher os widgets" (padrão) diminui o Quadro até
+  caberem as fileiras de apps que a tela usa (até a Medida); "Widgets grandes" deixa os apps com o que
+  sobra. Sem fileira que caiba, os apps vão para a tela seguinte. Lado a lado que não cabe vira "widgets
+  em cima" naquela tela.
+- **Páginas de continuação**: nunca repetem os widgets; usam a Área útil inteira (colunas da Medida,
+  quantas fileiras couberem).
+- **Última fileira**: Área de apps com fileiras que quebram sozinhas (flex); "Centralizada" (padrão) ou
+  "Como no celular" (a última começa na esquerda; fileira única sempre no centro).
+- **Medidas**: widgets até 8 × 5, apps até 20 × 8 (valem quando cabem). A conversão antiga da 0.13.0
+  continua com 6 × 4.
+- **Aparência → Organização da tela inicial**: um submenu com desenho e frase em cada escolha (Tamanho
+  dos ícones, Espaço entre os ícones, Última fileira de apps, Quando não cabe tudo na tela). Chaves
+  novas: `lastRow` (`centro`|`celular`), `homeFit` (`encolher`|`widgets`).
+- **Testes**: unitários do `layout.js` (Área útil, escala, `fitStack`, `fitSide`) e a matriz do
+  Playwright como conferência (sem widgets repetidos, nada além da Área útil, fileiras no centro, ícone
+  igual em todas as telas).
+
+---
+
 ## 0.14.0: Históricos de 30 dias + gráficos novos
 
 ### Backend: `internal/tsdb` (pacote novo, um só para todos)

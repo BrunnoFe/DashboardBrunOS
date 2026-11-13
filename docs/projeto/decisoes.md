@@ -243,3 +243,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     conferência do disco antes de apagar. O cadastro é feito uma vez, direto no servidor, para um invasor
     não cadastrar a senha dele antes do Bruno. Montar e desmontar não pedem essa senha (o script tem
     travas próprias). Detalhes: `docs/privado/seguranca.md`.
+55. **Área útil e escala única** (0.13.2, combinado em 12/11/2026 depois do teste da 0.13.1). O Bruno
+    desenhou o retângulo onde widgets e apps devem caber ("meio que uma mistura de área útil e limite").
+    Em vez de escolher entre widgets maiores ou mais colunas, a Medida decide e o Quadro estica (150 a
+    340 px) para encher a largura; no computador os ícones acompanham a mesma escala (até 60 %), e só o
+    celular mantém piso fixo. A Régua passou a depender só da largura da tela (6 colunas no Quadro
+    máximo, limitada à Área útil): o desenho não precisa mais ser refeito para descobrir o zoom. As
+    escolhas de gosto viraram opções (última fileira, encolher widgets ou mandar apps para a próxima
+    tela), como o Bruno pediu.
