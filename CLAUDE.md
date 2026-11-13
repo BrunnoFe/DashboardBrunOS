@@ -130,7 +130,6 @@ Detalhes e pegadinhas do formato da loja: `docs/projeto/runtipi-e-loja.md`.
 | `docs/projeto/runtipi-e-loja.md` | integração com o Runtipi, formato da loja, compose, CI |
 | `docs/projeto/historico.md` | resumo de cada versão, lições e pegadinhas |
 | `docs/projeto/roadmap.md` | o que está combinado e ainda não terminou |
-| `docs/projeto/plano-etapa11.md` | plano detalhado da etapa 11 (0.13.1 → 0.16.0) |
 | `docs/projeto/ideias-futuras.md` | o que foi adiado ou sugerido sem data (e o que foi recusado) |
 | `docs/projeto/retomar.md` | como retomar o projeto |
 | `docs/privado/servidor.md` | hardware, discos, sensores, rede e apps do servidor (só local) |

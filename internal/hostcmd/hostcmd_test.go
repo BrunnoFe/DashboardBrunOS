@@ -228,7 +228,13 @@ func TestHostScriptRefuses(t *testing.T) {
 		"erros", "erros ../sda", "erros sda;reboot", "erros nvme0n1p1", "velocidade", "velocidade sda1", "velocidade sda 2048",
 		"velocidade /dev/sda", "ejetar", "ejetar sda1", "ejetar sda agora", "ejetar $(id)", "smart-teste", "smart-teste sda",
 		"smart-teste sda sat", "smart-teste sda sat medio", "smart-teste sda xyz curto", "smart-teste sda1 sat curto",
-		"smart-teste sda sat curto x", "smart-teste sda sat longo;reboot"} {
+		"smart-teste sda sat curto x", "smart-teste sda sat longo;reboot",
+		// script 11 (montar, desmontar, rótulo, formatar)
+		"montar", "montar abcd", "montar abcd ../etc", "montar abcd x/y", "montar ab;cd disco", "montar $(id) disco",
+		"montar abcd disco x", "montar zzzz disco", "desmontar", "desmontar ../etc", "desmontar a b", "desmontar disco/../x",
+		"rotulo abcd", "rotulo abcd nome;reboot", "rotulo abcd nome-comprido-demais-xx", "formatar", "formatar sda S1 ext4",
+		"formatar sda1 S1 ext4 X", "formatar sda S1 fat32 X", "formatar sda S;1 ext4 X", "formatar sda S1 exfat NOMEMUITOLONGO",
+		"formatar-executar sda S1 ext4 X", "discos-estado x", "senha-formatar", "esquecer-senha-formatar"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
@@ -237,12 +243,18 @@ func TestHostScriptRefuses(t *testing.T) {
 	for _, ok := range []string{"smart sda sat", "smart sdab auto", "temperatura nvme0n1 auto", "discos", "limite 80", "protecao off",
 		"atualizar-linux", "atualizar-app immich:migrated sim", "atualizar-app nextcloud_mini:brunnofe-store nao", "atualizacao-estado",
 		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas",
-		"discos-detalhe", "estado sdb", "erros nvme0n1", "velocidade sdab", "ejetar sdc", "smart-teste sda sat curto", "smart-teste nvme0n1 auto longo"} {
+		"discos-detalhe", "estado sdb", "erros nvme0n1", "velocidade sdab", "ejetar sdc", "smart-teste sda sat curto", "smart-teste nvme0n1 auto longo",
+		"montar 1a2b-3C4D Disco_4", "desmontar Disco4", "rotulo 1a2b fotos", "formatar sdb SN-123_A.b:c ext4 Fotos", "formatar nvme0n1 X btrfs b",
+		"discos-estado"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 10") || ParseVersion([]byte(out)) != ScriptVersion {
+	// a Senha de formatação nunca pela chave do BrunOS (a mensagem explica o caminho certo)
+	if out, _ := run("senha-formatar"); !strings.Contains(out, "Terminal do servidor") {
+		t.Errorf("senha-formatar pelo SSH: %s", out)
+	}
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 11") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
@@ -293,6 +305,23 @@ func TestReadAllowed(t *testing.T) {
 	} {
 		if got := DiskActAllowed(cmd); got != want {
 			t.Errorf("DiskActAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
+	}
+	for cmd, want := range map[string]bool{
+		"montar 1a2b-3c4d Disco4": true, "desmontar Disco4": true, "rotulo abcd Fotos": true,
+		"montar abcd ../x": false, "montar ab;cd x": false, "desmontar a/b": false, "rotulo abcd nome;x": false,
+		"formatar sdb S1 ext4 X": false, // formatar só pelo FormatAllowed (precisa da senha pela entrada padrão)
+	} {
+		if got := DiskActAllowed(cmd); got != want {
+			t.Errorf("DiskActAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
+	}
+	for cmd, want := range map[string]bool{
+		"formatar sdb S1 ext4 Fotos": true, "formatar nvme0n1 SN.1:2 exfat CURTO": true, "formatar sdb S1 exfat NOMEMUITOLONGO": false,
+		"formatar sdb1 S1 ext4 X": false, "formatar sdb S1 fat32 X": false, "formatar sdb S1 ext4": false, "formatar sdb S;1 ext4 X": false,
+	} {
+		if got := FormatAllowed(cmd); got != want {
+			t.Errorf("FormatAllowed(%q) = %v, queria %v", cmd, got, want)
 		}
 	}
 }

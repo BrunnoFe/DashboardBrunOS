@@ -80,6 +80,78 @@ func (m *Monitor) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}))
+	// 0.16.0: montar, desmontar, rótulo e Formatar
+	mux.HandleFunc("POST /api/disks/mount", wrap(func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ UUID, Folder string }
+		if !readBody(w, r, &b) {
+			return
+		}
+		if err := m.Mount(r.Context(), b.UUID, b.Folder); err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "path": "/mnt/" + b.Folder})
+	}))
+	mux.HandleFunc("POST /api/disks/unmount", wrap(func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Folder string }
+		if !readBody(w, r, &b) {
+			return
+		}
+		res, err := m.Unmount(r.Context(), b.Folder)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, 200, res)
+	}))
+	mux.HandleFunc("POST /api/disks/label", wrap(func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ UUID, Label string }
+		if !readBody(w, r, &b) {
+			return
+		}
+		if err := m.Label(r.Context(), b.UUID, b.Label); err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	}))
+	mux.HandleFunc("GET /api/disks/format", wrap(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, m.FormatInfo(r.Context()))
+	}))
+	// formatar: a senha do BrunOS de novo (quem pegou uma sessão aberta não formata) e a Senha de
+	// formatação, que só o servidor confere
+	mux.HandleFunc("POST /api/disks/format", wrap(func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Dev, FS, Label, Password, FormatPassword string }
+		if !readBody(w, r, &b) {
+			return
+		}
+		if m.Verify == nil || !m.Verify(w, r, b.Password) {
+			if m.Verify == nil {
+				writeJSON(w, 500, map[string]string{"error": "formatar indisponível"})
+			}
+			return
+		}
+		if err := m.Format(r.Context(), b.Dev, b.FS, b.Label, b.FormatPassword); err != nil {
+			code := 502
+			switch {
+			case errors.Is(err, ErrNoDisk):
+				code = 404
+			case errors.Is(err, ErrFormatBusy):
+				code = 409
+			}
+			writeJSON(w, code, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 202, m.FormatInfo(r.Context()))
+	}))
+}
+
+func readBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(v); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return false
+	}
+	return true
 }
 
 func readDev(w http.ResponseWriter, r *http.Request) (string, bool) {

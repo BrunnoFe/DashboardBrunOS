@@ -68,8 +68,38 @@ type Service struct {
 	cfgs      func() []RootConfig
 	MaxUpload int64
 	MapFile   string
-	up        uploads    // envios em pedaços pendentes (resumable.go)
-	usage     usageCache // mapa do espaço (usage.go)
+	up        uploads         // envios em pedaços pendentes (resumable.go)
+	usage     usageCache      // mapa do espaço (usage.go)
+	released  map[string]bool // discos soltos para desmontar (0.16.0): não reabre até o BrunOS reiniciar
+}
+
+// Release fecha a pasta de um disco (pelo nome) e não reabre mais até o BrunOS reiniciar. Antes de
+// desmontar: com a pasta aberta, o próprio BrunOS apareceria como "programa usando o disco".
+func (s *Service) Release(name string) {
+	s.mu.Lock()
+	if s.released == nil {
+		s.released = map[string]bool{}
+	}
+	s.released[name] = true
+	keep := make([]*Root, 0, len(s.all))
+	for _, r := range s.all {
+		if r.Kind == "disk" && r.Name == name {
+			_ = r.r.Close()
+			continue
+		}
+		keep = append(keep, r)
+	}
+	s.all = keep
+	s.mu.Unlock()
+	s.apply()
+}
+
+// Unrelease deixa a pasta abrir de novo (a desmontagem foi recusada).
+func (s *Service) Unrelease(name string) {
+	s.mu.Lock()
+	delete(s.released, name)
+	s.mu.Unlock()
+	s.Refresh()
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -178,6 +208,9 @@ func (s *Service) open(cfgs []RootConfig) []error {
 		byPath[r.Path] = i
 	}
 	for _, c := range cfgs {
+		if c.Kind == "disk" && s.released[c.Name] {
+			continue // solto para desmontar
+		}
 		if i, ok := byPath[c.Path]; ok {
 			old := s.all[i]
 			if d := devOf(old.real); d != 0 && d != old.dev {

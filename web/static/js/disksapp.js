@@ -2,7 +2,7 @@
 // (Visão geral, Saúde, Desempenho, Espaço, Linha do tempo). Tudo só lê, menos três ações seguras:
 // o teste do próprio disco (SMART), o teste de velocidade (só lê) e ejetar um disco USB desmontado.
 import { api } from './api.js';
-import { $, $$, esc, fmt, fmtBytes, fmtRate, svg, toast, toastError, confirmDialog, timeAgo } from './ui.js';
+import { $, $$, esc, fmt, fmtBytes, fmtRate, svg, toast, toastError, confirmDialog, promptDialog, openDialog, timeAgo } from './ui.js';
 import { mountChart, periodSeg, PERIOD_LONG, fmtTime } from './charts.js';
 import { forecastText, driveTempHelp } from './disks.js';
 
@@ -153,11 +153,12 @@ function paintMain(force = false) {
 function headHTML(d) {
   const usb = d.tran === 'usb' && !d.system, mounted = isMounted(d);
   const eject = usb ? `<button class="pill-btn" data-act="eject" ${mounted ? `disabled title="${esc(`Desmonte antes de ejetar (o disco está em ${mountsOf(d).join(', ')})`)}"` : 'title="Desliga o disco com segurança para tirar o cabo"'}>${svg('eject')}Ejetar com segurança</button>` : '';
+  const format = d.system ? '' : `<button class="pill-btn danger" data-act="format" ${mounted ? `disabled title="${esc('Desmonte antes de formatar')}"` : 'title="Apaga tudo o que está no disco e prepara para usar de novo"'}>${svg('trash')}Formatar…</button>`;
   return `<button class="dk-back" data-act="back">${svg('chevL')}Discos</button>
     <div class="dk-hero"><span class="dk-ico big ${d.tran === 'usb' ? 'usb' : ''}">${svg(iconOf(d))}</span>
       <div class="dk-hero-txt"><h2>${esc(diskName(d))} ${healthBadge(d)} ${tempChip(d)}</h2>
       <p>${esc([d.model, fmtBytes(d.size), kindLabel(d), '/dev/' + d.dev].filter(Boolean).join(' · '))}</p></div>
-      <div class="dk-head-act">${eject}</div></div>
+      <div class="dk-head-act">${eject}${format}</div></div>
     <div class="tabs dk-tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" class="${D.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
 }
 
@@ -194,9 +195,17 @@ function renderOverview(d, pane) {
     const where = mnt ? `montada em <b>${esc(mnt)}</b>` : p.holder ? `usada por baixo (${esc(p.holder)})` : '<span class="dk-dim">sem pasta de montagem</span>';
     const fst = p.fstab && !(p.mounts || []).includes(p.fstab) ? `<small class="dk-warn-t">O /etc/fstab manda montar em ${esc(p.fstab)}, mas não está montada</small>` : p.fstab ? '<small>monta sozinha ao ligar (fstab)</small>' : mnt && !p.whole ? '<small class="dk-dim">não está no /etc/fstab: não volta sozinha ao reiniciar</small>' : '';
     const use = p.used != null && p.avail != null ? `${fmtBytes(p.used)} <small>de ${fmtBytes(p.used + p.avail)}</small>` : fmtBytes(p.size);
+    // 0.16.0: montar, desmontar e trocar o rótulo (nunca no disco do sistema)
+    const folder = (p.mounts || []).map((m) => /^\/mnt\/([A-Za-z0-9_-]{1,32})$/.exec(m)?.[1]).find(Boolean);
+    const canMount = !d.system && !(p.mounts || []).length && p.fsType && p.uuid && !p.holder && !/swap|LVM|raid|crypto|zfs/i.test(p.fsType);
+    const acts = d.system ? '' : [
+      folder ? `<button class="pill-btn sm" data-act="unmount" data-folder="${esc(folder)}">${svg('eject')}Desmontar</button>` : '',
+      canMount ? `<button class="pill-btn sm" data-act="mount" data-uuid="${esc(p.uuid)}" data-name="${esc(p.label || '')}">${svg('folder')}Montar…</button>` : '',
+      canMount ? `<button class="pill-btn sm" data-act="label" data-uuid="${esc(p.uuid)}" data-name="${esc(p.label || '')}" data-fs="${esc(p.fsType)}">${svg('edit')}Renomear</button>` : '',
+    ].join('');
     return `<div class="dk-part"><i class="dk-swatch ${COLORS[i % COLORS.length]}"></i>
       <span class="dk-part-txt"><b>${esc(p.label || p.name)}</b> <small>${esc([p.whole ? 'disco inteiro' : p.name, p.fsType || 'sem sistema de arquivos'].filter(Boolean).join(' · '))}</small>
-      <small>${where}</small>${fst}</span><span class="dk-part-val">${use}</span></div>`;
+      <small>${where}</small>${fst}${acts ? `<span class="dk-part-acts">${acts}</span>` : ''}</span><span class="dk-part-val">${use}</span></div>`;
   }).join('');
   const apps = d.apps.length ? `<div class="dk-apps">${d.apps.map((a) => `<button class="chip on" data-app="${esc(a.urn || '')}" title="${esc(a.folders.join('\n'))}">${D.ctx.appIcon ? D.ctx.appIcon(a.urn) : ''}${esc(a.name)}</button>`).join('')}</div>`
     : `<p class="dk-small">${d.system ?'É o disco do sistema: o Linux, o Docker, o Runtipi e os dados dos apps ficam nele.' : 'Nenhum app tem pasta deste disco montada.'}</p>`;
@@ -508,6 +517,170 @@ async function renderTimeline(d, pane) {
   }).catch((e) => { const box = $('[data-log]', D?.body); if (box) box.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; });
 }
 
+/* ── montar, desmontar, rótulo e Formatar (0.16.0) ───────────── */
+const folderOk = (s) => /^[A-Za-z0-9_-]{1,32}$/.test(s);
+const labelOk = (s, fs) => /^[A-Za-z0-9_-]{1,16}$/.test(s) && (fs !== 'exfat' || s.length <= 11);
+const suggest = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32);
+
+// O container do BrunOS só enxerga as montagens que existiam quando ele ligou: reiniciar mostra (ou solta) o disco.
+function restartDialog(title, html) {
+  const dlg = openDialog(`<h2>${svg('refresh')}${esc(title)}</h2>${html}
+    <div class="dlg-actions"><button class="pill-btn" data-c="later">Depois</button><button class="pill-btn primary" data-c="restart">${svg('refresh')}Reiniciar o BrunOS agora</button></div>`, { width: 500 });
+  dlg.el.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'later') { dlg.close(); return; }
+    e.target.closest('button').disabled = true;
+    try {
+      await api.restartSelf();
+      toast('Reiniciando o BrunOS…', 'A página volta sozinha em alguns segundos.');
+      dlg.close();
+      // espera ele sair e voltar
+      setTimeout(async function wait(n = 0) {
+        try { const r = await fetch('/api/health', { cache: 'no-store' }); if (r.ok && n > 1) { location.reload(); return; } } catch { /* ainda reiniciando */ }
+        if (n < 40) setTimeout(() => wait(n + 1), 1500);
+      }, 2500);
+    } catch (err) { toastError(err, 'Não deu para reiniciar'); dlg.close(); }
+  });
+}
+
+async function mountFlow(d, b) {
+  const folder = await promptDialog('Montar a partição', { label: `Nome da pasta (fica em /mnt/…): letras, números, - e _`, value: suggest(b.dataset.name) || `Disco_${d.dev}`, okLabel: 'Montar' });
+  if (folder == null) return;
+  const f = folder.trim();
+  if (!folderOk(f)) { toast('Nome inválido', 'Use só letras, números, - e _ (sem espaços nem acentos), até 32.', null, { error: true }); return; }
+  try {
+    await api.disks.mount(b.dataset.uuid, f);
+    load(true);
+    restartDialog(`Montado em /mnt/${f}`, `<p class="dlg-text">O disco volta a montar sozinho quando o servidor reiniciar (linha no /etc/fstab marcada pelo BrunOS, com <code>nofail</code>: se o disco não estiver ligado, o servidor liga normalmente).</p>
+      <p class="dlg-text">A pasta já aparece no Arquivos, mas para ver os arquivos dela o BrunOS precisa reiniciar (leva uns 5 segundos).</p>`);
+  } catch (err) { toastError(err, 'Não deu para montar'); }
+}
+
+async function unmountFlow(d, b) {
+  const f = b.dataset.folder;
+  const apps = d.apps.length ? `<p class="dlg-text">Estes apps usam pastas deste disco: <b>${d.apps.map((a) => esc(a.name)).join(', ')}</b>. Pare-os no Runtipi antes; se algum estiver lendo ou gravando, o servidor recusa desmontar.</p>` : '';
+  const dlg = openDialog(`<h2>${svg('eject')}Desmontar /mnt/${esc(f)}?</h2>
+    <p class="dlg-text">O disco deixa de aparecer no servidor e não volta sozinho quando o servidor reiniciar (a linha do BrunOS sai do /etc/fstab). Os arquivos continuam no disco.</p>${apps}
+    <p class="fw-err" data-err hidden></p>
+    <div class="dlg-actions"><button class="pill-btn" data-c="no">Cancelar</button><button class="pill-btn primary" data-c="yes">${svg('eject')}Desmontar</button></div>`, { width: 500 });
+  dlg.el.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') { dlg.close(); return; }
+    const btn = e.target.closest('button'); btn.disabled = true; btn.classList.add('busy');
+    try {
+      const r = await api.disks.unmount(f);
+      dlg.close(); load(true);
+      const others = (r.stuck || []).filter((x) => x !== 'brunos');
+      restartDialog(`/mnt/${f} desmontado`, `<p class="dlg-text">O disco foi desmontado no servidor.${r.fstabKept ? ' A linha do /etc/fstab não tinha sido feita pelo BrunOS e ficou: o disco volta a montar quando o servidor reiniciar.' : ''}</p>
+        <p class="dlg-text">O BrunOS ainda guarda uma cópia da montagem até reiniciar${others.length ? `, e estes programas também: <b>${others.map(esc).join(', ')}</b> (reinicie ou pare o app no Runtipi)` : ''}. Antes de ejetar ou formatar o disco, reinicie.</p>`);
+    } catch (err) {
+      btn.disabled = false; btn.classList.remove('busy');
+      const el = $('[data-err]', dlg.el); el.textContent = `Não deu para desmontar: ${err.message}`; el.hidden = false;
+    }
+  });
+}
+
+async function labelFlow(b) {
+  const fs = b.dataset.fs;
+  const v = await promptDialog('Trocar o rótulo', { label: `Novo rótulo: letras, números, - e _ (até ${fs === 'exfat' ? 11 : 16})`, value: b.dataset.name, okLabel: 'Trocar' });
+  if (v == null) return;
+  if (!labelOk(v.trim(), fs)) { toast('Rótulo inválido', 'Use só letras, números, - e _, sem espaços.', null, { error: true }); return; }
+  try { await api.disks.label(b.dataset.uuid, v.trim()); toast('Rótulo trocado', v.trim()); load(true); } catch (err) { toastError(err, 'Não deu para trocar o rótulo'); }
+}
+
+const FS = [
+  ['ext4', 'ext4', 'Recomendado para o servidor: o formato do Linux, rápido e resistente a quedas de energia.'],
+  ['btrfs', 'Btrfs', 'Do Linux, com recursos avançados (fotos instantâneas, compressão). Bom se você já conhece.'],
+  ['exfat', 'exFAT', 'Funciona em Windows, Mac e TV. Bom para pendrive e para levar arquivos. Sem permissões do Linux.'],
+  ['ntfs', 'NTFS', 'O formato do Windows. Use só se o disco também vai ser ligado num computador com Windows.'],
+];
+async function formatWizard(d) {
+  let info;
+  try { info = await api.disks.formatInfo(); } catch (err) { toastError(err, 'Não deu para conferir'); return; }
+  const dlg = openDialog('<div class="fw"></div>', { width: 560, backdropClose: false });
+  const box = $('.fw', dlg.el);
+  const close = () => { clearTimeout(box._t); dlg.close(); };
+  dlg.el.addEventListener('click', (e) => { if (e.target.closest('[data-c="close"]')) close(); });
+  if (info.job?.running) { progress(info.job); return; }
+  if (!info.hasPassword) {
+    box.innerHTML = `<h2>${svg('key')}Falta a Senha de formatação</h2>
+      <p class="dlg-text">Para formatar pelo BrunOS, o servidor pede uma senha só para isso, diferente da senha do BrunOS. Ela é criada uma vez, <b>direto no servidor</b>, para que ninguém que invada o BrunOS consiga criar uma.</p>
+      <p class="dlg-text">No Terminal, rode o comando abaixo (o sudo pede a senha do seu usuário do servidor) e escolha a Senha de formatação:</p>
+      <pre class="pw-cmds">sudo brunos-host senha-formatar</pre>
+      <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button>${D.ctx.openTerminal ? `<button class="pill-btn primary" data-c="term">${svg('terminal')}Abrir no Terminal</button>` : ''}</div>`;
+    $('[data-c="term"]', box)?.addEventListener('click', () => { close(); D.ctx.openTerminal({ typeCmd: 'sudo brunos-host senha-formatar' }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); });
+    return;
+  }
+  if (info.lockedUntil > Date.now() / 1000) {
+    box.innerHTML = `<h2>${svg('lock')}Formatar está bloqueado</h2><p class="dlg-text">A Senha de formatação foi digitada errada 5 vezes. Por segurança, formatar volta a funcionar às ${esc(new Date(info.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}.</p>
+      <div class="dlg-actions"><button class="pill-btn primary" data-c="close">Entendi</button></div>`;
+    return;
+  }
+  // passo 1: formato e rótulo
+  let fs = 'ext4', label = suggest(d.parts.find((p) => p.label)?.label) || 'Disco';
+  const step1 = () => {
+    box.innerHTML = `<h2>${svg('trash')}Formatar ${esc(diskName(d))}</h2>
+      <p class="dlg-text">Escolha como o disco vai ser preparado. Ele fica com uma partição só, ocupando o disco inteiro.</p>
+      <div class="fw-fs">${FS.map(([k, n, t]) => `<label class="fw-opt ${fs === k ? 'on' : ''}"><input type="radio" name="fs" value="${k}" ${fs === k ? 'checked' : ''}><b>${n}</b><small>${esc(t)}</small></label>`).join('')}</div>
+      <label class="fw-field">Rótulo (nome do disco)<input class="text-input" name="label" value="${esc(label)}" maxlength="16"></label>
+      <small class="fw-hint" data-hint>Letras, números, - e _ (até 16; no exFAT, até 11).</small>
+      <div class="dlg-actions"><button class="pill-btn" data-c="close">Cancelar</button><button class="pill-btn primary" data-c="next">Continuar</button></div>`;
+    box.querySelectorAll('input[name="fs"]').forEach((r) => r.addEventListener('change', () => { fs = r.value; box.querySelectorAll('.fw-opt').forEach((o) => o.classList.toggle('on', o.contains(r) && r.checked)); }));
+    $('[data-c="next"]', box).onclick = () => {
+      label = $('input[name="label"]', box).value.trim();
+      if (!labelOk(label, fs)) { $('[data-hint]', box).classList.add('bad'); return; }
+      step2();
+    };
+  };
+  // passo 2: o que vai ser apagado, confirmação e as duas senhas
+  const word = (d.model || d.dev).trim();
+  const step2 = () => {
+    const parts = d.parts.map((p) => `<li><b>${esc(p.label || p.name)}</b> · ${esc(p.fsType || 'sem formato')} · ${fmtBytes(p.size)}${p.used != null ? ` · ${fmtBytes(p.used)} usados` : ''}</li>`).join('') || '<li>nenhuma partição</li>';
+    box.innerHTML = `<h2>${svg('alert')}Tudo neste disco vai ser apagado</h2>
+      <div class="fw-warn"><p><b>${esc(diskName(d))}</b> · ${esc(d.model || '')} · ${fmtBytes(d.size)} · /dev/${esc(d.dev)} · série ${esc(d.serial || '—')}</p><ul>${parts}</ul>
+        <p>Vai virar <b>${esc(FS.find(([k]) => k === fs)[1])}</b> com o rótulo <b>${esc(label)}</b>. Não dá para desfazer.</p></div>
+      <label class="fw-field">Para confirmar, digite <b>${esc(word)}</b><input class="text-input" name="word" autocomplete="off"></label>
+      <label class="fw-field">Sua senha do BrunOS<input class="text-input" type="password" name="pw" autocomplete="current-password"></label>
+      <label class="fw-field">Senha de formatação<input class="text-input" type="password" name="fpw" autocomplete="off"></label>
+      <p class="fw-err" data-err hidden></p>
+      <div class="dlg-actions"><button class="pill-btn" data-c="back">Voltar</button><button class="pill-btn danger solid" data-c="go" disabled>${svg('trash')}Apagar e formatar</button></div>`;
+    const go = $('[data-c="go"]', box), inp = (n) => $(`input[name="${n}"]`, box);
+    const check = () => { go.disabled = !(inp('word').value.trim().toLowerCase() === word.toLowerCase() && inp('pw').value && inp('fpw').value); };
+    box.addEventListener('input', check);
+    $('[data-c="back"]', box).onclick = step1;
+    go.onclick = async () => {
+      go.disabled = true; go.classList.add('busy');
+      const err = $('[data-err]', box); err.hidden = true;
+      try {
+        const r = await api.disks.format({ dev: d.dev, fs, label, password: inp('pw').value, formatPassword: inp('fpw').value });
+        inp('pw').value = inp('fpw').value = '';
+        progress(r.job || { running: true, fs, label });
+      } catch (e) { err.textContent = e.message; err.hidden = false; go.classList.remove('busy'); check(); }
+    };
+  };
+  // passo 3: andamento
+  function progress(job) {
+    const steps = [['apagando', 'Apagando o que havia'], ['particionando', 'Criando a partição'], ['formatando', 'Formatando']];
+    const idx = steps.findIndex(([k]) => k === job.step);
+    if (job.running) {
+      box.innerHTML = `<h2>${svg('refresh')}Formatando…</h2><p class="dlg-text">Não desligue nem desconecte o disco. Dá para fechar esta janela: o servidor continua e o sino avisa quando terminar.</p>
+        <ol class="fw-steps">${steps.map(([k, n], i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${i < idx ? svg('check') : '<i></i>'}${n}</li>`).join('')}</ol>
+        <span class="track indeterminate"><i></i></span>
+        <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button></div>`;
+      box._t = setTimeout(async () => { try { const s = await api.disks.formatInfo(); if (box.isConnected) progress(s.job || job); } catch { if (box.isConnected) progress(job); } }, 2000);
+      return;
+    }
+    load(true);
+    box.innerHTML = job.ok
+      ? `<h2>${svg('check')}Pronto!</h2><p class="dlg-text">O disco foi formatado em <b>${esc(FS.find(([k]) => k === job.fs)?.[1] || job.fs)}</b> com o rótulo <b>${esc(job.label)}</b>. Para usar, monte a partição na Visão geral (botão "Montar…").</p>
+        <div class="dlg-actions"><button class="pill-btn primary" data-c="close">Fechar</button></div>`
+      : `<h2>${svg('alert')}A formatação não terminou</h2><p class="dlg-text">${esc(job.err || 'erro desconhecido')}</p>
+        <p class="dlg-text"><small>Se o erro foi antes de apagar, o disco continua como estava. Os detalhes ficam na Linha do tempo do disco.</small></p>
+        <div class="dlg-actions"><button class="pill-btn primary" data-c="close">Fechar</button></div>`;
+  }
+  step1();
+}
+
 /* ── cliques ─────────────────────────────────────────────────── */
 async function followSmart() {
   for (let i = 0; i < 150 && D; i++) {
@@ -578,6 +751,10 @@ async function onClick(e) {
     catch (err) { toastError(err, 'Não deu para testar a velocidade'); b.disabled = false; }
     return;
   }
+  if (act === 'mount') { mountFlow(d, b); return; }
+  if (act === 'unmount') { unmountFlow(d, b); return; }
+  if (act === 'label') { labelFlow(b); return; }
+  if (act === 'format') { formatWizard(d); return; }
   if (act === 'eject') {
     const ok = await confirmDialog(`Ejetar ${diskName(d)}?`, 'O BrunOS grava o que estiver pendente e desliga o disco. Depois disso dá para tirar o cabo com segurança. Para usar de novo, tire e coloque o cabo (ou desligue e ligue o case).', 'Ejetar');
     if (!ok) return;

@@ -156,6 +156,30 @@ interrompe o teste do outro. Dados reais (usuário, nome do servidor, notebook, 
 trocados por genéricos no modo demonstração, nos testes e nos comentários; corrida antiga no teste de
 `updates` corrigida.
 
+## 0.16.0 (13/11): montar, desmontar e Formatar (fim da etapa 11)
+Na janela Discos: "Montar…" (nome da pasta em `/mnt/`, linha no `/etc/fstab` marcada `# brunos` com
+`nofail`, cópia do fstab antes e volta atrás se o `mount` falhar; a pasta já entra no Arquivos),
+"Desmontar" (recusa se um programa usa o disco e diz quem; tira só a linha do BrunOS), "Renomear" (rótulo
+de partição desmontada) e o assistente "Formatar…" (ext4, Btrfs, exFAT ou NTFS; mostra o que vai ser
+apagado; pede para digitar o modelo, a senha do BrunOS e a Senha de formatação; andamento em três etapas;
+aviso no sino e Linha do tempo). A Senha de formatação é criada só no Terminal do servidor (`sudo
+brunos-host senha-formatar`; recusado pela chave do BrunOS) e conferida pelo servidor (scrypt, 5 erros =
+1 h de trava); antes de apagar, o script confere de novo série, montagem, sistema, RAID/LVM, fstab e uso.
+Depois de montar ou desmontar, botão "Reiniciar o BrunOS agora" (o container só vê as montagens de quando
+ligou; o Runtipi não deixa ligar a propagação). Achado de segurança: um container guarda cópia da montagem
+mesmo depois de o servidor desmontar; o script agora procura o disco em todos os `/proc/*/mountinfo` antes
+de ejetar ou formatar (vale também para o "Ejetar" da 0.15). Script do servidor 11. Testes:
+`tests/script-formatar.sh` (script de verdade como root com as ferramentas de disco falsas), `internal/disks`
+e `apitest`.
+
+## Etapa 11 em resumo (0.13.1 → 0.16.0, combinada em 12/11/2026)
+Tela inicial com tamanho de ícone pela Régua e Área útil (0.13.1–0.13.2), Históricos de 30 dias com
+gráficos de verdade (0.14.0), janela Discos (0.15.0–0.15.1) e montar/desmontar/Formatar (0.16.0).
+Mudanças em relação ao plano: Linha do tempo em `disk-events.json` (o `disks.json` já era do Arquivos);
+os testes de disco viraram contêineres descartáveis com ferramentas falsas (no lugar do OpenSSH do
+`smoke.sh`); reinício do BrunOS depois de montar/desmontar e a trava de container (decisão 57). Ideias
+anotadas e não aprovadas foram para o `ideias-futuras.md`.
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

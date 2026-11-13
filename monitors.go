@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -102,6 +103,37 @@ func (s *server) setupDisks(dataDir, hostProc string) {
 	}
 	s.disks.Present = disks.PresentFrom(stats)
 	s.smart.Note = s.disks.Note // SMART mudou e testes entram na Linha do tempo
+	// 0.16.0: formatar (a Senha de formatação vai pela entrada padrão do script, nunca na linha de comando)
+	s.disks.ActInput = func(ctx context.Context, cmd string, in []byte) ([]byte, error) {
+		if !hostcmd.FormatAllowed(cmd) {
+			return nil, errors.New("pedido não permitido")
+		}
+		return s.power.HostOutputInput(ctx, cmd, in)
+	}
+	s.disks.Release = s.files.Release
+	s.disks.Unrelease = s.files.Unrelease
+	s.disks.OnMount = func(folder string) { // a pasta nova já aparece no Arquivos (os arquivos, depois de reiniciar)
+		s.files.Unrelease(folder)
+		s.setMappedFolder(folder, true)
+	}
+	s.disks.OnUnmount = func(folder string) { s.setMappedFolder(folder, false) }
+	s.disks.Verify = s.verifyPassword
+}
+
+// setMappedFolder põe ou tira um disco (pasta de /mnt) da lista de discos mapeados do Arquivos.
+func (s *server) setMappedFolder(folder string, on bool) {
+	var names []string
+	for _, d := range s.files.Disks() {
+		if d.Mapped && d.Name != folder {
+			names = append(names, d.Name)
+		}
+	}
+	if on {
+		names = append(names, folder)
+	}
+	if err := s.files.SetMapped(names); err != nil {
+		slog.Warn("discos: não deu para atualizar os discos mapeados", "erro", err)
+	}
 }
 
 // appMounts lista as pastas do servidor montadas nos containers de cada app (Docker).

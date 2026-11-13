@@ -30,18 +30,18 @@ const lsblkSample = `=== lsblk
     "children":[{"name":"ubuntu--vg-ubuntu--lv","path":"/dev/mapper/ubuntu--vg-ubuntu--lv","type":"lvm","size":100000000000,"fstype":"ext4","fsused":30000000000,"fsavail":60000000000,"mountpoints":["/"]}]}
   ]},
  {"name":"sda","path":"/dev/sda","type":"disk","size":1000204886016,"model":"HD USB 1TB","vendor":"Genérico","serial":"HD-AAA","wwn":null,"rev":"0001","tran":"usb","rota":true,"rm":false,"pttype":"gpt","mountpoints":[null],
-  "children":[{"name":"sda1","path":"/dev/sda1","type":"part","size":1000202273280,"fstype":"ext4","label":"Fotos","uuid":"uuid-fotos","fsused":400000000000,"fsavail":550000000000,"mountpoints":["/mnt/disco1"]}]},
+  "children":[{"name":"sda1","path":"/dev/sda1","type":"part","size":1000202273280,"fstype":"ext4","label":"Fotos","uuid":"1111-f070","fsused":400000000000,"fsavail":550000000000,"mountpoints":["/mnt/disco1"]}]},
  {"name":"sdb","path":"/dev/sdb","type":"disk","size":500107862016,"model":"HD USB 500GB","serial":"HD-BBB","tran":"usb","rota":true,"rm":false,"pttype":"dos","mountpoints":[null],
-  "children":[{"name":"sdb1","path":"/dev/sdb1","type":"part","size":500105217024,"fstype":"ntfs","label":"Backup","uuid":"uuid-backup","fsused":null,"fsavail":null,"mountpoints":[null]}]},
- {"name":"sdc","path":"/dev/sdc","type":"disk","size":240057409536,"model":"SSD SATA 240GB","serial":"SSD-CCC","tran":"sata","rota":false,"rm":false,"fstype":"xfs","label":"Rapido","uuid":"uuid-rapido","fsused":1000000000,"fsavail":230000000000,"pttype":null,"mountpoints":["/mnt/rapido"]},
+  "children":[{"name":"sdb1","path":"/dev/sdb1","type":"part","size":500105217024,"fstype":"ntfs","label":"Backup","uuid":"2222-bac0","fsused":null,"fsavail":null,"mountpoints":[null]}]},
+ {"name":"sdc","path":"/dev/sdc","type":"disk","size":240057409536,"model":"SSD SATA 240GB","serial":"SSD-CCC","tran":"sata","rota":false,"rm":false,"fstype":"xfs","label":"Rapido","uuid":"3333-ab1d","fsused":1000000000,"fsavail":230000000000,"pttype":null,"mountpoints":["/mnt/rapido"]},
  {"name":"loop0","path":"/dev/loop0","type":"loop","size":4096,"mountpoints":["/snap/x"]},
  {"name":"sr0","path":"/dev/sr0","type":"rom","size":1073741312},
  {"name":"sdd","path":"/dev/sdd","type":"disk","size":"16008609792","model":"Pendrive","serial":null,"tran":"usb","rota":"0","rm":"1","pttype":"dos","mountpoint":null,
   "children":[{"name":"sdd1","path":"/dev/sdd1","type":"part","size":"16007561216","fstype":"vfat","label":"PEN","uuid":"PEN-1","mountpoint":null}]}
 ]}
 === fstab
-UUID=uuid-fotos /mnt/disco1
-UUID=uuid-backup /mnt/backup
+UUID=1111-f070 /mnt/disco1
+UUID=2222-bac0 /mnt/backup
 LABEL=Rapido /mnt/rapido
 /dev/mapper/ubuntu--vg-ubuntu--lv /
 === by-id

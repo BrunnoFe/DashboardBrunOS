@@ -393,6 +393,7 @@ func (s *server) routes() http.Handler {
 	s.disks.Register(mux, a) // janela Discos (GET /api/disks e as ações)
 	s.updates.Register(mux, a)
 	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
+	mux.HandleFunc("POST /api/system/restart", a(s.hRestartSelf)) // 0.16.0: ver/soltar um disco montado ou desmontado
 	if s.term != nil {
 		s.term.Register(mux, a)
 	}
@@ -1018,6 +1019,28 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// hRestartSelf reinicia o próprio container do BrunOS, pelo proxy (rota de restart que o proxy já libera).
+// Depois de montar ou desmontar um disco: o container só enxerga as montagens que existiam quando ligou
+// (o Runtipi não deixa ligar a propagação), e guarda uma cópia das antigas até reiniciar. Só o próprio
+// container: o id vem do mountinfo dele, nunca do pedido.
+func (s *server) hRestartSelf(w http.ResponseWriter, r *http.Request) {
+	id := s.procs.Self
+	if s.docker == nil || id == "" {
+		writeJSON(w, 501, map[string]string{"error": "não consegui reiniciar sozinho: no Runtipi, pare e inicie o app BrunOS"})
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"ok": true})
+	go func() {
+		time.Sleep(500 * time.Millisecond) // a resposta sai antes
+		slog.Info("reiniciando o próprio container a pedido da interface")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := s.docker.Restart(ctx, id); err != nil {
+			slog.Warn("não deu para reiniciar o próprio container", "erro", err)
+		}
+	}()
 }
 
 func (s *server) hSystem(w http.ResponseWriter, r *http.Request) {

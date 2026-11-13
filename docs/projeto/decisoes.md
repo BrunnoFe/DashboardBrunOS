@@ -262,3 +262,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     recebe nem o "dormindo/acordado" (o `hdparm -C` passa pelo mesmo adaptador). A Linha do tempo fica em
     `/data/disk-events.json` (o `disks.json` já era do Arquivos). Explicações dos atributos ficam na
     interface (tabela por número ATA e campo NVMe), para o backend continuar enxuto.
+57. **Container que não acompanha montagens: reiniciar o BrunOS e procurar o disco em todos os
+    containers** (0.16.0). O JSON dinâmico do Runtipi não aceita `bind propagation`, então o container do
+    BrunOS (e de qualquer app com pasta de um disco) guarda a montagem que existia quando ligou, mesmo
+    depois de o servidor desmontar; o `lsblk` do servidor diz "nada montado" e o disco continua em uso.
+    Por isso: (a) depois de montar ou desmontar, a interface oferece reiniciar o próprio BrunOS (rota de
+    restart que o proxy já libera, só o próprio container, id lido do mountinfo); (b) antes de ejetar ou
+    formatar, o script procura o número do dispositivo em todos os `/proc/*/mountinfo` e recusa dizendo
+    quais programas ainda seguram o disco; (c) antes de desmontar, o Arquivos solta a pasta do disco
+    (senão o próprio BrunOS apareceria como "em uso"). Alternativa recusada: montar `/mnt` com propagação
+    fora do Runtipi (quebraria a instalação pela loja).

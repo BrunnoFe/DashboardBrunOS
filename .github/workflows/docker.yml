@@ -51,6 +51,8 @@ jobs:
         run: bash tests/script-selfupdate.sh
       - name: Pedidos da janela Discos no script do servidor (como root, num contêiner)
         run: bash tests/script-discos.sh
+      - name: Montar, desmontar e Formatar no script do servidor (senha, trava, travas do disco)
+        run: bash tests/script-formatar.sh
 
   publish:
     name: publica a imagem

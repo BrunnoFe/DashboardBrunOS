@@ -62,8 +62,9 @@ const (
 	// "atualizar-script" (o script se troca sozinho por um assinado), 0.12.1; 8 = o andamento manda a
 	// primeira linha do registro, 0.12.2; 9 = "atualizar-lojas" (runtipi-cli appstore update), 0.12.3;
 	// 10 = janela Discos: "discos-detalhe", "estado", "erros", "smart-teste", "velocidade", "ejetar" e o
-	// "smart" com o andamento e o registro dos testes, 0.15.0).
-	ScriptVersion = 10
+	// "smart" com o andamento e o registro dos testes, 0.15.0; 11 = "montar", "desmontar", "rotulo",
+	// "formatar" com a Senha de formatação, "discos-estado" e a trava de container no "ejetar", 0.16.0).
+	ScriptVersion = 11
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -129,7 +130,7 @@ const (
 
 // ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
 var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true,
-	CmdVersion: true, CmdBackupSize: true, CmdDiskDetail: true, CmdDiskState: true, CmdDiskErrors: true}
+	CmdVersion: true, CmdBackupSize: true, CmdDiskDetail: true, CmdDiskState: true, CmdDiskErrors: true, "discos-estado": true}
 
 // ParseVersion lê "brunos-host 7" (0 se não der).
 func ParseVersion(out []byte) int {
@@ -163,10 +164,48 @@ func ReadAllowed(cmd string) bool {
 	return len(f) == 1
 }
 
+// Script 11 (0.16.0): montar, desmontar, trocar o rótulo e formatar (decisão 54).
+const (
+	CmdMount      = "montar"        // "montar <uuid> <pasta>": /mnt/<pasta> + linha no fstab (marcada "# brunos")
+	CmdUnmount    = "desmontar"     // "desmontar <pasta>": recusa se algum programa usa; tira só a linha do BrunOS
+	CmdLabel      = "rotulo"        // "rotulo <uuid> <rótulo>": partição desmontada
+	CmdFormat     = "formatar"      // "formatar <disco> <série> <fs> <rótulo>" + a Senha de formatação pela entrada padrão
+	CmdDiskStatus = "discos-estado" // formatação rodando ou não, se a Senha de formatação existe, trava e o registro
+)
+
+// Sistemas de arquivos que o BrunOS sabe criar.
+var FormatFS = map[string]bool{"ext4": true, "btrfs": true, "exfat": true, "ntfs": true}
+
+var (
+	uuidRe   = regexp.MustCompile(`^[A-Fa-f0-9-]{1,36}$`)
+	folderRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
+	labelRe  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,16}$`)
+	serialRe = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+)
+
+func ValidUUID(s string) bool   { return uuidRe.MatchString(s) }
+func ValidFolder(s string) bool { return folderRe.MatchString(s) }
+func ValidSerial(s string) bool { return serialRe.MatchString(s) }
+
+// ValidLabel confere o rótulo (no exFAT, até 11 letras).
+func ValidLabel(s, fs string) bool { return labelRe.MatchString(s) && (fs != "exfat" || len(s) <= 11) }
+
+// FormatAllowed confere o pedido de formatar (a senha vai pela entrada padrão, nunca aqui).
+func FormatAllowed(cmd string) bool {
+	f := strings.Fields(cmd)
+	return len(f) == 5 && f[0] == CmdFormat && ValidDisk(f[1]) && ValidSerial(f[2]) && FormatFS[f[3]] && ValidLabel(f[4], f[3])
+}
+
 // DiskActAllowed confere um pedido de ação da janela Discos (o script confere de novo).
 func DiskActAllowed(cmd string) bool {
 	f := strings.Fields(cmd)
 	switch {
+	case len(f) == 2 && f[0] == CmdUnmount:
+		return ValidFolder(f[1])
+	case len(f) == 3 && f[0] == CmdMount:
+		return ValidUUID(f[1]) && ValidFolder(f[2])
+	case len(f) == 3 && f[0] == CmdLabel:
+		return ValidUUID(f[1]) && labelRe.MatchString(f[2])
 	case len(f) == 2:
 		return (f[0] == CmdSpeed || f[0] == CmdEject) && ValidDisk(f[1])
 	case len(f) == 4:
@@ -227,24 +266,30 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 10: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 11: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
 # discos-detalhe | estado <disco> | erros <disco> | smart-teste <disco> <sat|auto> <curto|longo> |
-# velocidade <disco> | ejetar <disco> | atualizar-script <assinatura> | versao. Recusa todo o resto.
-# Nenhum pedido apaga, formata ou grava no disco: "velocidade" só lê e "ejetar" só aceita disco USB
-# sem nada montado.
+# velocidade <disco> | ejetar <disco> | montar <uuid> <pasta> | desmontar <pasta> |
+# rotulo <uuid> <rotulo> | formatar <disco> <serie> <ext4|btrfs|exfat|ntfs> <rotulo> | discos-estado |
+# atualizar-script <assinatura> | versao. Recusa todo o resto.
+# Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-formatar | esquecer-senha-formatar.
+# Formatar só com a Senha de formatação (pela entrada padrão), conferida AQUI, com trava depois de 5
+# erros, e só depois de conferir de novo o disco: número de série, nada montado em lugar nenhum (nem
+# dentro de containers), não é o disco do sistema, não é RAID/LVM/ZFS e não está no /etc/fstab.
 # As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
 # /var/log/brunos-atualizar.log. O script só se troca por outro assinado pela chave de publicação do
 # BrunOS (abaixo) e de versão maior. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=10
+VERSAO=11
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
+via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
   # chamado pelo SSH (usuário brunos-power): o pedido vem em SSH_ORIGINAL_COMMAND
+  via_ssh=1
   set -f
   set -- ${SSH_ORIGINAL_COMMAND:-}
   set +f
@@ -261,12 +306,49 @@ disco_ok() {
   case "$1" in sd[a-z]|sd[a-z][a-z]|nvme[0-9]n1) return 0 ;; esac
   return 1
 }
-if [ $# -lt 1 ] || [ $# -gt 4 ]; then falha "pedido inválido"; fi
+# palavra só com os caracteres permitidos e até N letras: so_com <texto> <caracteres> <máximo>
+so_com() {
+  case "$1" in ""|*[!$2]*) return 1 ;; esac
+  [ ${#1} -le "$3" ]
+}
+uuid_ok() { so_com "$1" "A-Fa-f0-9-" 36; }
+pasta_ok() { so_com "$1" "A-Za-z0-9_-" 32; }
+rotulo_ok() { so_com "$1" "A-Za-z0-9_-" 16; }
+serie_ok() { so_com "$1" "A-Za-z0-9_.:-" 64; }
+if [ $# -lt 1 ] || [ $# -gt 5 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
 modo=${3:-}
 extra=${4:-}
+extra2=${5:-}
 case "$acao" in
+  montar)
+    [ $# -eq 3 ] || falha "pedido inválido"
+    uuid_ok "$valor" || falha "UUID inválido"
+    pasta_ok "$modo" || falha "nome de pasta inválido (use letras, números, - e _)" ;;
+  desmontar)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    pasta_ok "$valor" || falha "nome de pasta inválido" ;;
+  rotulo)
+    [ $# -eq 3 ] || falha "pedido inválido"
+    uuid_ok "$valor" || falha "UUID inválido"
+    rotulo_ok "$modo" || falha "rótulo inválido (até 16 letras, números, - e _)" ;;
+  formatar|formatar-executar)
+    [ $# -eq 5 ] || falha "pedido inválido"
+    disco_ok "$valor" || falha "disco inválido"
+    serie_ok "$modo" || falha "número de série inválido"
+    case "$extra" in ext4|btrfs|exfat|ntfs) ;; *) falha "sistema de arquivos inválido" ;; esac
+    rotulo_ok "$extra2" || falha "rótulo inválido (até 16 letras, números, - e _)"
+    if [ "$extra" = exfat ] && [ ${#extra2} -gt 11 ]; then falha "no exFAT o rótulo tem no máximo 11 letras"; fi
+    if [ "$acao" = formatar-executar ]; then
+      # só o próprio script, como root, dentro do systemd; nunca pelo SSH
+      [ "$(id -u)" -eq 0 ] && [ -n "${INVOCATION_ID:-}" ] || falha "pedido inválido"
+    fi ;;
+  discos-estado) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  senha-formatar|esquecer-senha-formatar)
+    [ $# -eq 1 ] || falha "pedido inválido"
+    # nunca pela chave do BrunOS: quem invadisse o BrunOS cadastraria a senha dele
+    [ "$via_ssh" = 0 ] || falha "a Senha de formatação só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
   desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
@@ -330,6 +412,87 @@ pasta_runtipi() {
   echo "$d"
 }
 LOG=/var/log/brunos-atualizar.log
+LOGD=/var/log/brunos-discos.log
+SENHA=/etc/brunos-host/formatar
+TRAVA=/etc/brunos-host/formatar.trava
+# disco inteiro e as partições dele (nomes do /sys)
+partes() {
+  echo "$1"
+  for p in /sys/block/"$1"/"$1"*; do
+    if [ -e "$p" ]; then echo "${p##*/}"; fi
+  done
+}
+# o disco tem a raiz, o /boot ou a swap (inclusive por baixo de LVM/criptografia)
+e_sistema() {
+  for s in "$(findmnt -no SOURCE / 2>/dev/null)" "$(findmnt -no SOURCE /boot 2>/dev/null)" $(swapon --show=NAME --noheadings 2>/dev/null); do
+    [ -n "$s" ] || continue
+    if lsblk -nso NAME "$s" 2>/dev/null | grep -qx "$1"; then return 0; fi
+  done
+  return 1
+}
+# processos (do servidor ou de qualquer container) que ainda têm o disco montado. Vazio = livre. Olha
+# o número do dispositivo em todos os /proc/*/mountinfo: um container guarda a própria cópia da
+# montagem, e o lsblk do servidor não mostra isso.
+preso() {
+  for p in $(partes "$1"); do
+    mm=$(cat "/sys/class/block/$p/dev" 2>/dev/null) || continue
+    for f in $(grep -ls " $mm " /proc/[0-9]*/mountinfo 2>/dev/null); do
+      pid=${f#/proc/}
+      cat "/proc/${pid%%/*}/comm" 2>/dev/null || true
+    done
+  done | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+# Senha de formatação: resumo scrypt (sal aleatório, n=2^15) pelo python3; a senha vem pela entrada padrão
+PY_GERA='import hashlib,os,sys,datetime
+s=sys.stdin.buffer.read();sal=os.urandom(16)
+h=hashlib.scrypt(s,salt=sal,n=32768,r=8,p=1,maxmem=67108864,dklen=32)
+print("scrypt$32768$8$1$%s$%s$%s"%(sal.hex(),h.hex(),datetime.datetime.now().isoformat(timespec="seconds")))'
+PY_CONFERE='import hashlib,hmac,sys
+f=open(sys.argv[1]).read().strip().split("$")
+s=sys.stdin.buffer.read()
+h=hashlib.scrypt(s,salt=bytes.fromhex(f[4]),n=int(f[1]),r=int(f[2]),p=int(f[3]),maxmem=67108864,dklen=32)
+sys.exit(0 if hmac.compare_digest(h.hex(),f[5]) else 1)'
+le_senha() { # pede uma senha no Terminal sem mostrar o que é digitado
+  printf '%s' "$1" >&2
+  stty -echo 2>/dev/null || true
+  IFS= read -r s || s=""
+  stty echo 2>/dev/null || true
+  echo >&2
+  printf '%s' "$s"
+}
+# tudo o que precisa ser verdade antes de apagar um disco (conferido de novo logo antes de apagar)
+checa_formatar() { # <disco> <série> <fs>
+  [ -b "/dev/$1" ] || falha "o disco $1 não existe" 3
+  s=$(lsblk -dnro SERIAL "/dev/$1" 2>/dev/null)
+  [ -n "$s" ] && [ "$s" = "$2" ] || falha "o número de série de /dev/$1 não confere (o disco mudou de nome?): nada foi apagado" 3
+  if e_sistema "$1"; then falha "este é o disco do sistema: nada foi apagado" 3; fi
+  u=$(preso "$1")
+  [ -z "$u" ] || falha "o disco ainda está montado (em uso por: $u). Desmonte, reinicie o BrunOS e pare os apps que usam o disco: nada foi apagado" 3
+  if lsblk -nro FSTYPE "/dev/$1" 2>/dev/null | grep -qE 'linux_raid_member|LVM2_member|zfs_member|crypto_LUKS'; then
+    falha "o disco faz parte de RAID, LVM, ZFS ou criptografia: nada foi apagado" 3
+  fi
+  for h in /sys/block/"$1"/holders/* /sys/block/"$1"/"$1"*/holders/*; do
+    if [ -e "$h" ]; then falha "o disco está em uso por baixo (RAID, LVM ou criptografia): nada foi apagado" 3; fi
+  done
+  for u in $(lsblk -nro UUID "/dev/$1" 2>/dev/null); do
+    if grep -qs "$u" /etc/fstab; then falha "uma partição deste disco está no /etc/fstab: desmonte pelo BrunOS antes (nada foi apagado)" 3; fi
+  done
+  if grep -qsE "^/dev/$1" /etc/fstab; then falha "este disco está no /etc/fstab: nada foi apagado" 3; fi
+  if command -v fuser >/dev/null 2>&1; then
+    for p in $(partes "$1"); do
+      if fuser -s "/dev/$p" 2>/dev/null; then falha "um programa está usando o disco agora: nada foi apagado" 3; fi
+    done
+  fi
+  case "$3" in
+    ext4) t=mkfs.ext4; pk=e2fsprogs ;;
+    btrfs) t=mkfs.btrfs; pk=btrfs-progs ;;
+    exfat) t=mkfs.exfat; pk=exfatprogs ;;
+    ntfs) t=mkfs.ntfs; pk=ntfs-3g ;;
+  esac
+  for f in "$t:$pk" sgdisk:gdisk wipefs:util-linux partprobe:parted; do
+    command -v "${f%%:*}" >/dev/null 2>&1 || falha "falta o ${f%%:*} no servidor: instale com sudo apt install ${f#*:}" 3
+  done
+}
 feito=0
 case "$acao" in
   desligar)
@@ -430,10 +593,177 @@ case "$acao" in
     for h in /sys/block/"$valor"/holders/* /sys/block/"$valor"/"$valor"*/holders/*; do
       if [ -e "$h" ]; then falha "o disco está em uso (RAID, LVM ou criptografia): não dá para ejetar" 3; fi
     done
+    # script 11: um container (o próprio BrunOS ou um app) pode ainda segurar uma cópia da montagem
+    u=$(preso "$valor")
+    [ -z "$u" ] || falha "o disco ainda está montado dentro de um app (em uso por: $u): reinicie o BrunOS e pare os apps que usam o disco antes de ejetar" 3
     [ -w "/sys/block/$valor/device/delete" ] || falha "este disco não pode ser ejetado por aqui" 3
     sync
     echo 1 >"/sys/block/$valor/device/delete" || falha "o Linux recusou ejetar o disco" 1
     echo "ejetado"
+    exit 0 ;;
+  montar)
+    dev=$(blkid -U "$valor" 2>/dev/null) || falha "não achei nenhuma partição com esse UUID" 3
+    case "$dev" in /dev/*) ;; *) falha "não achei nenhuma partição com esse UUID" 3 ;; esac
+    d=$(lsblk -nso NAME "$dev" 2>/dev/null | tail -n 1)
+    if [ -n "$d" ] && e_sistema "$d"; then falha "essa partição é do disco do sistema" 3; fi
+    fs=$(blkid -o value -s TYPE "$dev" 2>/dev/null || true)
+    case "$fs" in
+      ext4|ext3|ext2|btrfs|xfs) op="defaults,nofail" ;;
+      ntfs) fs=ntfs3; op="uid=1000,gid=1000,nofail" ;;
+      exfat|vfat) op="uid=1000,gid=1000,nofail" ;;
+      *) falha "não sei montar o sistema de arquivos \"$fs\"" 3 ;;
+    esac
+    if lsblk -nro MOUNTPOINT "$dev" 2>/dev/null | grep -q .; then falha "essa partição já está montada" 3; fi
+    if grep -qs "$valor" /etc/fstab; then falha "essa partição já tem uma linha no /etc/fstab" 3; fi
+    alvo="/mnt/$modo"
+    criou=0
+    if [ -e "$alvo" ]; then
+      if mountpoint -q "$alvo"; then falha "já tem um disco montado em $alvo" 3; fi
+      [ -d "$alvo" ] && [ -z "$(ls -A "$alvo" 2>/dev/null)" ] || falha "a pasta $alvo já existe e não está vazia: escolha outro nome" 3
+    else
+      mkdir "$alvo"
+      criou=1
+    fi
+    copia="/etc/fstab.brunos-$(date +%Y%m%d-%H%M%S)"
+    cp -p /etc/fstab "$copia"
+    printf 'UUID=%s %s %s %s 0 2 # brunos\n' "$valor" "$alvo" "$fs" "$op" >>/etc/fstab
+    if ! r=$(mount "$alvo" 2>&1); then
+      # volta tudo como estava
+      cp -p "$copia" /etc/fstab
+      if [ "$criou" = 1 ]; then rmdir "$alvo" 2>/dev/null || true; fi
+      falha "não deu para montar (o /etc/fstab voltou como estava): $r" 1
+    fi
+    systemctl daemon-reload 2>/dev/null || true
+    echo "montado $alvo $fs"
+    exit 0 ;;
+  desmontar)
+    alvo="/mnt/$valor"
+    mountpoint -q "$alvo" || falha "não há disco montado em $alvo" 3
+    src=$(findmnt -no SOURCE "$alvo" 2>/dev/null)
+    d=$(lsblk -nso NAME "$src" 2>/dev/null | tail -n 1)
+    if [ -n "$d" ] && e_sistema "$d"; then falha "esse é o disco do sistema" 3; fi
+    command -v fuser >/dev/null 2>&1 || falha "falta o fuser no servidor: instale com sudo apt install psmisc" 3
+    u=$(fuser -m "$alvo" 2>/dev/null | tr -s ' ' '\n' | sed 's/[^0-9]//g' | grep . | while read -r p; do cat "/proc/$p/comm" 2>/dev/null; done | sort -u | tr '\n' ' ' | sed 's/ $//')
+    [ -z "$u" ] || falha "o disco está em uso por: $u. Feche ou pare esses programas (no Runtipi, pare o app) e tente de novo" 4
+    r=$(umount "$alvo" 2>&1) || falha "o Linux recusou desmontar: $r" 1
+    if grep -qsE "[[:space:]]$alvo[[:space:]].*# brunos\$" /etc/fstab; then
+      cp -p /etc/fstab "/etc/fstab.brunos-$(date +%Y%m%d-%H%M%S)"
+      grep -vE "[[:space:]]$alvo[[:space:]].*# brunos\$" /etc/fstab >/etc/fstab.brunos-novo || true
+      cat /etc/fstab.brunos-novo >/etc/fstab
+      rm -f /etc/fstab.brunos-novo
+      systemctl daemon-reload 2>/dev/null || true
+      echo "fstab tirado"
+    elif grep -qsE "[[:space:]]$alvo[[:space:]]" /etc/fstab; then
+      echo "fstab ficou"
+    fi
+    rmdir "$alvo" 2>/dev/null || true
+    # quem ainda segura uma cópia da montagem (o BrunOS e apps com pasta deste disco)
+    if [ -n "$d" ]; then echo "preso $(preso "$d")"; fi
+    echo "desmontado $alvo"
+    exit 0 ;;
+  rotulo)
+    dev=$(blkid -U "$valor" 2>/dev/null) || falha "não achei nenhuma partição com esse UUID" 3
+    case "$dev" in /dev/*) ;; *) falha "não achei nenhuma partição com esse UUID" 3 ;; esac
+    if lsblk -nro MOUNTPOINT "$dev" 2>/dev/null | grep -q .; then falha "desmonte a partição antes de trocar o rótulo" 3; fi
+    case "$(blkid -o value -s TYPE "$dev" 2>/dev/null || true)" in
+      ext4|ext3|ext2) r=$(e2label "$dev" "$modo" 2>&1) ;;
+      btrfs) r=$(btrfs filesystem label "$dev" "$modo" 2>&1) ;;
+      ntfs) r=$(ntfslabel "$dev" "$modo" 2>&1) ;;
+      exfat) r=$(exfatlabel "$dev" "$modo" 2>&1) ;;
+      vfat) r=$(fatlabel "$dev" "$modo" 2>&1) ;;
+      *) falha "não sei trocar o rótulo deste sistema de arquivos" 3 ;;
+    esac || falha "não deu para trocar o rótulo: $r" 1
+    echo "rotulo $modo"
+    exit 0 ;;
+  senha-formatar|esquecer-senha-formatar)
+    [ "${SUDO_USER:-}" != brunos-power ] || falha "a Senha de formatação só pode ser criada ou apagada no Terminal do servidor, com sudo"
+    if [ "$acao" = esquecer-senha-formatar ]; then
+      rm -f "$SENHA" "$TRAVA"
+      echo "Senha de formatação apagada. Formatar pelo BrunOS fica desligado até você criar outra."
+      exit 0
+    fi
+    [ -t 0 ] || falha "rode no Terminal do servidor: sudo brunos-host senha-formatar"
+    command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
+    install -d -m 700 -o root -g root /etc/brunos-host
+    if [ -f "$SENHA" ]; then
+      a=$(le_senha "Senha de formatação ATUAL: ")
+      printf '%s' "$a" | python3 -c "$PY_CONFERE" "$SENHA" || falha "senha atual errada" 7
+    fi
+    s1=$(le_senha "Nova Senha de formatação (mínimo 8 caracteres, diferente da senha do BrunOS): ")
+    [ ${#s1} -ge 8 ] || falha "a senha precisa ter pelo menos 8 caracteres"
+    s2=$(le_senha "Digite de novo: ")
+    [ "$s1" = "$s2" ] || falha "as duas senhas não são iguais"
+    printf '%s' "$s1" | python3 -c "$PY_GERA" >"$SENHA.novo"
+    chmod 600 "$SENHA.novo"
+    mv -f "$SENHA.novo" "$SENHA"
+    rm -f "$TRAVA"
+    echo "Senha de formatação criada. Ela é pedida pelo BrunOS sempre que você for formatar um disco."
+    exit 0 ;;
+  formatar)
+    [ -f "$SENHA" ] || falha "ainda não existe Senha de formatação: crie no Terminal do servidor com sudo brunos-host senha-formatar" 5
+    command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
+    agora=$(date +%s)
+    n=0; ate=0
+    if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; fi
+    case "$n$ate" in *[!0-9]*|"") n=0; ate=0 ;; esac
+    if [ "$ate" -gt "$agora" ]; then
+      falha "formatar está bloqueado até $(date -d "@$ate" +%H:%M) por causa de senhas erradas" 6
+    fi
+    # a senha vem pela entrada padrão (uma linha), nunca na linha de comando
+    IFS= read -r senha || senha=""
+    if ! printf '%s' "$senha" | python3 -c "$PY_CONFERE" "$SENHA"; then
+      n=$((n + 1))
+      if [ "$n" -ge 5 ]; then
+        echo "0 $((agora + 3600))" >"$TRAVA"
+        falha "Senha de formatação errada 5 vezes: formatar ficou bloqueado por 1 hora" 6
+      fi
+      echo "$n 0" >"$TRAVA"
+      falha "Senha de formatação errada (tentativa $n de 5)" 7
+    fi
+    rm -f "$TRAVA"
+    senha=""
+    checa_formatar "$valor" "$modo" "$extra"
+    command -v systemd-run >/dev/null 2>&1 || falha "este servidor não tem systemd-run" 3
+    if systemctl is-active --quiet brunos-discos; then falha "já tem uma formatação rodando" 4; fi
+    systemd-run --unit=brunos-discos --collect --quiet --description="Formatação pedida pelo BrunOS" /usr/local/sbin/brunos-host formatar-executar "$valor" "$modo" "$extra" "$extra2"
+    echo "iniciado"
+    exit 0 ;;
+  formatar-executar)
+    exec >"$LOGD" 2>&1
+    echo "inicio $(date +%s) $valor $extra $extra2"
+    # confere tudo de novo imediatamente antes de apagar (falha aqui = nada foi apagado)
+    ( checa_formatar "$valor" "$modo" "$extra" ) || { echo "fim 3"; exit 3; }
+    case "$valor" in nvme*) part="${valor}p1" ;; *) part="${valor}1" ;; esac
+    echo "etapa apagando"
+    for p in $(partes "$valor" | sort -r); do wipefs -a "/dev/$p" || { echo "fim 1"; exit 1; }; done
+    echo "etapa particionando"
+    case "$extra" in ext4|btrfs) tipo=8300 ;; *) tipo=0700 ;; esac
+    sgdisk -o -n "1:0:0" -t "1:$tipo" "/dev/$valor" || { echo "fim 1"; exit 1; }
+    partprobe "/dev/$valor" || true
+    udevadm settle 2>/dev/null || sleep 2
+    [ -b "/dev/$part" ] || { echo "a partição nova não apareceu"; echo "fim 1"; exit 1; }
+    echo "etapa formatando"
+    case "$extra" in
+      ext4) mkfs.ext4 -F -L "$extra2" "/dev/$part" ;;
+      btrfs) mkfs.btrfs -f -L "$extra2" "/dev/$part" ;;
+      exfat) mkfs.exfat -L "$extra2" "/dev/$part" ;;
+      ntfs) mkfs.ntfs -Q -F -L "$extra2" "/dev/$part" ;;
+    esac || { echo "fim 1"; exit 1; }
+    if [ "$extra" = ext4 ] || [ "$extra" = btrfs ]; then
+      # o dono da raiz do disco novo é o usuário do BrunOS (1000), para dar para gravar pelo painel
+      t=$(mktemp -d)
+      if mount "/dev/$part" "$t"; then chown 1000:1000 "$t"; umount "$t"; fi
+      rmdir "$t" 2>/dev/null || true
+    fi
+    echo "uuid $(blkid -o value -s UUID "/dev/$part" 2>/dev/null)"
+    echo "fim 0"
+    exit 0 ;;
+  discos-estado)
+    if systemctl is-active --quiet brunos-discos 2>/dev/null; then echo "rodando"; else echo "parado"; fi
+    if [ -f "$SENHA" ]; then echo "senha sim"; else echo "senha nao"; fi
+    if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; echo "trava ${n:-0} ${ate:-0}"; fi
+    echo "=== registro"
+    tail -n 40 "$LOGD" 2>/dev/null || true
     exit 0 ;;
   atualizacoes)
     if [ -x /usr/lib/update-notifier/apt-check ]; then

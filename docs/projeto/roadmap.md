@@ -19,13 +19,12 @@ celular.
 | 0.14.0 | Históricos de 30 dias (tsdb) e gráficos com eixo, valor no mouse, Período e Ponta viva (decisão 53) |
 | 0.15.0 | Janela Discos: informações, SMART explicado, testes do disco, desempenho, espaço, Linha do tempo, ejetar (decisão 56) |
 | 0.15.1 | Teste do disco: andamento a cada 30 s e progressivo, resultado que não some, estimativa real, disco "só no fim"; dados genéricos |
+| 0.16.0 | Montar, desmontar, rótulo e Formatar com Senha de formatação; trava de container no ejetar (decisões 54 e 57) |
 
-## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026
+## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026: entregue
 
-Sessão de perguntas uma a uma; resumo aprovado ("Pode seguir."). Plano completo em `plano-etapa11.md`;
-termos novos em `CONTEXT.md` (Régua, Tamanho do ícone, Espaço entre os ícones, Histórico, Período, Ponta
-viva, Disco, Pasta de montagem, Formatar, Senha de formatação); porquês nas decisões 52–54. Quatro versões,
-nesta ordem, cada uma testada no servidor antes da próxima.
+Resumo de cada versão no `historico.md` (o plano detalhado foi apagado ao terminar a etapa); termos em
+`CONTEXT.md`; porquês nas decisões 52–57. Falta o Bruno testar no servidor as versões abaixo.
 
 | Versão | O que | Status |
 |---|---|---|
@@ -33,7 +32,7 @@ nesta ordem, cada uma testada no servidor antes da próxima.
 | 0.13.2 | Área útil e correções da tela inicial (widgets repetidos, fileira fora do centro, apps passando do dock) | feito, aguardando teste no servidor |
 | 0.14.0 | Históricos de 30 dias (`internal/tsdb`: servidor, containers, internet, leitura/escrita dos discos, integrações) e gráficos com eixo, valor no mouse, Período e Ponta viva | feito, aguardando teste no servidor |
 | 0.15.0 | Janela Discos: informações, SMART explicado, testes, desempenho, espaço, linha do tempo, ejetar | feito; testado, ajustes na 0.15.1 (teste do disco), aguardando teste no servidor |
-| 0.16.0 | Montar, desmontar e Formatar com Senha de formatação | a fazer |
+| 0.16.0 | Montar, desmontar e Formatar com Senha de formatação | feito, aguardando teste no servidor (primeiro com um pendrive) |
 
 ## Em aberto
 

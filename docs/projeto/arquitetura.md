@@ -150,7 +150,11 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   present,mounts,hot,ejected,speed,events:[{at,kind,level,text}]}}}`, até 200 eventos por disco, discos
   esquecidos após 180 dias ausentes). Avisos `disk-new`, `disk-gone` (resolvido quando volta) e `disk-hot`
   (só discos fora do Uso ao vivo). Ações: `velocidade` (em segundo plano, um por vez) e `ejetar` (USB, não
-  sistema, nada montado; o script confere de novo).
+  sistema, nada montado; o script confere de novo). Desde a 0.16.0 (`manage.go`, script 11): `Mount`,
+  `Unmount` (antes chama `Release` do Arquivos para soltar a pasta; devolve quem ainda segura a montagem),
+  `Label` e `Format` (Senha de formatação pelo `ActInput`, entrada padrão; acompanha o `discos-estado` a
+  cada 2 s até `fim`); `OnMount`/`OnUnmount` mapeiam/desmapeiam a pasta no Arquivos; `Verify` confere a
+  senha do BrunOS antes de formatar (decisões 54 e 57).
   Atualizações (script 6+): o script roda a atualização solta da conexão SSH (`systemd-run`) e grava um
   registro; o BrunOS acompanha por `atualizacao-estado`. O app recebe `BRUNOS_RUNTIPI_HOST` (preenchido
   pelo compose com `BRUNOS_RUNTIPI_PATH`) para o script achar a pasta do Runtipi no servidor.
@@ -272,6 +276,9 @@ GET  /api/disks/forecast              ({disks:[{name,perDay,daysLeft?,enough,poi
 GET  /api/disks                       ({disks:[disco+parts+smart+temp+apps+speed],checkedAt,err,oldScript,loading})
 POST /api/disks/refresh               GET /api/disks/timeline?key · /api/disks/state?dev · /api/disks/errors?dev
 POST /api/disks/speed {dev} (202)     POST /api/disks/eject {dev}   POST /api/smart/selftest {key,kind}
+POST /api/disks/mount {uuid,folder}   POST /api/disks/unmount {folder} → {stuck,fstabKept}   POST /api/disks/label {uuid,label}
+GET  /api/disks/format ({hasPassword,lockedUntil,fails,job})   POST /api/disks/format {dev,fs,label,password,formatPassword} (202)
+POST /api/system/restart              (reinicia o próprio container pelo proxy; 501 sem Docker)
 GET  /api/files/text?root&path        ({text,mtime(ms),size,readOnly}; 413 grande, 415 binário/não-UTF-8)
 PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   POST /api/files/newfile
 POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})

@@ -1547,6 +1547,35 @@ button.disk-row { width: 100%; text-align: left; }
 .dk-part-txt small { font-size: 11.5px; opacity: .7; }
 .dk-part-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dk-part-val small { opacity: .5; font-weight: 500; }
+/* 0.16.0: montar, desmontar, rótulo e o assistente Formatar */
+.dk-part-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.pill-btn.sm { height: 26px; padding: 0 10px; font-size: 11.5px; }
+.pill-btn.danger.solid { background: #d84a4a; color: #fff; box-shadow: none; }
+.pill-btn.danger.solid:hover:not([disabled]) { background: #e25b5b; }
+.fw h2 { display: flex; align-items: center; gap: 8px; }
+.fw-fs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.fw-opt { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); cursor: pointer; box-shadow: inset 0 0 0 1px transparent; transition: background .15s, box-shadow .15s; }
+.fw-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.fw-opt b { font-size: 13.5px; }
+.fw-opt small { font-size: 11.5px; opacity: .6; line-height: 1.4; }
+.fw-opt.on { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.fw-field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; margin-top: 10px; }
+.fw-field .text-input { width: 100%; }
+.fw-hint { display: block; font-size: 11.5px; opacity: .5; margin-top: 4px; }
+.fw-hint.bad { opacity: 1; color: #ffb3b3; }
+.fw-warn { padding: 10px 14px; border-radius: 12px; background: rgba(255,90,90,.1); box-shadow: inset 0 0 0 1px rgba(255,90,90,.3); font-size: 12.5px; margin: 10px 0 4px; }
+.fw-warn p { margin: 4px 0; }
+.fw-warn ul { margin: 6px 0; padding-left: 18px; opacity: .85; }
+.fw-err { color: #ffb3b3; font-size: 12.5px; margin: 10px 0 0; }
+.fw-err[hidden] { display: none; }
+.fw-steps { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.fw-steps li { display: flex; align-items: center; gap: 8px; opacity: .45; }
+.fw-steps li i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; display: inline-block; }
+.fw-steps li.now { opacity: 1; font-weight: 600; }
+.fw-steps li.now i { border-color: var(--brand-lightest); border-right-color: transparent; animation: spin .9s linear infinite; }
+.fw-steps li.done { opacity: .8; }
+.fw-steps li.done .svg { color: #8ff0b1; }
+@media (max-width: 640px) { .fw-fs { grid-template-columns: 1fr; } }
 .dk-apps { display: flex; gap: 6px; flex-wrap: wrap; }
 /* Saúde */
 .dk-health p { font-size: 12.5px; line-height: 1.5; margin: 8px 0 0; opacity: .85; }

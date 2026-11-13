@@ -183,7 +183,14 @@ const real = {
     errors: (dev) => call('GET', `/api/disks/errors?${q({ dev })}`),
     speed: (dev) => call('POST', '/api/disks/speed', { dev }),
     eject: (dev) => call('POST', '/api/disks/eject', { dev }),
+    // 0.16.0: montar, desmontar, rótulo e Formatar
+    mount: (uuid, folder) => call('POST', '/api/disks/mount', { uuid, folder }),
+    unmount: (folder) => call('POST', '/api/disks/unmount', { folder }),
+    label: (uuid, label) => call('POST', '/api/disks/label', { uuid, label }),
+    formatInfo: () => call('GET', '/api/disks/format'),
+    format: (b) => call('POST', '/api/disks/format', b),
   },
+  restartSelf: () => call('POST', '/api/system/restart', {}),
   power: {
     get: () => call('GET', '/api/power'),
     save: (cfg) => call('PUT', '/api/power/config', cfg),
@@ -397,6 +404,7 @@ function makeDemo() {
   const demoSpeeds = { 'D-SDD': { mbps: 112.4, bytes: 1073741824, secs: 9.55, at: now - 86400 * 2 } };
   let demoSpeedBusy = '';
   const demoEjected = new Set();
+  const demoMnt = { mounts: {}, labels: {}, formatted: {}, job: null };
   const P = (name, size, fsType, label, mounts, used, extra = {}) => ({ name, path: `/dev/${name}`, fsType, label, size: size * GB, mounts, ...(used != null ? { used: used * GB, avail: (size * 0.985 - used) * GB } : {}), ...extra });
   const demoDiskList = () => [
     { key: 'D-SDA', dev: 'sda', model: 'HD USB 1TB', vendor: 'Genérico', serial: 'D-SDA', rev: 'AX1P5E', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-Generico_HD_USB_1TB_D-SDA-0:0',
@@ -413,6 +421,13 @@ function makeDemo() {
     { key: 'D-SDE', dev: 'sde', model: 'Ultra Fit', vendor: 'SanDisk', serial: 'D-SDE', rev: '1.00', tran: 'usb', ptType: 'dos', size: 64 * GB, rotational: false, removable: true, byId: '/dev/disk/by-id/usb-SanDisk_Ultra_Fit_D-SDE-0:0',
       parts: [P('sde1', 64, 'exfat', 'PENDRIVE', [], null)], first: now - 3 * 3600, apps: [] },
   ].filter((d) => !demoEjected.has(d.key)).map((d) => {
+    // 0.16.0: o que foi montado, desmontado, renomeado ou formatado na demonstração
+    if (demoMnt.formatted[d.key]) { const f = demoMnt.formatted[d.key]; d.parts = [P(`${d.dev}1`, d.size / GB * 0.999, f.fs, f.label, [], null, { uuid: `f0f0-${d.dev}` })]; }
+    d.parts = d.parts.map((p, i) => {
+      const uuid = p.uuid || `${(i + 10).toString(16)}aa-${d.dev}`.replace(/[^a-f0-9-]/g, 'b');
+      const mounts = demoMnt.mounts[uuid] ?? p.mounts;
+      return { ...p, uuid, label: demoMnt.labels[uuid] ?? p.label, mounts, ...(mounts.length ? {} : { used: undefined, avail: undefined }) };
+    });
     const sm = demoSmartDisks.find((x) => x.key === d.key);
     return { ...d, smart: sm, temp: sm?.temp, tempAt: sm?.tempAt, speed: demoSpeeds[d.key], speedBusy: demoSpeedBusy === d.dev };
   });
@@ -725,7 +740,32 @@ function makeDemo() {
         { at: '2026-11-04T09:12:38-0300', text: 'usb 2-1: reset high-speed USB device number 4 using xhci_hcd' }] : [] }, 900),
       speed: (dev) => { const k = demoDiskList().find((d) => d.dev === dev)?.key; demoSpeedBusy = dev; setTimeout(() => { demoSpeedBusy = ''; demoSpeeds[k] = { mbps: dev === 'sdc' ? 512.3 : 96.8, bytes: 1073741824, secs: 10.2, at: Math.floor(Date.now() / 1000) }; }, 5000); return wait({ disks: demoDiskList() }, 300); },
       eject: (dev) => { const d = demoDiskList().find((x) => x.dev === dev); if (!d || d.tran !== 'usb' || d.parts.some((p) => p.mounts.length)) return Promise.reject(new Error('o disco ainda está montado: desmonte antes de ejetar')); demoEjected.add(d.key); return wait({ ok: true }, 900); },
+      mount: (uuid, folder) => { demoMnt.mounts[uuid] = [`/mnt/${folder}`]; return wait({ ok: true, path: `/mnt/${folder}` }, 900); },
+      unmount: (folder) => {
+        const p = demoDiskList().flatMap((d) => d.parts).find((x) => x.mounts.includes(`/mnt/${folder}`));
+        if (folder === 'Disco1') return Promise.reject(new Error('o disco está em uso por: Plex Media Serv. Feche ou pare esses programas (no Runtipi, pare o app) e tente de novo'));
+        if (p) demoMnt.mounts[p.uuid] = [];
+        return wait({ stuck: ['brunos'], fstabKept: folder === 'Disco2' }, 900);
+      },
+      label: (uuid, label) => { demoMnt.labels[uuid] = label; return wait({ ok: true }, 500); },
+      formatInfo: () => {
+        const j = demoMnt.job;
+        if (j?.running) {
+          const t = Date.now() / 1000 - j.started;
+          j.step = t < 2 ? 'apagando' : t < 4 ? 'particionando' : 'formatando';
+          if (t > 7) { Object.assign(j, { running: false, ok: true, uuid: `f0f0-${j.dev}`, ended: Math.floor(Date.now() / 1000) }); demoMnt.formatted[j.key] = { fs: j.fs, label: j.label }; }
+        }
+        return wait({ hasPassword: location.hash !== '#semsenha', job: j ? { ...j } : undefined }, 300);
+      },
+      format: (b) => {
+        if (b.password !== 'demo1234') return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta'), { status: 403 }));
+        if (b.formatPassword !== 'formatar123') return Promise.reject(new Error('Senha de formatação errada (tentativa 1 de 5)'));
+        const d = demoDiskList().find((x) => x.dev === b.dev);
+        demoMnt.job = { dev: b.dev, key: d.key, name: d.model, fs: b.fs, label: b.label, started: Math.floor(Date.now() / 1000), running: true, ok: false };
+        return wait({ hasPassword: true, job: { ...demoMnt.job } }, 1200);
+      },
     },
+    restartSelf: () => wait({ ok: true }, 300),
     power: {
       get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50', needsUpdate: !!powerCfg.testedAt && powerCfg.hostSetup < 2, charge: demoCharge() }),
       charge: (b) => {

@@ -1,8 +1,14 @@
 # Ideias para o futuro
 
 Tudo o que o Bruno aprovou ou sugeriu mas **não foi feito**. O que já foi entregue está em
-`historico.md`; o que está combinado para as próximas versões, em `roadmap.md` e `plano-etapa11.md`.
+`historico.md`; o que está combinado para as próximas versões, em `roadmap.md`.
 Ao retomar uma ideia daqui, pergunte as decisões em aberto com opções antes de implementar.
+
+## Anotadas na etapa 11 (não aprovadas)
+
+- Formatar uma partição só e editor de partições (criar, apagar, redimensionar).
+- "Dormir após X minutos parado" (`hdparm -S`): ganho pequeno e alguns adaptadores USB ignoram.
+- Integração com o Beszel como Fonte de Métricas em widgets (não como lugar dos Históricos).
 
 Regra geral das ideias que mexem no servidor: nada de privilégios no container; o que precisa de root vai
 por SSH com chave restrita (ver `docs/privado/seguranca.md`).
