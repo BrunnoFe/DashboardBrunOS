@@ -2,8 +2,8 @@
 
 ## Como o BrunOS enxerga o Runtipi
 
-- Pasta do Runtipi montada só para leitura em `/runtipi` (padrão do formulário: `/home/ptbruno/runtipi`,
-  campo `BRUNOS_RUNTIPI_PATH`).
+- Pasta do Runtipi montada só para leitura em `/runtipi` (campo `BRUNOS_RUNTIPI_PATH` do formulário; o
+  padrão sugerido está em `runtipi-app/brunos/config.json`).
 - Apps instalados: `apps/<loja>/<app>/config.json` (nome, porta, versão, categorias) +
   `app-data/<loja>/<app>/app.env` (porta e domínio escolhidos na instalação; o resto do arquivo tem
   senhas e é ignorado) + `metadata/logo.jpg`.
@@ -56,9 +56,9 @@
 
 ## Fluxo de PR na loja
 
-Histórico: PR #1 (0.1.0) mesclado; PR #2 (0.2.0 → 0.3.0, branch `brunos-0.2.0`) mesclado em 07/11/2026.
 A cada versão: branch nova a partir da `main` da loja, copiar os dois JSON, `bun test`, PR com
-descrição em pt-BR do que mudou e se o formulário/montagens mudaram.
+descrição em pt-BR do que mudou e se o formulário/montagens mudaram. Com o check `test` verde, o Claude
+mescla sozinho (regra no `CLAUDE.md`).
 
 ## Acesso do Claude ao GitHub
 

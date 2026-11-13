@@ -50,7 +50,6 @@ func (plex) Info() KindInfo {
 type plexSession struct {
 	Type             string  `json:"type"`
 	Title            string  `json:"title"`
-	ParentTitle      string  `json:"parentTitle"`
 	GrandparentTitle string  `json:"grandparentTitle"`
 	Index            int     `json:"index"`
 	ParentIndex      int     `json:"parentIndex"`

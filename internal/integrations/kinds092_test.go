@@ -216,7 +216,7 @@ func TestTailscale(t *testing.T) {
 		if cmd != "tailscale" {
 			return nil, errors.New("pedido errado")
 		}
-		return []byte(`{"BackendState":"Running","Self":{"HostName":"homeio","TailscaleIPs":["100.64.0.1","fd7a::1"]},
+		return []byte(`{"BackendState":"Running","Self":{"HostName":"servidor","TailscaleIPs":["100.64.0.1","fd7a::1"]},
 			"Peer":{"nodekey:a":{"HostName":"iPhone","DNSName":"iphone-bruno.tail1.ts.net.","OS":"iOS","TailscaleIPs":["100.64.0.2"],"Online":true,"PublicKey":"nodekey:a"},
 			"nodekey:b":{"HostName":"pc","DNSName":"","OS":"windows","TailscaleIPs":["100.64.0.3"],"Online":false,"LastSeen":"2026-11-08T09:00:00Z","ExitNode":true,"PublicKey":"nodekey:b"}},
 			"Health":[]}`), nil

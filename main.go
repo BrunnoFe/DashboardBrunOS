@@ -238,10 +238,9 @@ func main() {
 	power.HostOK = terminal.HostRe.MatchString
 	power.RuntipiHost = env("BRUNOS_RUNTIPI_HOST", "") // pasta do Runtipi no servidor (para o runtipi-cli)
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
-		// chave nova (script brunos-host) e a da configuração antiga, só para desligar até atualizar
-		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key_v2"), filepath.Join(cfg.DataDir, "hostcmd_key"), known))
+		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key_v2"), known))
 	s.power.SuggestHost = func() string { _, info := s.tipi.Apps(); return info.InternalIP }
-	s.setupEtapa9(cfg.DataDir)
+	s.setupMonitors(cfg.DataDir)
 	s.stats.SetDrain(s.power.DrainW())
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
 	if err := fsvc.LoadMapping(); err != nil {
@@ -262,7 +261,6 @@ func main() {
 	go s.watchApps(ctx)
 	go s.netmon.Run(ctx)
 	go s.integ.Run(ctx)
-	// etapa 9: faltavam desde a 0.11.0 (só rodavam ao clicar em "Ler agora"/"Conferir agora")
 	go s.energy.Run(ctx)  // consumo: uma amostra por minuto
 	go s.smart.Run(ctx)   // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
 	go s.updates.Run(ctx) // atualizações na frequência escolhida e acompanhamento das que estão rodando

@@ -4,13 +4,13 @@ Painel para servidor caseiro com [Runtipi](https://runtipi.io), no estilo do umb
 
 - **Leve:** um binário Go estático (~9 MB, imagem `scratch`), sem dependências externas, ~12–20 MB de RAM.
 - **Integrado ao Runtipi:** lê os apps instalados (nome, logo, porta, domínio local) direto da pasta do Runtipi, só leitura.
-- **Seguro:** usuário próprio criado na primeira execução, senha em PBKDF2, sessões com cookie HttpOnly e Docker atrás de um proxy com permissões mínimas.
+- **Seguro:** usuário próprio criado na primeira execução, container sem privilégios e Docker atrás de um proxy com permissões mínimas.
 
 ## Estrutura
 
 ```
 main.go                  servidor HTTP, rotas, autenticação, preferências, apps, estatísticas
-internal/auth            usuário, senha (PBKDF2-SHA256, 600k iterações), sessões, limite de tentativas
+internal/auth            usuário, senha, sessões, limite de tentativas
 internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos, rede (lê /proc e /sys)
 internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
 internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, ligar/parar/reiniciar, logs)
@@ -38,7 +38,7 @@ tests/                   fixture, testes da API e teste de fumaça com Docker
 
 1. **Imagem:** cada push na `main` roda o teste com Docker de verdade (`tests/smoke.sh`). Quando o arquivo `VERSION` traz uma versão nova e o teste passa, o GitHub Actions publica `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64). Na primeira publicação, abra o pacote em *Your profile → Packages → brunos → Package settings* e mude a visibilidade para **Public**; assim o servidor baixa a imagem sem login.
 2. **App store:** o app fica em [`BrunnoFe/RuntipiAppStore`](https://github.com/BrunnoFe/RuntipiAppStore), na pasta `apps/brunos` (mesmo conteúdo de `runtipi-app/brunos` aqui). O formato é o `docker-compose.json` legado, igual aos outros apps da loja.
-3. No Runtipi, atualize a loja e instale o **BrunOS**. Confira no formulário a pasta do Runtipi (`/home/ptbruno/runtipi`) e o UID/GID (`id -u`, `id -g`).
+3. No Runtipi, atualize a loja e instale o **BrunOS**. Confira no formulário a pasta do Runtipi (por exemplo `/home/<usuário>/runtipi`) e o UID/GID (`id -u`, `id -g`).
 4. Abra o app pela porta 8790 ou pelo domínio local e crie seu usuário.
 
 ### Testar no servidor antes de instalar pela loja
@@ -59,9 +59,9 @@ FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste   # mesmo teste do GitHub
 | `/mnt` | `/files/mnt` | cada pasta em `/mnt/*` pode virar um disco no gerenciador. Em *Arquivos → Discos → Mapear* você escolhe quais aparecem (fica salvo em `/data/disks.json`); sem escolha, aparecem só as pastas com um disco montado |
 | pasta do Runtipi | `/files<mesmo caminho>` (ro) | impede apagar o Runtipi pelo gerenciador |
 | `/proc`, `/etc/os-release`, `/etc/hostname` | `/host/...` (ro) | rede do servidor, processos e informações do sistema |
-| `/etc/passwd` | `/host/passwd` (ro) | nome do usuário dono de cada processo (só nomes; senhas ficam no `/etc/shadow`, que não é montado) |
+| `/etc/passwd` | `/host/passwd` (ro) | nome do usuário dono de cada processo |
 
-O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário já pode. Se os discos em `/mnt` pertencem ao root e você quer escrever neles pelo painel, rode `sudo chown -R ptbruno:ptbruno /mnt/1TB_HDD` (ou ajuste as permissões só das pastas que quiser).
+O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário já pode. Se os discos em `/mnt` pertencem ao root e você quer escrever neles pelo painel, ajuste as permissões só das pastas que quiser (por exemplo `sudo chown -R <usuário>:<usuário> /mnt/<disco>`).
 
 ## Variáveis de ambiente
 
@@ -70,14 +70,14 @@ O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário j
 | `BRUNOS_ADDR` | `:8080` | endereço do servidor |
 | `BRUNOS_DATA` | `/data` | pasta de dados |
 | `BRUNOS_FILES` | `/files` | cada subpasta vira um local (dentro de `mnt`/`media`, cada disco) |
-| `BRUNOS_ROOTS` | — | lista manual: `Fotos=/files/mnt/1TB_HDD/Fotos;Backups=/files/mnt/1TB_HDD2:ro` |
+| `BRUNOS_ROOTS` | — | lista manual: `Fotos=/files/mnt/disco1/Fotos;Backups=/files/mnt/disco2:ro` |
 | `BRUNOS_TERMINAL` | `true` | `false` esconde e desliga o terminal SSH |
 | `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi montada |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | ou `tcp://brunos-docker-proxy:2375`; `off` desliga |
 | `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
 | `BRUNOS_MAX_UPLOAD_GB` | `50` | tamanho máximo por arquivo enviado |
 | `HOST_PROC` | `/host/proc` | `/proc` do servidor (rede) |
-| `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | por padrão a primeira execução só aceita IPs da rede local/Tailscale |
+| `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | deixe `false`: o cadastro do primeiro usuário só é aceito de dentro da rede de casa |
 
 ## Desenvolvimento
 
@@ -88,9 +88,9 @@ BRUNOS_DATA=./tmp/data BRUNOS_FILES=./tmp/files BRUNOS_RUNTIPI=./tmp/runtipi DOC
 
 Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com dados simulados.
 
-## API (resumo)
+## API
 
-`GET /api/public` · `POST /api/auth/setup|login|logout` · `GET|PUT /api/settings` · `GET /api/stats` · `GET /api/stats/stream` (SSE) · `GET /api/system` · `GET /api/apps` · `GET /api/apps/logo?urn=` · `GET /api/usage` · `POST /api/apps/restart` · `GET|PUT|DELETE /api/wallpapers` · `/api/files/{roots,list,raw,zip,search,upload,mkdir,rename,paste,trash,delete}` · `GET /api/events` · `POST /api/events/{read,clear}` · `GET /api/power` · `PUT /api/power/config` · `POST /api/power/{cancel,test}` · `GET /api/power/setup` · `GET /api/disks/forecast` · `GET|PUT /api/files/text` · `POST /api/files/{newfile,extract}` · `/api/files/upload/{start,chunk,status,finish,cancel}` · `GET /api/files/{duplicates,usage}` · `POST /api/apps/{start,stop}` · `GET /api/apps/{containers,history,logs,logs/stream}` · `GET /api/stats/history` · `GET /api/processes` · `GET /api/internet`
+Todas as rotas ficam em `/api/*` e exigem login (menos as públicas de entrada). A lista completa está em [`docs/projeto/arquitetura.md`](docs/projeto/arquitetura.md).
 
 ## Créditos e licenças de terceiros
 
@@ -125,7 +125,7 @@ A lista de discos do *Uso ao vivo* mostra a saúde de cada disco (SMART) e avisa
 
 O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pacotes do Linux). Um clique abre o painel e já confere; dali dá para atualizar cada app e o Linux sem abrir o terminal, acompanhando o andamento. A atualização roda no próprio servidor e continua mesmo se o BrunOS reiniciar no meio. A frequência da conferência automática fica em *Configurações → Sistema → Procurar atualizações*.
 
-Esses recursos usam a versão 6 do script do servidor: em *Configurações → Energia*, copie os comandos de atualização e cole no servidor uma vez (para o SMART, instale também o `smartmontools`). O SMART lê um disco de cada vez e descobre sozinho o jeito certo de falar com cada gaveta USB; uma gaveta que não deixa o SMART passar aparece com a etiqueta *sem SMART* e não é mais incomodada.
+Esses recursos usam um pequeno script instalado no servidor: em *Configurações → Energia*, copie os comandos e cole no servidor uma vez (para o SMART, instale também o `smartmontools`); depois o BrunOS mantém o script atualizado sozinho. O SMART lê um disco de cada vez e descobre sozinho o jeito certo de falar com cada gaveta USB; uma gaveta que não deixa o SMART passar aparece com a etiqueta *sem SMART* e não é mais incomodada.
 
 ## Energia e notificações
 

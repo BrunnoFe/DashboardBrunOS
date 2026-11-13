@@ -35,7 +35,7 @@ func fake(t *testing.T, total, ticks1, ticks2 uint64) string {
 	put(t, filepath.Join(dir, "200/cgroup"), "0::/system.slice/docker-"+fmt.Sprintf("%064x", 7)+".scope\n")
 	put(t, filepath.Join(dir, "3/stat"), stat(3, "kworker/0:1", "I", 2, 0, 0))
 	put(t, filepath.Join(dir, "3/status"), "Uid:\t0\n")
-	put(t, filepath.Join(dir, "passwd"), "root:x:0:0:root:/root:/bin/bash\nptbruno:x:1000:1000::/home/ptbruno:/bin/bash\n")
+	put(t, filepath.Join(dir, "passwd"), "root:x:0:0:root:/root:/bin/bash\nusuario:x:1000:1000::/home/usuario:/bin/bash\n")
 	return dir
 }
 
@@ -55,7 +55,7 @@ func TestList(t *testing.T) {
 		t.Fatalf("lista/resumo: %+v %+v", list, sum)
 	}
 	p := list[0]
-	if p.PID != 100 || p.Name != "my (weird) app" || p.CPU != 50 || p.User != "ptbruno" || p.Cmd != "python3 analise.py" || p.Mem != 2500*4096 || p.Threads != 3 {
+	if p.PID != 100 || p.Name != "my (weird) app" || p.CPU != 50 || p.User != "usuario" || p.Cmd != "python3 analise.py" || p.Mem != 2500*4096 || p.Threads != 3 {
 		t.Fatalf("processo 100: %+v", p)
 	}
 	q := list[1]

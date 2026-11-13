@@ -13,10 +13,10 @@ import (
 	"brunos/internal/updates"
 )
 
-// setupEtapa9 liga o consumo e custo (B3), a saúde dos discos (D3) e as atualizações de apps e do
-// Linux (A1). Os três leem o servidor pelo script brunos-host 6 quando precisam de root; as
-// atualizações também instalam por ele (pedidos de atualização, decisão 47).
-func (s *server) setupEtapa9(dataDir string) {
+// setupMonitors liga o consumo e custo, a saúde dos discos e as atualizações de apps e do Linux. Os três
+// leem o servidor pelo script do servidor quando precisam de root; as atualizações também instalam por
+// ele (decisão 47).
+func (s *server) setupMonitors(dataDir string) {
 	host := func(ctx context.Context, cmd string) ([]byte, error) {
 		if !hostcmd.ReadAllowed(cmd) {
 			return nil, errors.New("pedido não permitido")
@@ -47,7 +47,7 @@ func (s *server) setupEtapa9(dataDir string) {
 	s.updates = updates.New(filepath.Join(dataDir, "updates.json"))
 	s.updates.Apps = s.tipi.CheckUpdates
 	s.updates.Query = host
-	// atualizar Linux e apps pela interface (script 6, decisão 47): só os pedidos de atualização
+	// atualizar Linux e apps pela interface (decisão 47): só os pedidos de atualização
 	s.updates.Act = func(ctx context.Context, cmd string) ([]byte, error) {
 		if !hostcmd.ActAllowed(cmd) {
 			return nil, errors.New("pedido não permitido")

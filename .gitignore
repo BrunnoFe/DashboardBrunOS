@@ -8,3 +8,7 @@ node_modules/
 
 # Memória privada do projeto (detalhes do servidor e de segurança): fica só na máquina do Bruno
 /docs/privado/
+
+# Skills e travas locais do Claude Code (as skills do ai-memory ficam em ~/.claude)
+/.claude/skills/
+/.claude/scheduled_tasks.lock

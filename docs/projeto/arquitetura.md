@@ -38,9 +38,9 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
 
 ### Pacotes
 
-- **`internal/auth`**: `/data/auth.json` (`{"version":1,"users":[{username,displayName,salt,hash,iterations,createdAt,passwordChangedAt}]}`)
-  e `/data/sessions.json` (`{sha256(token): {username,createdAt,expiresAt,ip,userAgent}}`). PBKDF2-SHA256
-  600 mil iterações; sessão de 30 dias deslizante; limitador de tentativas em `limiter.go`.
+- **`internal/auth`**: `/data/auth.json` (usuários, só o resumo da senha) e `/data/sessions.json` (sessões
+  pelo resumo do token, com IP e navegador). Sessão de 30 dias deslizante; limitador de tentativas em
+  `limiter.go`. Parâmetros da senha e das sessões: `docs/privado/seguranca.md`.
 - **`internal/store`**: `WriteJSON(path, v, perm)`, `WriteFile`, `ReadJSON(path, &v) (ok, err)`, gravação atômica.
 - **`internal/sysinfo`**: `Collector` amostra a cada 2 s com ouvintes (SSE) e 15 s sem; histórico de 150
   pontos. Lê `/proc/stat`, `/proc/meminfo`, hwmon (ordem de preferência: coretemp "Package id 0", k10temp,
@@ -79,7 +79,7 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `<app>_<loja>`. Logo em `apps/<loja>/<app>/metadata/logo.jpg`.
 - **`internal/files`**: raízes (`Root` com `os.Root`); `Kind` "place" (Home) ou "disk" (pastas de
   `/mnt` e `/media`). Discos só ficam acessíveis se mapeados (`/data/disks.json`:
-  `{"version":1,"mapped":["1TB_HDD",…]}`); sem arquivo, valem as pastas que são ponto de montagem
+  `{"version":1,"mapped":["disco1",…]}`); sem arquivo, valem as pastas que são ponto de montagem
   (`st_dev` diferente da pasta pai). `Refresh()` redescobre pastas e reabre raízes cujo dispositivo
   mudou. Operações: List, Open, Mkdir, Rename, Paste (copia entre discos em EXDEV), Delete, Upload
   (temporário + rename, nome único "x (2).ext"), Search (3 s / 50 mil entradas), lixeira em
@@ -99,10 +99,9 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   por um canal `exec` com `ps` se algo roda (decisão 41) e só fecha depois de `termIdleMin` (preferência,
   padrão 15, 0 = nunca) se nada roda; Sessão bloqueada não fecha Abas; aviso `terminal-done` no sino
   quando um comando de uma Aba sem leitor termina. `resize` vale como sinal de vida.
-- **`internal/termkey`** (0.10.0): `/data/terminal_key.json` (`{v,salt,iter,nonce,box,pub,createdAt}`,
-  0600); `box` = chave privada PEM cifrada com AES-256-GCM, chave do AES = PBKDF2-SHA256(senha do
-  BrunOS, sal próprio, 600 000). Aberta por Sessão só na memória (login, desbloqueio, criação); some no
-  Bloqueio, no logout e no reinício. `Rekey` ao trocar a senha.
+- **`internal/termkey`** (0.10.0): `/data/terminal_key.json` com a chave privada do Terminal cifrada pela
+  senha do BrunOS. Aberta por Sessão só na memória (login, desbloqueio, criação); some no Bloqueio, no
+  logout e no reinício. `Rekey` ao trocar a senha. Detalhes: `docs/privado/seguranca.md`.
 - **`internal/notes`** (0.10.0): `/data/notes.json` (`{"<id do widget>": {text, at (unix ms)}}`), até
   20 mil caracteres e 200 notas; `Subscribe` manda `{id, at}` para o SSE (`event: note`). TOFU em `/data/known_hosts.json`
   (`{"version":1,"hosts":{"host:porta":{type,fingerprint,key,addedAt}}}`). Prefere chave ED25519 como
@@ -113,19 +112,14 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   (`{"version":1,"events":[{id,time,kind,level,title,body,read,key,meta}],"active":[...]}`), 500 avisos /
   30 dias. `Emit` com `Key` não repete enquanto o problema está em `active`; `Resolve(key, &ev)` fecha e
   registra a volta ao normal. `Subscribe` alimenta o SSE das estatísticas (`event: notify`).
-- **`internal/hostcmd`** (0.4.0): chave ED25519 própria em `/data/hostcmd_key` (0600). `Test` conecta e
-  autentica **sem abrir sessão** (o `command=` forçado executaria); `Run` abre a sessão e roda o comando
-  forçado. Desde a 0.8.1 o comando forçado é o script `/usr/local/sbin/brunos-host` (`HostScript`, instalado
-  pelos comandos colados), que só aceita `desligar` (`systemctl poweroff --check-inhibitors=no --when=+1min`),
-  `limite 50..100`, `protecao on|off` e `versao`, e chama a si mesmo pelo sudo (sudoers libera só ele),
-  conferindo de novo como root. Duas chaves: `/data/hostcmd_key_v2` (atual) e `/data/hostcmd_key` (da
-  0.8.0, que forçava `shutdown -h +1`; usada só para desligar até o servidor ser atualizado). Servidor não
-  atualizado recusa a chave nova na autenticação, então nunca roda o comando antigo por engano.
-  `SetupVersion` (hoje 2) sobe quando o que se cola no servidor muda. Só aceita servidor já confirmado.
-  Script **versão 5** (0.11.2, `ScriptVersion`): pedidos de leitura `tailscale`, `energia`, `atualizacoes`,
-  `discos` (`lsblk -dnP -o NAME,TRAN,SERIAL`) e `smart|temperatura <disco> <sat|auto>` (um disco por pedido,
-  `smartctl -j -n standby -H -i -A`/`-A`, `-d sat` no modo sat). `ReadAllowed` confere o pedido inteiro
-  antes de mandar; o script confere de novo (até 3 palavras, disco `sd[a-z]{1,2}`/`nvme[0-9]n1`).
+- **`internal/hostcmd`**: cliente SSH com chave própria que roda um script fixo no servidor
+  (`HostScript`, instalado pelos comandos que a janela Energia mostra). `Test` conecta e autentica **sem
+  abrir sessão**; `Run`/`Output` abrem a sessão e mandam o pedido. `ReadAllowed` e `ActAllowed` conferem o
+  pedido inteiro antes de mandar e o script confere de novo. `ScriptVersion` sobe quando entra pedido novo;
+  `SetupVersion` só quando muda o que se cola no servidor. Só aceita servidor já confirmado (TOFU).
+  Pedidos: desligar, limite de carga, leituras (Tailscale, energia, atualizações, discos, SMART e
+  temperatura por disco), atualizações e troca assinada do próprio script. O desenho de segurança (usuário,
+  chave, validações) está em `docs/privado/seguranca.md`.
 - **`internal/smart`** (0.11.0, refeito na 0.11.2): `/data/smart.json` versão 2
   (`{"v":2,"checkedAt","err","disks":{"<série>":{key,dev,tran,mode,noSmart,noSmartWhy,noSmartAt,failMode,gone,
   model,serial,health,passed,temp,...,history}}}`; a versão 1 era por nome do disco e migra sozinha). Pede
@@ -134,14 +128,9 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   aviso `disk-smart-unsupported` (Key `smart-unsupported:<série>`) e nunca mais é lido sozinho. Rotas:
   `GET /api/smart` (com `running`), `POST /api/smart/refresh` e `POST /api/smart/retry {key}` (tenta o
   outro modo); as duas rodam em segundo plano e respondem 200/erro se terminarem em 1,5 s, senão 202.
-  **Script versão 6** (0.12.0): `atualizar-linux`, `atualizar-app <app>:<loja>` e `atualizacao-estado`
-  (`ActAllowed` no Go, `app_ok` no script). O script dispara `systemd-run --unit=brunos-atualizar --collect`
-  chamando a si mesmo com a ação interna `executar` (aceita só como root e com `INVOCATION_ID`, ou seja,
-  dentro do systemd; nunca pelo SSH), que grava `/var/log/brunos-atualizar.log` (`inicio <ts> ...`, saída,
-  `fim <código>`). `apt-get -y --with-new-pkgs upgrade` com `DEBIAN_FRONTEND=noninteractive`,
-  `--force-confdef/--force-confold` e `NEEDRESTART_MODE=l`; apps por `./runtipi-cli app update` na pasta
-  gravada em `/etc/brunos-host.conf` (`RUNTIPI=...`, linha incluída nos comandos quando o app recebe
-  `BRUNOS_RUNTIPI_HOST`, que o compose preenche com `BRUNOS_RUNTIPI_PATH`).
+  Atualizações (script 6+): o script roda a atualização solta da conexão SSH (`systemd-run`) e grava um
+  registro; o BrunOS acompanha por `atualizacao-estado`. O app recebe `BRUNOS_RUNTIPI_HOST` (preenchido
+  pelo compose com `BRUNOS_RUNTIPI_PATH`) para o script achar a pasta do Runtipi no servidor.
 - **`internal/updates`** (0.11.0, ampliado na 0.12.0): `/data/updates.json`
   (`{v,apps,os,checkedAt,every,job:{kind,target,name,from,to,startedAt,running,lines,finishedAt,ok,err}}`).
   `every` = `6h|12h|24h|168h|manual` (padrão 24h). `Start` manda o pedido e `follow` lê
@@ -149,17 +138,12 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   (Docker/BrunOS reiniciando) até 3 h; retoma no `Run` depois de reiniciar. No fim: aviso no sino
   (`update-done`) e confere de novo. Rotas: `GET /api/updates`, `POST /api/updates/check`,
   `PUT /api/updates/config {every}`, `POST /api/updates/run {kind, urn}` (202; 409 com outra rodando).
-  **Script versão 7** (0.12.1, decisões 49–50): `VERSAO=7` e `CHAVE_ASSINATURA` (= `hostcmd.ReleasePublicKey`)
-  no topo; até 4 palavras por pedido. `atualizar-app <app>:<loja> <sim|nao>` (sim = `runtipi-cli app backup`
-  antes; registro com `backup-inicio`/`backup-ok`/`backup-falhou N`), `tamanho-backup <app>:<loja>` →
-  `tamanho <bytes> livre <bytes>`, `atualizar-script <assinatura base64>` + script pela entrada padrão
-  (`Runner.OutputInput`/`power.HostOutputInput`). No Linux, `apt-get update` falhando não impede o upgrade
-  (registra `aviso-repositorio`). `updates.CheckScript` lê `versao` ao ligar e em cada conferência e chama
-  `UpgradeScript` (só existe com `hostcmd.ScriptSignature()` não vazia, gerada pelo CI a partir de
-  `go run ./tools/hostscript`). Rotas novas: `GET /api/updates/backup-size?urn=`, `POST /api/updates/script`;
-  o snapshot ganha `script: {have, want, auto, checkedAt, err, at, from}`.
-- **Rotinas da etapa 9**: `energy.Run`, `smart.Run` e `updates.Run` só passaram a ser ligadas no `main.go`
-  na 0.12.0 (antes, só rodavam ao pedir pela interface).
+  Backup do Runtipi antes de atualizar app (decisão 50) e tamanho do backup (`tamanho-backup`). Troca do
+  script por um assinado (decisão 49): `updates.CheckScript` lê `versao` ao ligar e em cada conferência e
+  chama `UpgradeScript`, que só existe com `hostcmd.ScriptSignature()` não vazia (gerada pelo CI a partir
+  de `go run ./tools/hostscript`). No Linux, `apt-get update` falhando não impede o upgrade (vira aviso).
+  Rotas: `GET /api/updates/backup-size?urn=`, `POST /api/updates/script`; o snapshot traz
+  `script: {have, want, auto, checkedAt, err, at, from}`.
 - **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
   Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown,seen,off}]}`,
   100 quedas); na bateria grava a cada minuto (`seen`), e se o servidor apagar a queda fecha em `seen`
@@ -191,7 +175,7 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   montado → evento crítico `disk-unmounted:<nome>`; disco quente `disk-hot:<nome>` (HD ≥ 55 °C, fecha
   ≤ 50; SSD ≥ 70, fecha ≤ 65); a cada hora grava o uso no `diskhist` e confere a previsão).
   `loginSeen`/`loginBlocked` emitem `login-new` e `login-blocked`.
-- **`internal/secret`** (0.9.0): `Load(path)` cria/lê `/data/secret.key` (32 bytes aleatórios, 0600);
+- **`internal/secret`** (0.9.0): `Load(path)` cria/lê a chave de arquivo das credenciais (aleatória, 0600);
   `Box.Seal/Open` com AES-256-GCM (nonce aleatório, saída em base64). Só cifra as credenciais das
   integrações (decisão 33).
 - **`internal/integrations`** (0.9.0; termos em `CONTEXT.md`, decisões 31–33):
@@ -280,12 +264,12 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 
 ### Dados em `/data` (todos 0600)
 
-`auth.json`, `sessions.json`, `settings.json`, `wallpapers/`, `disks.json`, `known_hosts.json`,
-`events.json`, `power.json`, `power-events.json`, `hostcmd_key` (chave privada do desligamento),
-`logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos discos), `uploads.json`
-(envios em pedaços pendentes), `history.json` (uso por minuto/hora), `internet.json` (quedas de internet),
-`secret.key` (chave das credenciais), `integrations.json` (integrações, credencial cifrada),
-`metric-history.json` (séries coletadas em segundo plano).
+Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/privado/seguranca.md`),
+`settings.json` (+ `settings-backup/`), `wallpapers/`, `disks.json`, `known_hosts.json`, `events.json`,
+`power.json`, `power-events.json`, `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos
+discos), `uploads.json` (envios em pedaços pendentes), `history.json` (uso por minuto/hora),
+`internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `metric-history.json`
+(séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`.
 
 ## Frontend (`web/static`)
 
@@ -389,7 +373,7 @@ guardar senhas aqui.
 
 - `internal/terminal/terminal_test.go`: servidor SSH em processo (TOFU, senha errada, eco, resize,
   saída com código, troca de chave, validação).
-- `tests/fixture.sh <dir>`: cria servidor fictício (home, `/mnt/1TB_HDD`, `/mnt/1TB_HDD2`, link
+- `tests/fixture.sh <dir>`: cria servidor fictício (home, dois discos em `/mnt`, link
   simbólico de fuga, Runtipi falso com apps, JPEG real).
 - `tests/apitest.py`: 63 checagens da API (auth, CSRF, limites, arquivos, fuga por links, discos,
   terminal, lixeira, wallpapers...). Precisa de servidor novo (faz o setup).

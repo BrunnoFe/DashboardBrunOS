@@ -8,8 +8,8 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
    de ~4 MB, ~10 MiB de RAM. Exceção: `golang.org/x/crypto/ssh` para o terminal (decisão 10).
 3. **Frontend sem framework e sem build.** Menos peso, nada a compilar, embutido no binário. →
    Módulos ES, CSS puro, ícones SVG inline. Bibliotecas grandes só sob demanda (xterm.js).
-4. **Senhas em PBKDF2-SHA256 (600 mil iterações) do pacote `crypto/pbkdf2`.** Não exige dependência
-   externa (bcrypt/argon2 estão no x/crypto). Detalhes em `docs/privado/seguranca.md`.
+4. **Senhas em PBKDF2-SHA256 do pacote `crypto/pbkdf2`.** Não exige dependência externa (bcrypt/argon2
+   estão no x/crypto). Parâmetros e detalhes em `docs/privado/seguranca.md`.
 5. **Docker por socket-proxy (`wollomatic/socket-proxy:1`) com lista de rotas.** O socket do Docker dá
    root no host; o proxy só libera listar containers, stats e reiniciar, e só para o container
    `brunos`. Reiniciar só se `BRUNOS_DOCKER_ACTIONS=true`.
@@ -27,13 +27,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     shell root no host). Mantém o container sem privilégios. TOFU da chave do servidor, nada de segredo
     gravado. Usa `golang.org/x/crypto` **vendorizado** (o proxy do Go está bloqueado no ambiente da
     nuvem; o código veio do espelho oficial `github.com/golang/crypto` e o CI compara com o sum.golang.org).
-11. **Ações privilegiadas via SSH com chave restrita** (implementado na 0.4.0 para o desligamento).
-    Desligamento seguro, SMART, limite de carga: uma chave com `command="..."` no `authorized_keys` que
-    só executa o necessário. Nunca dar `privileged` ao container. O Bruno escolheu um **usuário
-    dedicado** (`brunos-power`, sem senha, `usermod -p '*'`) em vez do usuário dele. O teste de conexão
-    nunca abre sessão (abrir executaria o comando forçado); o CI prova isso com OpenSSH real.
-12. **Detalhes de segurança fora do README** (pedido do Bruno, commit `1713d35`). Ficam em
-    `docs/privado/seguranca.md`, fora do git.
+11. **Ações privilegiadas via SSH com chave restrita** (0.4.0). Desligamento seguro, SMART, limite de
+    carga, atualizações: uma chave que só executa um script fixo no servidor, com usuário dedicado do
+    Bruno. Nunca dar `privileged` ao container. O teste de conexão nunca abre sessão; o CI prova isso com
+    OpenSSH real. Desenho completo (usuário, chave, pedidos aceitos): `docs/privado/seguranca.md`.
+12. **Detalhes de segurança fora do repositório público** (pedido do Bruno, commit `1713d35`; ampliado na
+    limpeza de 12/11/2026). Usuários, caminhos, desenho do acesso ao servidor e dados do hardware ficam em
+    `docs/privado/` (fora do git). Documentos e exemplos públicos usam nomes genéricos.
 13. **Modo demonstração no frontend.** Sem backend, `api.js` simula tudo. Serve para testar visual com
     Playwright e para prévias.
 14. **Configurações no servidor** (`/api/settings`), não no `localStorage`: iguais em todos os
@@ -46,18 +46,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     host e o terminal já usa SSE; um `event: notify` a mais no stream existente não custa nada. A cada
     reconexão (`init`) a interface relê a lista, então nada se perde.
 18. **Desligamento seguro começa em modo simulação** (0.4.0) e só sai dele depois de um teste de
-    conexão que passou para o mesmo host/porta/usuário. `shutdown -h +1` deixa 1 minuto para cancelar
-    no servidor (`sudo shutdown -c`).
-    **Revisto na 0.8.1:** no Ubuntu 26.04 (systemd 259) uma trava "block" vale até para o root, e o
-    unattended-upgrades segura uma de `shutdown` o tempo todo; o `shutdown -h +1` era recusado e a
-    bateria acabou em 07/11/2026. Agora o comando forçado é `systemctl poweroff --check-inhibitors=no
-    --when=+1min` (testado no servidor do Bruno; `sudo shutdown -c` continua cancelando). Numa queda de
-    energia, passar por cima da trava é mais seguro que deixar a bateria acabar. O BrunOS também não
-    desiste mais depois de 3 tentativas: tenta a cada minuto enquanto estiver na bateria.
-    O comando forçado virou o script `brunos-host` (desligar + limite de carga), com **chave nova**:
-    com `command=` forçado, qualquer sessão roda o comando, então mandar "limite 80" a um servidor ainda
-    com a configuração antiga o desligaria. A chave nova é recusada por servidor não atualizado já na
-    autenticação, e o teste de conexão (que só autentica) prova a atualização.
+    conexão que passou. Há 1 minuto para cancelar no servidor.
+    **Revisto na 0.8.1:** uma trava ("inhibitor") do systemd num Ubuntu recente valia até para o root e o
+    desligamento era recusado até a bateria acabar (07/11/2026). O comando passou a ignorar a trava (numa
+    queda de energia, isso é mais seguro que deixar a bateria acabar) e o BrunOS não desiste mais:
+    tenta a cada minuto enquanto estiver na bateria. O comando virou um script no servidor (desligar +
+    limite de carga) com chave nova, para um servidor não atualizado nunca receber um pedido que ele
+    interpretaria errado. Detalhes: `docs/privado/seguranca.md`.
 19. **Temperatura de HD sem acordar o disco** (0.5.0). O `drivetemp` manda um comando ao disco a cada
     leitura e, em alguns modelos, isso acorda um HD parado (spin down). Por isso o `readHwmon` (a cada
     2 s) ignora o `drivetemp`, e o HD só é medido de novo quando o contador de E/S
@@ -115,11 +110,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     cada 5 min) o que estiver num gráfico sem histórico próprio ou tiver um Aviso pronto ligado. Assim o
     gasto cresce só com o que o Bruno escolhe, e com a tela fechada ele é zero.
 33. **Credenciais das integrações cifradas com chave em arquivo** (etapa 7, escolha do Bruno). AES-GCM
-    (biblioteca padrão) com chave aleatória em `/data/secret.key` (0600) e os dados em
+    (biblioteca padrão) com chave aleatória em arquivo próprio (0600) e os dados em
     `/data/integrations.json`. Protege contra vazar só o arquivo das integrações (cópia, backup
-    parcial); quem leva a pasta `/data` inteira já teria também a chave SSH do desligamento. Recusado:
-    chave derivada da senha do BrunOS, que pararia a coleta e os avisos depois de reiniciar até alguém
-    entrar. As credenciais nunca vão para o navegador (a API responde só `hasSecret`).
+    parcial). Recusado: chave derivada da senha do BrunOS, que pararia a coleta e os avisos depois de
+    reiniciar até alguém entrar. As credenciais nunca vão para o navegador (a API responde só
+    `hasSecret`).
 34. **Fotos do Immich só em Widget** (etapa 7, escolha do Bruno). O papel de parede com fotos do Immich
     saiu do plano; fica o formato Mídia (tamanho "prévia", foto atual guardada em `/data`). O papel de
     parede por horário (J2) continua. O Tailscale entra por SSH restrito (`tailscale status --json` no
@@ -133,12 +128,10 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     vão para a última Página com apps e, antes de mover algo, os soltos são "fixados" onde estão (senão
     colocar um app na Página 2 levaria todos). A numeração se compacta quando uma Página fica vazia.
     Arrastar widgets vale sempre, como os ícones; alça de tamanho e "−" só no modo Organizar.
-36. **Script do servidor ganha versão própria** (0.9.2). O pedido `tailscale` (que roda
-    `tailscale status --json`) entrou no `brunos-host` como versão 3 (`ScriptVersion`), **sem** subir o
-    `SetupVersion`: este decide qual chave usar, e subi-lo faria os servidores já configurados tentarem
-    desligar com a chave antiga, que eles recusam. Servidor com o script 2 continua desligando e só
-    responde "pedido inválido" ao Tailscale, que vira a mensagem "copie os comandos de atualização". A
-    leitura usa `Runner.Output` (saída inteira até 1 MB) e o main só deixa passar esse pedido.
+36. **Script do servidor ganha versão própria** (0.9.2). Pedidos novos entram como versão nova do script
+    (`ScriptVersion`) sem mexer na versão da configuração de usuário/chave (`SetupVersion`), para servidores
+    já configurados continuarem desligando. Script antigo responde "pedido inválido", que vira a mensagem
+    "copie os comandos de atualização".
 37. **Mídia e avisos sem estado no BrunOS** (0.9.2, escolhas do Bruno). As fotos do Immich vêm numa
     lista do dia (até 24) e a troca acontece no navegador pelo relógio (padrão 30 min, ajustável): todas
     as abas mostram a mesma foto e o servidor só baixa cada imagem uma vez (tamanho "prévia", cache de
@@ -157,11 +150,11 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     aparelho); o modo só visual existe porque sai quase de graça. A Tela de bloqueio com senha não
     mostra nada que venha da API (clima, avisos) para não abrir exceções.
 40. **Chave do Terminal própria, trancada pela senha do BrunOS** (0.10.0). Recusados: guardar a chave
-    pessoal do Bruno (ela sairia do computador dele) e cifrar com o `secret.key` (quem copiar o `/data`
-    entra no servidor). A chave AES vem da senha (PBKDF2, sal próprio) e só existe na memória da
-    Sessão desbloqueada; reiniciar o container ou bloquear com senha a apaga. Esquecer a senha do BrunOS
-    perde a chave (basta criar outra). Conexões salvas são lista desde já, mas a interface mostra só a
-    principal enquanto houver uma.
+    pessoal do Bruno (ela sairia do computador dele) e cifrar com a chave de arquivo das integrações
+    (quem copiar o `/data` entraria no servidor). A chave de cifra vem da senha e só existe na memória da
+    Sessão desbloqueada. Esquecer a senha do BrunOS perde a chave (basta criar outra). Conexões salvas
+    são lista desde já, mas a interface mostra só a principal enquanto houver uma. Detalhes:
+    `docs/privado/seguranca.md`.
 41. **"Ainda está rodando?" por um canal SSH extra** (0.10.0). Na mesma conexão, um canal `exec` roda
     um `ps` curto: o pai desse comando é o mesmo processo do sshd da Aba, então o shell interativo é o
     irmão com terminal, e o grupo em primeiro plano do terminal diz se há algo rodando. Roda só ao
@@ -178,10 +171,9 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     container com banco (100–200 MB) para dados que mudam pouco. `smartctl -n standby` não acorda HD
     parado; adaptadores USB (ASM225 e similares) não deixam o drivetemp passar, mas o `-d sat` costuma
     passar, então a temperatura deles vem do SMART a cada 20 min.
-44. **Atualizações (apps e Linux) só avisam** (0.11.0). Apps: a cópia instalada (`apps/`) contra a loja
-    baixada (`repos/`), pelo `tipi_version`, sem tocar no Postgres do Runtipi. Linux: `apt-check` e
-    `reboot-required` pelo script. O BrunOS não atualiza nada sozinho: abre o Runtipi ou digita o
-    comando no Terminal para o Bruno confirmar.
+44. **Atualizações (apps e Linux): como se descobre** (0.11.0; a parte "só avisam" foi substituída pela
+    47). Apps: a cópia instalada (`apps/`) contra a loja baixada (`repos/`), pelo `tipi_version`, sem
+    tocar no Postgres do Runtipi. Linux: `apt-check` e `reboot-required` pelo script.
 45. **Preferências protegidas em três camadas** (0.11.1, depois do reset da 0.11.0). (1) A tela nunca
     entra com o padrão nem salva antes de ler as preferências do servidor (tenta de novo e, se não der,
     para com erro). (2) O servidor recusa (409) gravar preferências sem `welcomed` por cima de
@@ -191,8 +183,8 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     Tomada Tuya: uma conexão por vez por tomada (fila + leitura reaproveitada), sem conexão persistente
     por enquanto (mais simples; reavaliar se a fila não bastar).
 46. **SMART um disco por vez, SATA primeiro nos discos USB e "basta uma vez"** (0.11.2, combinado em
-    11/11/2026; corrige a 43). No servidor do Bruno, o case JMicron JMS583 (chip de NVMe com um HD SATA
-    dentro) fazia o `smartctl` adivinhar NVMe: o adaptador não respondia, o kernel reiniciava o USB do
+    11/11/2026; corrige a 43). Num case USB do Bruno (chip de NVMe com um HD SATA dentro), o `smartctl`
+    adivinhava NVMe: o adaptador não respondia, o kernel reiniciava o USB do
     disco montado (`uas_eh_device_reset_handler`) e a leitura de todos os discos estourava os 2 min
     ("context deadline exceeded"). Com `-d sat` o mesmo disco respondeu em 2,5 s. O chip do case não diz
     o que tem dentro e o `vpd_pg89` só aparece nos discos internos, então: disco USB tenta SATA; se
@@ -206,8 +198,8 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     configuração) e `runtipi-cli app update <app>:<loja>` com nome validado. Rodam pelo `systemd-run`,
     soltos da conexão SSH: se a atualização reiniciar o Docker (e o BrunOS junto), ela continua, e o
     BrunOS retoma o andamento quando volta. Sempre com confirmação, um de cada vez, aviso no fim;
-    reiniciar o servidor continua manual. O risco somado é pequeno (quem tem a senha do BrunOS já
-    desliga o servidor e abre o Terminal); fica anotada uma revisão de segurança do script para o futuro.
+    reiniciar o servidor continua manual. Fica anotada uma revisão de segurança do script para o futuro
+    (`ideias-futuras.md`, H5).
 48. **Widgets com posição livre, apps em fila, e as duas Áreas nunca misturadas** (0.13.0, combinado em
     11/11/2026). Cada Página tem uma Disposição (onde ficam a Área de widgets e a Área de apps) e uma
     Medida para cada Área. Widgets guardam lugar (coluna, linha) e Tamanho (largura × altura em
@@ -218,26 +210,18 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     o arrastar e bagunçaria o celular. Em tela estreita a Área fica compacta (ordem de leitura, menos
     colunas) sem mudar o que está guardado.
 49. **O script do servidor se atualiza sozinho, só com assinatura** (0.12.1, escolha do Bruno: "Pode
-    ser"). Colar comandos a cada versão do script era o maior atrito. A partir do script 7, o pedido
-    `atualizar-script <assinatura>` recebe o script novo pela entrada padrão e só o instala se: a
-    assinatura (`ssh-keygen -Y verify`, namespace `brunos-host`, já vem no Ubuntu) bater com a chave
-    pública que está dentro do script atual, a `VERSAO=` for maior que a atual e `sh -n` passar; troca
-    com `install` + `mv` (o shell que está rodando segue com o arquivo antigo). A chave privada fica só no
-    segredo `BRUNOS_SCRIPT_KEY` do GitHub Actions, que assina o script na publicação e embute a
-    assinatura no binário (`internal/hostcmd/assinatura.txt`). Quem invadir o BrunOS não consegue instalar
-    um script falso (não tem a chave); o preço é confiar no repositório do GitHub, como qualquer programa
-    que se atualiza sozinho. Sem assinatura (compilação local, segredo ausente), fica o caminho manual: o
-    painel abre o Terminal com os comandos numa linha (`... | base64 -d | sudo sh`, o sudo pede a senha).
-    Mudança de usuário/sudoers (`SetupVersion`) continua manual. Testado como root num contêiner no CI
-    (`tests/script-selfupdate.sh`): aceita só assinado e mais novo; recusa igual, outra chave, alterado.
+    ser"). Colar comandos a cada versão do script era o maior atrito. A partir do script 7, o servidor só
+    instala um script novo se ele vier **assinado** pelo CI, com versão maior e sintaxe válida; quem
+    invadir o BrunOS não consegue instalar um script falso. O preço é confiar no repositório do GitHub,
+    como qualquer programa que se atualiza sozinho. Sem assinatura (compilação local), fica o caminho
+    manual pelo Terminal (o sudo pede a senha). Mudança de usuário ou de permissões no servidor continua manual. Testado como
+    root num contêiner no CI (`tests/script-selfupdate.sh`). Detalhes: `docs/privado/seguranca.md`.
 50. **Backup do Runtipi antes de atualizar app, marcado sempre** (0.12.1). `runtipi-cli app backup` é o
     mesmo backup do painel do Runtipi (pasta do app + app-data, restaurável por ele); se falhar, nada é
     atualizado. O tamanho é medido antes (`tamanho-backup`, `du` com limite) e mostrado na confirmação;
     o Bruno quis a caixinha marcada independente do tamanho. Backup "só do essencial" foi descartado: a
     restauração do Runtipi substitui a pasta do app e apagaria o que ficou de fora.
-51. **Acesso de diagnóstico só de leitura para o Claude** (0.12.1, opção A do Bruno). Usuário
-    `claude-diag` sem senha, chave criada no computador do Bruno (WSL `~/.brunos/diag`), presa por
-    `restrict,command=` ao `tools/diagnostico/brunos-diag`, que só aceita uma lista fixa de leituras
-    (sistema, discos, versão do script, registro das atualizações, apt, Runtipi, journal de unidades
-    escolhidas, logs do contêiner do BrunOS, configuração e tamanho de um app sem o `app.env`). Nada
-    escreve. O BrunOS de teste no servidor (opção B, com discos só leitura) fica para depois da 0.13.0.
+51. **Acesso de diagnóstico só de leitura para o Claude** (0.12.1, opção A do Bruno). Um usuário próprio
+    no servidor, com chave presa a uma lista fixa de leituras (nada escreve), para achar problemas sem
+    prints. O script e o desenho ficam em `docs/privado/` (saíram do repositório em 12/11/2026). O BrunOS
+    de teste no servidor (opção B, com discos só leitura) está em `ideias-futuras.md`.

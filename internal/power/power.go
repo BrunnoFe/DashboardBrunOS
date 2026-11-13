@@ -162,11 +162,13 @@ func New(configFile, stateFile string, ev *events.Store, runner *hostcmd.Runner)
 	m := &Monitor{ConfigFile: configFile, StateFile: stateFile, Events: ev, Now: time.Now, cfg: DefaultConfig(), runner: runner, SysDir: "/sys"}
 	if runner != nil {
 		m.HostRun = func(ctx context.Context, c Config, cmd string) (string, error) {
-			return runner.Run(ctx, c.Target(), cmd, false)
+			return runner.Run(ctx, c.Target(), cmd)
 		}
-		// servidor ainda não atualizado: usa a chave antiga (lá, qualquer sessão desliga)
 		m.Shutdown = func(ctx context.Context, c Config) (string, error) {
-			return runner.Run(ctx, c.Target(), hostcmd.CmdShutdown, c.HostSetup < hostcmd.SetupVersion)
+			if c.HostSetup < hostcmd.SetupVersion { // servidor ainda com a configuração antiga
+				return "", hostcmd.ErrOldSetup
+			}
+			return runner.Run(ctx, c.Target(), hostcmd.CmdShutdown)
 		}
 	}
 	if configFile != "" {

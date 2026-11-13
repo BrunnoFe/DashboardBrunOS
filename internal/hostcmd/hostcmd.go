@@ -15,12 +15,10 @@
 // --check-inhibitors=no passa por cima da trava: numa queda de energia, desligar é mais seguro
 // que esperar a bateria acabar.
 //
-// Duas chaves: até a 0.8.0 o authorized_keys forçava "sudo -n /usr/sbin/shutdown -h +1" com a
-// chave antiga (/data/hostcmd_key). Com command= forçado, QUALQUER sessão roda o comando: mandar
-// "limite 80" para um servidor ainda não atualizado o desligaria. Por isso a configuração nova
-// usa outra chave (/data/hostcmd_key_v2): o servidor não atualizado recusa a chave nova já na
-// autenticação, sem executar nada, e o teste de conexão (que só autentica) prova que o servidor
-// foi atualizado. A chave antiga só é usada para desligar, enquanto o servidor não é atualizado.
+// Com command= forçado, QUALQUER sessão roda o comando. Por isso a configuração atual usa uma chave
+// própria (/data/hostcmd_key_v2): um servidor ainda com a configuração antiga (até a 0.8.0) recusa
+// essa chave já na autenticação, sem executar nada, e o teste de conexão (que só autentica) prova
+// que o servidor foi atualizado. A chave da configuração antiga não é mais usada.
 //
 // Test só autentica e fecha a conexão SEM abrir sessão; só Run abre uma sessão.
 package hostcmd
@@ -52,8 +50,8 @@ const (
 	DefaultUser = "brunos-power"
 	// ScriptPath é onde os comandos de configuração instalam o script no servidor.
 	ScriptPath = "/usr/local/sbin/brunos-host"
-	// SetupVersion sobe quando a CHAVE ou a linha do authorized_keys muda (decide qual chave usar).
-	// 1 = shutdown -h +1 com a chave antiga (até a 0.8.0); 2 = script brunos-host com a chave nova.
+	// SetupVersion sobe quando a CHAVE ou a linha do authorized_keys muda.
+	// 1 = shutdown -h +1 com a chave antiga (até a 0.8.0, não é mais usada); 2 = script brunos-host.
 	// Script novo com pedidos a mais (ScriptVersion) NÃO sobe isto: um servidor com o script 2 continua
 	// desligando com a chave nova e só recusa os pedidos que não conhece.
 	SetupVersion = 2
@@ -448,7 +446,7 @@ esac
 
 var (
 	ErrNotConfigured = errors.New("o desligamento ainda não foi configurado (falta o endereço do servidor)")
-	ErrNoLegacyKey   = errors.New("o servidor ainda não foi atualizado e a chave antiga do BrunOS não existe mais")
+	ErrOldSetup      = errors.New("o servidor ainda está com a configuração antiga: em Configurações → Energia, cole os comandos novos no servidor e clique em Testar")
 )
 
 type Target struct {
@@ -460,16 +458,15 @@ type Target struct {
 func (t Target) addr() string { return sshknown.Addr(t.Host, t.Port) }
 
 type Runner struct {
-	KeyFile    string // chave atual (criada sob demanda)
-	LegacyFile string // chave da configuração antiga (só lida, nunca criada)
-	Known      *sshknown.Store
+	KeyFile string // chave (criada sob demanda)
+	Known   *sshknown.Store
 
 	mu     sync.Mutex
 	signer ssh.Signer
 }
 
-func New(keyFile, legacyFile string, known *sshknown.Store) *Runner {
-	return &Runner{KeyFile: keyFile, LegacyFile: legacyFile, Known: known}
+func New(keyFile string, known *sshknown.Store) *Runner {
+	return &Runner{KeyFile: keyFile, Known: known}
 }
 
 // key lê a chave atual ou cria uma nova (ED25519, gravada com permissão 0600).
@@ -506,18 +503,6 @@ func (r *Runner) key() (ssh.Signer, error) {
 	}
 	r.signer = s
 	return s, nil
-}
-
-// legacyKey lê a chave da configuração antiga (até a 0.8.0), se ainda existir.
-func (r *Runner) legacyKey() (ssh.Signer, error) {
-	if r.LegacyFile == "" {
-		return nil, ErrNoLegacyKey
-	}
-	b, err := os.ReadFile(r.LegacyFile)
-	if err != nil {
-		return nil, ErrNoLegacyKey
-	}
-	return ssh.ParsePrivateKey(b)
 }
 
 // HasKey diz se a chave atual já foi criada (sem criá-la).
@@ -606,10 +591,9 @@ func (r *Runner) Test(ctx context.Context, t Target, trust string) error {
 }
 
 // Run abre uma sessão e faz um pedido ao script do servidor (CmdShutdown, CmdLimit...).
-// Só aceita servidor já confirmado. legacy = servidor ainda com a configuração antiga: usa a
-// chave antiga e só aceita CmdShutdown (lá, qualquer sessão desliga).
-func (r *Runner) Run(ctx context.Context, t Target, cmd string, legacy bool) (string, error) {
-	out, errOut, err := r.exec(ctx, t, cmd, legacy, nil)
+// Só aceita servidor já confirmado.
+func (r *Runner) Run(ctx context.Context, t Target, cmd string) (string, error) {
+	out, errOut, err := r.exec(ctx, t, cmd, nil)
 	text := strings.TrimSpace(string(out) + "\n" + errOut)
 	if len(text) > 2000 {
 		text = text[:2000]
@@ -636,7 +620,7 @@ func (r *Runner) Output(ctx context.Context, t Target, cmd string) ([]byte, erro
 // OutputInput é o Output mandando input pela entrada padrão do script (o script novo no
 // "atualizar-script").
 func (r *Runner) OutputInput(ctx context.Context, t Target, cmd string, input []byte) ([]byte, error) {
-	out, errOut, err := r.exec(ctx, t, cmd, false, input)
+	out, errOut, err := r.exec(ctx, t, cmd, input)
 	if err != nil {
 		var exit *ssh.ExitError
 		if errors.As(err, &exit) {
@@ -671,17 +655,8 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (r *Runner) exec(ctx context.Context, t Target, cmd string, legacy bool, input []byte) ([]byte, string, error) {
-	var signer ssh.Signer
-	var err error
-	if legacy {
-		if cmd != CmdShutdown {
-			return nil, "", errors.New("atualize a configuração do servidor em Configurações → Energia")
-		}
-		signer, err = r.legacyKey()
-	} else {
-		signer, err = r.key()
-	}
+func (r *Runner) exec(ctx context.Context, t Target, cmd string, input []byte) ([]byte, string, error) {
+	signer, err := r.key()
 	if err != nil {
 		return nil, "", err
 	}

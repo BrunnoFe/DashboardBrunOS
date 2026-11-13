@@ -8,15 +8,15 @@
 
 **BrunOS** é um painel (dashboard) leve, no estilo do **umbrelOS**, que roda como app Docker no
 **Runtipi** do servidor caseiro do Bruno (Ubuntu Server). Substituiu o Homarr com CSS customizado.
-Tem: tela inicial com papel de parede, cor de destaque tirada do papel de parede, widgets, grade de apps
-do Runtipi com status, dock com ampliação, busca `Ctrl+K`, gerenciador de arquivos completo, monitor de
-hardware (CPU, memória, temperatura, ventoinha, discos, rede, bateria), uso por app (Docker), terminal
-SSH embutido e configurações sincronizadas no servidor.
+Tem: tela inicial com papel de parede, widgets personalizáveis com integrações, apps do Runtipi com
+status, dock, busca `Ctrl+K`, gerenciador de arquivos, monitor de hardware e de apps, terminal SSH,
+energia (desligamento seguro, consumo), atualizações pela interface e configurações no servidor. A lista
+atual de recursos está no `README.md`.
 
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)
 - Imagem: `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64, ~4 MB, ~10 MiB de RAM)
-- Versão atual: veja `VERSION` (0.11.1 em 11/11/2026)
+- Versão atual: veja o arquivo `VERSION`
 
 ## Quem é o usuário e como trabalhar com ele
 
@@ -26,11 +26,19 @@ SSH embutido e configurações sincronizadas no servidor.
   receber prints/screenshots do resultado; sugestões explicadas antes de implementar.
 - Ele testa no próprio servidor e manda prints com problemas. Corrija exatamente o que ele aponta e
   mostre como verificar.
-- Ele pediu para **não pôr detalhes de segurança no README** (commit `1713d35`). Detalhes de segurança
-  ficam em `docs/privado/seguranca.md`. O repositório é público: nunca commite IPs, usuários, senhas,
-  tokens ou detalhes do servidor dele.
 - Antes de decisões grandes ou ambíguas (algo que muda segurança, privilégios ou arquitetura),
   apresente opções e pergunte.
+
+## Repositório público: o que nunca vai para o git
+
+O repositório é público. **Nunca** escreva em arquivos versionados (código, testes, docs, README, loja):
+senhas, tokens, chaves, IPs ou nomes reais do servidor do Bruno (usuário do Linux, hostname, nomes de
+disco, caminhos de pastas dele), modelo do notebook/discos/adaptadores, versão do Ubuntu, nem o **desenho
+do acesso ao servidor** (usuários e chaves SSH restritos, pedidos aceitos pelo script, onde ficam os
+segredos, parâmetros da senha, travas de formatação). Use nomes genéricos (`<usuário>`, `/mnt/disco1`,
+`192.168.1.50` de exemplo). Esses detalhes ficam em `docs/privado/` (`seguranca.md`, `servidor.md`),
+que o git ignora. Em dúvida, pergunte ao Bruno. O Bruno pediu isso desde o commit `1713d35` e reforçou na
+limpeza de 12/11/2026.
 
 ## Regras de engenharia (não quebre sem combinar)
 
@@ -44,85 +52,35 @@ SSH embutido e configurações sincronizadas no servidor.
 3. **Container sem privilégios**: imagem `scratch`, usuário 1000:1000, `read_only`, `cap_drop: ALL`,
    `no-new-privileges`, limite de 128 MB. O Docker só é acessado por um **socket-proxy** com lista de
    rotas permitidas. Nada de `privileged`, `pid: host` ou socket do Docker direto. Ações que precisam
-   de root no host vão **por SSH** (com chave restrita por `command=` quando for automático).
+   de root no host vão **por SSH** com chave restrita a um script fixo.
 4. **Interface em pt-BR**, mensagens de erro amigáveis (o backend devolve `{"error": "..."}` em pt-BR).
-5. **Testes antes de publicar**: `go vet`, `go test -race ./...`, `tests/apitest.py` (API) e
-   `tests/smoke.sh` (container real + proxy + OpenSSH real). Para mudanças visuais, tire screenshots
-   com Playwright (modo demonstração funciona sem backend).
+5. **Testes antes de publicar**: `go vet`, `go test -race ./...`, `tests/apitest.py` (API),
+   `tests/layout.test.mjs` (`node --test`) e `tests/smoke.sh` (container real + proxy + OpenSSH real).
+   Para mudanças visuais, tire screenshots com Playwright (modo demonstração funciona sem backend).
 6. Escritas em `/data` são **atômicas** (`internal/store`: temp + fsync + rename) e com permissão 0600.
 
 ## Mapa do código
 
+Descrição de cada pacote, rota e arquivo de dados: `docs/projeto/arquitetura.md`. Vocabulário (Integração,
+Métrica, Formato, Tamanho, Quadro, Disposição...): `CONTEXT.md`.
+
 ```
-main.go                     config por env, rotas HTTP, auth/CSRF, settings, wallpapers, stats SSE, apps, docker
-internal/auth/              usuários (PBKDF2), sessões, limitador de tentativas
-internal/store/             JSON/arquivos atômicos
-internal/sysinfo/           coleta de CPU, memória, temperatura (hwmon), ventoinha, bateria, discos, rede
-internal/dockerc/           cliente Docker mínimo (lista, stats, start/stop/restart, logs) via proxy
-internal/appmon/            uso e disponibilidade por app em 24 h (memória) e aviso de app fora do ar
-internal/history/           histórico do servidor: média por minuto (24 h) e por hora (7 dias)
-internal/procs/             processos do host (/host/proc), app de cada container, usuários (/host/passwd)
-internal/netmon/            latência (TCP 443) e quedas da internet, com aviso
-apps.go                     rotas de apps (ações, containers, logs, histórico) e vigia de disponibilidade
-internal/runtipi/           descobre apps instalados no Runtipi (config.json, app.env com lista permitida)
-internal/files/             gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca, discos
-                            mapeados, editor de texto, extrair, duplicados, mapa do espaço)
-internal/terminal/          terminal SSH (x/crypto/ssh, Abas, SSE, fim da tela para reabrir, "ainda está rodando?"
-                            por canal exec com ps, tempo sem ninguém olhando configurável)
-internal/termkey/           Chave do Terminal: ED25519 cifrada com chave derivada da senha do BrunOS (só na memória)
-internal/notes/             texto dos widgets de Notas (/data/notes.json) + aviso "nota mudou" pelo SSE
-internal/energy/            Medidor do consumo (tomada/bateria/RAPL/estimativa calibrada), kWh e R$ (/data/energy.json)
-internal/smart/             saúde SMART dos discos e temperatura dos discos USB pelo script (/data/smart.json)
-internal/updates/           atualizações de apps (apps × repos do Runtipi) e do Linux na frequência escolhida, e
-                            atualizar pela interface com andamento (/data/updates.json)
-etapa9.go                   liga energy, smart e updates (fontes e pedidos ao script brunos-host 7)
-settings.go                 preferências (/data/settings.json): erro de leitura ≠ vazio, trava contra gravar o
-                            padrão por cima (409), cópia diária em /data/settings-backup (14 dias) e restaurar
-internal/sshknown/          TOFU compartilhado (known_hosts.json) do terminal e do hostcmd
-internal/events/            central de notificações (sino), /data/events.json
-internal/hostcmd/           chave SSH própria + comando forçado no servidor (desligamento)
-internal/power/             quedas de energia e desligamento seguro (máquina de estados)
-internal/diskhist/          uso diário dos discos e previsão de disco cheio
-internal/logins/            aparelhos conhecidos (aviso de login novo)
-internal/secret/            AES-GCM com chave em /data/secret.key (credenciais das integrações)
-internal/integrations/      Tipos de integração (adguard.go, speedtest.go, weather.go, tuya.go = protocolo local
-                            Tuya 3.3/3.4/3.5 validado contra o tinytuya...), store cifrado, Hub (coleta
-                            só do que os widgets usam), séries em segundo plano, rotas /api/integrations
-watch.go                    bateria para o power; vigia de discos (desmontado, quente, cheio); avisos de login
-web/web.go                  serve web/static com gzip + ETag
-web/static/index.html       casca da página
-web/static/js/app.js        interface principal (login, área de trabalho, dock, widgets, configurações, paleta)
-web/static/js/api.js        cliente da API + modo demonstração (sem backend)
-web/static/js/ui.js         utilitários, ícones SVG, menus, diálogos, toasts
-web/static/js/files.js      janela Arquivos
-web/static/js/battery.js    widget e janela da bateria
-web/static/js/terminal.js   janela Terminal (xterm.js): Abas, minimizar, Conexões salvas, Comandos salvos, ⚙ da chave
-web/static/js/lockscreen.js Tela de bloqueio (com senha no servidor ou só visual) e bloqueio por inatividade
-web/static/js/notes.js      widget de Notas (texto livre ou lista de tarefas, salvo no servidor)
-web/static/js/energy.js     seção Consumo e custo da janela Energia e os comandos do script do servidor
-web/static/js/notifications.js  sino e painel de avisos
-web/static/js/updates.js    botão de atualizações ao lado do sino: painel, conferir, atualizar apps/Linux e andamento
-web/static/js/power.js      janela Energia, faixa de contagem regressiva, lista de quedas
-web/static/js/disks.js      lista de discos do Uso ao vivo (temperatura, previsão de cheio)
-web/static/js/editor.js     editor de texto (CodeMirror 6 de web/static/vendor/codemirror, sob demanda)
-web/static/js/filetools.js  mapa do espaço (treemap) e arquivos duplicados
-web/static/js/appinfo.js    janela Detalhes do app (logs, uso 24 h, disponibilidade, ligar/parar, desinstalar)
-web/static/js/internet.js   janela Internet (latência, quedas)
-web/static/js/widgets.js    Formatos, Tamanhos, Métricas da fonte BrunOS, Modelos, desenho dos widgets
-web/static/js/charts.js     gráficos SVG (linha, barras, rosca, mini-gráfico)
-web/static/js/widgetsapp.js janela Widgets (meus widgets, modelos, integrações, editor com prévia)
-tools/codemirror/           receita (npm + esbuild) que gera o bundle do CodeMirror; não roda no build
-tools/hostscript/           imprime o script do servidor para o CI assinar (internal/hostcmd/assinatura.txt)
-tools/diagnostico/          brunos-diag: acesso SÓ DE LEITURA do Claude ao servidor (usuário claude-diag, decisão 51)
-web/static/css/app.css      base visual (adaptada do umbrelOS)
-web/static/css/extra.css    componentes adicionados depois (arquivos, bateria, terminal, dock picker...)
-runtipi-app/brunos/         app para a loja do Runtipi (config.json, docker-compose.json, metadata/)
-tests/                      fixture.sh, apitest.py, smoke.sh
+main.go, apps.go, watch.go, settings.go, monitors.go   servidor HTTP, rotas, vigias, preferências, rotinas
+internal/                  um pacote por assunto: auth, store, sysinfo, dockerc, appmon, history, procs,
+                           netmon, runtipi, files, terminal, termkey, sshknown, notes, events, hostcmd,
+                           power, diskhist, logins, secret, energy, smart, updates, integrations
+web/web.go                 serve web/static com gzip + ETag
+web/static/index.html      casca da página
+web/static/js/             app.js (interface principal), api.js (cliente + modo demonstração), ui.js
+                           (utilitários, ícones, diálogos) e um arquivo por janela ou widget (files,
+                           terminal, power, energy, disks, updates, widgets, widgetsapp, layout...)
+web/static/css/            app.css (base) e extra.css (componentes)
+web/static/vendor/         xterm.js e CodeMirror 6 (sob demanda)
+tools/                     codemirror (receita do bundle), hostscript (script do servidor para o CI assinar)
+runtipi-app/brunos/        app para a loja do Runtipi (config.json, docker-compose.json, metadata/)
+tests/                     fixture.sh, apitest.py, smoke.sh, script-selfupdate.sh, layout.test.mjs
 Dockerfile, VERSION, .github/workflows/docker.yml
 ```
-
-Detalhes completos: `docs/projeto/arquitetura.md`. Vocabulário dos widgets (Integração, Métrica,
-Formato, Tamanho, Quadro...): `CONTEXT.md` na raiz.
 
 ## Comandos do dia a dia
 
@@ -133,12 +91,13 @@ bash tests/fixture.sh /tmp/bt                                 # servidor fictíc
 BRUNOS_ADDR=127.0.0.1:8099 BRUNOS_DATA=/tmp/bt/data BRUNOS_FILES=/tmp/bt/files \
   BRUNOS_RUNTIPI=/tmp/bt/runtipi DOCKER_HOST=off HOST_PROC=/proc /tmp/brunos
 BASE=http://127.0.0.1:8099 FIX=/tmp/bt python3 tests/apitest.py   # testes da API (servidor novo)
+node --test tests/layout.test.mjs                             # encaixe dos widgets
 cd web/static && python3 -m http.server 8765                  # interface em modo demonstração
 docker build -t brunos:teste . && FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste
 ```
 
 Na máquina do Bruno (Windows) tudo roda pelo **WSL** (Ubuntu-24.04, Go 1.24, gcc, Python 3), chamado do
-PowerShell (o Git Bash quebra lá): `wsl -d Ubuntu-24.04 -e bash -lc "cd /mnt/c/Users/shaulimdoplim/Documents/GitHub/DashboardBrunOS && go test -race -count=1 ./..."`.
+PowerShell (o Git Bash quebra lá): `wsl -d Ubuntu-24.04 -e bash -lc "cd /mnt/c/Users/<usuário do Windows>/Documents/GitHub/DashboardBrunOS && go test -race -count=1 ./..."`.
 O mesmo vale para o build, `tests/fixture.sh` + servidor + `tests/apitest.py`. O `tests/smoke.sh` precisa
 da integração do Docker Desktop com o Ubuntu-24.04 ligada (Settings → Resources → WSL integration).
 Screenshots: `playwright-core` com `channel: 'chrome'` num script (a ferramenta de navegador do Claude
@@ -153,7 +112,8 @@ testar contra o backend.
 2. Commit na `main` e push. O GitHub Actions roda os testes e, se a versão do `VERSION` ainda não
    existir no GHCR, publica `ghcr.io/brunnofe/brunos:<versão>` e `latest`.
 3. Na loja (`RuntipiAppStore`): branch nova, copie `runtipi-app/brunos/{config.json,docker-compose.json}`
-   para `apps/brunos/`, rode `bun test`, abra PR. O Bruno revisa e faz merge.
+   para `apps/brunos/`, rode `bun test`, abra PR. Quando o check `test` do PR passar, o Claude faz o
+   merge sozinho (`gh pr merge`; autorizado pelo Bruno em 12/11/2026). Teste vermelho: não mesclar.
 4. No Runtipi: atualizar a loja e o app.
 
 Detalhes e pegadinhas do formato da loja: `docs/projeto/runtipi-e-loja.md`.
@@ -162,19 +122,22 @@ Detalhes e pegadinhas do formato da loja: `docs/projeto/runtipi-e-loja.md`.
 
 | Documento | Conteúdo |
 |---|---|
-| `docs/projeto/visao-geral.md` | objetivo, princípios, funcionalidades atuais |
+| `docs/projeto/visao-geral.md` | objetivo e princípios |
 | `docs/projeto/arquitetura.md` | backend, API, dados em `/data`, frontend, preferências |
 | `docs/projeto/decisoes.md` | decisões técnicas e o porquê (estilo ADR) |
 | `docs/projeto/runtipi-e-loja.md` | integração com o Runtipi, formato da loja, compose, CI |
-| `docs/projeto/historico.md` | versões 0.1 → 0.3, bugs encontrados e correções |
-| `docs/projeto/roadmap.md` | **tudo o que o Bruno aprovou para implementar** e status |
-| `docs/projeto/retomar.md` | como retomar o projeto e configurar o ai-memory |
+| `docs/projeto/historico.md` | resumo de cada versão, lições e pegadinhas |
+| `docs/projeto/roadmap.md` | o que está combinado e ainda não terminou |
+| `docs/projeto/plano-etapa11.md` | plano detalhado da etapa 11 (0.13.1 → 0.16.0) |
+| `docs/projeto/ideias-futuras.md` | o que foi adiado ou sugerido sem data (e o que foi recusado) |
+| `docs/projeto/retomar.md` | como retomar o projeto |
 | `docs/privado/servidor.md` | hardware, discos, sensores, rede e apps do servidor (só local) |
-| `docs/privado/seguranca.md` | modelo de segurança detalhado (só local) |
+| `docs/privado/seguranca.md` | modelo de segurança e acesso ao servidor, detalhado (só local) |
 | `docs/privado/sessoes.md` | diário das sessões de trabalho com pedidos literais do Bruno (só local) |
 
 **Ao terminar uma tarefa**: atualize `docs/projeto/roadmap.md` (status), `docs/projeto/historico.md`
-(se lançou versão) e `docs/privado/sessoes.md` (o que foi pedido e feito).
+(se lançou versão) e `docs/privado/sessoes.md` (o que foi pedido e feito). Plano de etapa já entregue vira
+resumo no `historico.md` e o arquivo do plano é apagado.
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
