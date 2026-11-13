@@ -235,7 +235,10 @@ s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('desmontar: pa
 s,b,_=req('POST','/api/disks/label',{'uuid':'abcd','label':'a b'}); check('rótulo inválido → erro', s>=400 and 'rótulo' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/disks/format',{'dev':'sdb','fs':'ext4','label':'X','password':'errada','formatPassword':'x'}); check('formatar: senha do BrunOS errada → 403', s==403, b)
 s,b,_=req('GET','/api/disks/format'); check('formatar: estado sem conexão explica', s==200 and 'Energia' in json.loads(b).get('err',''), b)
-s,b,_=req('POST','/api/system/restart',{}); check('reiniciar o próprio BrunOS sem Docker → 501 com explicação', s==501 and 'Runtipi' in json.loads(b)['error'], b)
+# reiniciar o próprio BrunOS: só sem Docker (no smoke.sh há Docker de verdade e o container reiniciaria no meio do teste)
+s,b,_=req('GET','/api/system')
+if not json.loads(b).get('docker'):
+    s,b,_=req('POST','/api/system/restart',{}); check('reiniciar o próprio BrunOS sem Docker → 501 com explicação', s==501 and 'Runtipi' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/smart/selftest',{'key':'X','kind':'medio'}); check('teste do disco: tipo inválido → erro', s>=400 and 'inválido' in json.loads(b)['error'], b)
 check('integrações: Tomada Tuya existe e não pede endereço', 'tuya' in ks)
 s,b,_=req('POST','/api/integrations',{'kind':'tuya','options':{'host':'127.0.0.1','devid':'abc','version':'3.5'}}); check('integrações: Tomada Tuya sem chave local → 400', s==400 and 'obrigatório' in json.loads(b)['error'], b)
