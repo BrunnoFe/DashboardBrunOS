@@ -818,7 +818,7 @@ body.reduce-motion .pb-ico, body.reduce-motion .bell-btn.ring .svg { animation: 
 .disp-atop .page-body { flex-direction: column-reverse; }
 .disp-wleft .page-body, .disp-wright .page-body { flex-direction: row; align-items: flex-start; justify-content: center; gap: clamp(16px, 3vw, 44px); }
 .disp-wright .page-body { flex-direction: row-reverse; }
-.disp-wleft .page-apps, .disp-wright .page-apps { flex: 1 1 0; min-width: 0; width: auto; max-width: calc(var(--app-w) * 8); margin-top: clamp(10px, 2.5dvh, 28px); }
+.disp-wleft .page-apps, .disp-wright .page-apps { flex: 1 1 0; min-width: 0; width: auto; max-width: none; margin-top: clamp(10px, 2.5dvh, 28px); }
 /* "Páginas" desligado: uma embaixo da outra, a tela rola */
 #app-grid.stacked .pages-track { flex-direction: column; overflow: visible; scroll-snap-type: none; gap: clamp(20px, 4dvh, 44px); }
 #app-grid.stacked .app-page { flex: none; }
@@ -889,7 +889,7 @@ body.w-editing .widget-wrap, body.w-editing .app { touch-action: none; }
 #app-grid.paged { width: 100%; }
 .app-page { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-width: 0; } /* em cima: a conta de quantos apps cabem mede daqui; min-width 0: a grade de apps não alarga a tela */
 .page-body { min-width: 0; }
-.page-apps { display: grid; grid-template-columns: repeat(auto-fill, var(--app-w)); justify-content: center; align-content: start; gap: 14px 0; width: min(100%, calc(var(--app-w) * 8)); }
+.page-apps { display: grid; grid-template-columns: repeat(auto-fill, var(--app-w)); justify-content: center; align-content: start; gap: 14px 0; width: 100%; max-width: 100%; } /* colunas e largura vêm do appsPer (Régua, 0.13.1) */
 /* aparência própria (quando o widget não segue o tema) */
 .widget.w-own { background: linear-gradient(180deg, rgba(255,255,255,calc(.16 * var(--w-alpha, .5) + .02)), rgba(255,255,255,calc(.05 * var(--w-alpha, .5)))), rgba(16,18,28,calc(.5 - .4 * var(--w-alpha, .5))); }
 .widget.w-hue { --brand: hsl(var(--bh) 80% 50%); --brand-lighter: hsl(var(--bh) 80% 60%); --brand-lightest: hsl(var(--bh) 80% 72%); }

@@ -2,7 +2,80 @@
 // Rodar: node --test tests/layout.test.mjs   (ferramenta de desenvolvimento; não vai para a imagem)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fits, firstFree, nearestFree, place, dragPlan, compact, quadro, usedRows, overlaps } from '../web/static/js/layout.js';
+import { fits, firstFree, nearestFree, place, dragPlan, compact, quadro, usedRows, overlaps, reguaW, iconSizeKey, iconMetrics, appCols, CASA, CASA_CELULAR } from '../web/static/js/layout.js';
+
+// ── Ícones pela Régua (0.13.1) ──
+test('iconSizeKey aceita as letras e converte o número antigo', () => {
+  for (const k of ['p', 'm', 'g', 'e']) assert.equal(iconSizeKey(k), k);
+  assert.equal(iconSizeKey(48), 'p');
+  assert.equal(iconSizeKey(56), 'm');
+  assert.equal(iconSizeKey(64), 'g'); // o padrão antigo vira o Grande
+  assert.equal(iconSizeKey(88), 'e');
+  assert.equal(iconSizeKey(undefined), 'g');
+  assert.equal(iconSizeKey('x'), 'g');
+});
+
+test('Grande: 16 colunas com as bordas dos ícones nas bordas da Régua', () => {
+  const regua = reguaW(1); // 1580 px
+  const { icon, casa } = iconMetrics(regua, 'g');
+  assert.ok(Math.abs(15 * casa + icon - regua) < 16, `15 casas + ícone ≈ Régua (${15 * casa + icon} × ${regua})`);
+  assert.ok(Math.abs(casa / icon - CASA) < 0.01);
+});
+
+test('os Tamanhos seguem a ordem e o piso vale no celular', () => {
+  const r = reguaW(1);
+  const s = ['p', 'm', 'g', 'e'].map((k) => iconMetrics(r, k).icon);
+  assert.deepEqual([...s].sort((a, b) => a - b), s);
+  // celular: Régua de 358 px → todos no piso
+  assert.deepEqual(['p', 'm', 'g', 'e'].map((k) => iconMetrics(358, k).icon), [44, 52, 60, 72]);
+});
+
+test('o ícone não muda com a Medida; o que muda são as colunas e a largura', () => {
+  const regua = 1500, { icon, casa } = iconMetrics(regua, 'g');
+  const a = appCols({ avail: 1700, target: regua, icon, casa, medida: [16, 2] });
+  const b = appCols({ avail: 1700, target: regua, icon, casa, medida: [8, 2] });
+  assert.equal(a.cols, 16); assert.equal(b.cols, 8);
+  assert.equal(a.casa, b.casa); // Fixo: mesma casa
+  assert.ok(b.width < a.width);
+});
+
+test('Medida que não cabe mostra menos colunas, sem encolher', () => {
+  const { icon, casa } = iconMetrics(358, 'g', CASA_CELULAR); // celular
+  const r = appCols({ avail: 358, target: 358, icon, casa, medida: [16, 2] });
+  assert.equal(r.cols, Math.floor(358 / casa));
+  assert.ok(r.width <= 358);
+  assert.equal(r.casa, Math.floor(casa * 100) / 100);
+});
+
+test('celular de 360 px: 6 / 5 / 4 / 3 colunas', () => {
+  const cols = ['p', 'm', 'g', 'e'].map((k) => {
+    const { icon, casa } = iconMetrics(358, k, CASA_CELULAR);
+    return appCols({ avail: 358, target: 358, icon, casa, medida: [16, 2] }).cols;
+  });
+  assert.deepEqual(cols, [6, 5, 4, 3]);
+});
+
+test('Elástico estica até o limite; Preencher vai de ponta a ponta', () => {
+  const regua = 1500, { icon, casa } = iconMetrics(regua, 'g');
+  const span = (r) => (r.cols - 1) * r.casa + icon; // da borda do 1º ao último ícone
+  const p10 = appCols({ avail: 1700, target: regua, icon, casa, medida: [10, 2], gap: 'preencher' });
+  assert.ok(Math.abs(span(p10) - regua) < 1);
+  const e11 = appCols({ avail: 1700, target: regua, icon, casa, medida: [11, 2], gap: 'elastico' });
+  assert.ok(Math.abs(span(e11) - regua) < 1, 'com 11 colunas o Elástico ainda alcança a Régua');
+  const e4 = appCols({ avail: 1700, target: regua, icon, casa, medida: [4, 2], gap: 'elastico' });
+  assert.ok(e4.casa <= casa * 1.6 + 0.01 && span(e4) < regua, 'com 4 colunas para no limite e centraliza');
+  const p4 = appCols({ avail: 1700, target: regua, icon, casa, medida: [4, 2], gap: 'preencher' });
+  assert.ok(Math.abs(span(p4) - regua) < 1);
+});
+
+test('Automática: quantas couberem na Régua, no máximo 16', () => {
+  const regua = 1500, { icon, casa } = iconMetrics(regua, 'g');
+  const r = appCols({ avail: 1700, target: regua, icon, casa, medida: 'auto' });
+  assert.ok((r.cols - 1) * casa + icon <= regua + 0.5);
+  assert.ok(r.cols * casa + icon > regua);
+  const big = appCols({ avail: 5000, target: 5000, icon: 44, casa: 70, medida: 'auto' });
+  assert.equal(big.cols, 16);
+});
 
 const A = (id, x, y, w = 1, h = 1) => ({ id, x, y, w, h });
 const at = (list, id) => { const o = list.find((x) => x.id === id); return [o.x, o.y, o.w, o.h]; };

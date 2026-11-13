@@ -1,7 +1,7 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { paintBattery, batteryDialog } from './battery.js';
 import { BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
-import { fits, firstFree, place, dragPlan, compact, quadro, usedRows, Q } from './layout.js';
+import { fits, firstFree, place, dragPlan, compact, quadro, usedRows, Q, reguaW, iconSizeKey, iconMetrics, appCols, ICON_SIZES, ICON_GAPS, CASA, CASA_CELULAR } from './layout.js';
 import { api, initApi } from './api.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
@@ -19,7 +19,7 @@ import {
 const BUILTIN_WALLPAPERS = ['24', '2', '23', '19', '16', '14', '4', '1', '12', '6', '13', '10'];
 const BUILTIN_ICONS = ['adguard-home', 'cloudflare', 'dashdot', 'filebrowser', 'homarr', 'immich', 'nextcloud', 'plex', 'qbittorrent', 'speedtest-tracker', 'syncthing', 'tailscale', 'tipi', 'transmission', 'vaultwarden', 'watchyourlan'];
 const DEFAULTS = {
-  wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 64,
+  wallpaper: 'builtin:24', wallpaperMode: 'single', wallpaperSchedule: [], accentMode: 'auto', manualHue: 209, glass: true, blur: 24, iconSize: 'g', iconGap: 'fixo',
   widgets: ['files', 'storage', 'system'], widgets2: null, appPlace: {}, showStatus: true, reduceMotion: false, diskForecast: false, appMonitor: true, netMonitor: true, appPages: true, pageCfg: {}, mobileSplit: true, folders: [], openIn: 'tab',
   urlMode: 'auto', serverHost: '', runtipiUrl: '', dock: [], order: [], apps: {}, links: [], favorites: [], welcomed: false,
   // 0.10.0: Bloqueio (J1) e Terminal (K1–K3)
@@ -823,11 +823,26 @@ function renderApps() {
    segunda conta como continuação). Apps que não cabem seguem em telas de continuação, como antes.
    "Páginas" desligado: as Páginas ficam uma embaixo da outra e a tela rola. */
 const MOBILE_W = 640;
-function drawHome() {
+/* Régua (0.13.1, decisão 52): a largura da Área de widgets com 6 colunas, pelo zoom do Quadro da
+   primeira Área de widgets desenhada (refK). O tamanho do ícone sai dela, igual em todas as Páginas.
+   Como o zoom só é conhecido depois de desenhar os widgets, o desenho usa a Régua do anterior e, se ela
+   mudou (tela, Medida, primeira vez), desenha de novo na hora (antes de a tela pintar). */
+let curRegua = 0, refK = null;
+function reguaSemWidgets(grid) { // nenhuma Área de widgets (ou celular): só a largura conta
+  const pw = Math.min(grid.clientWidth || innerWidth - 32, 1700);
+  const q = innerWidth < MOBILE_W ? null : quadro(pw, Infinity, 6, 1);
+  return q ? reguaW(q.k) : pw;
+}
+function setIconVars(regua) {
+  const { icon, casa } = iconMetrics(regua, set().iconSize, innerWidth < MOBILE_W ? CASA_CELULAR : CASA), r = document.documentElement.style;
+  r.setProperty('--app-icon', icon + 'px');
+  r.setProperty('--app-w', casa + 'px');
+}
+function drawHome(again = 0) {
   const grid = $('#app-grid');
-  const baseW = Math.min(Math.round(set().iconSize * 1.8), Math.floor((innerWidth - 40) / 4));
-  document.documentElement.style.setProperty('--app-w', baseW + 'px');
-  document.documentElement.style.setProperty('--app-icon', Math.min(set().iconSize, Math.round(baseW * 0.68)) + 'px');
+  const regua = curRegua || reguaSemWidgets(grid);
+  curRegua = regua; refK = null;
+  setIconVars(regua);
   const items = homeItems(), paged = !!set().appPages, mobile = innerWidth < MOBILE_W;
   $$('#desktop > .w-area-bar').forEach((x) => x.remove());
   const row = $('#widgets'); row.style.display = 'none'; row.innerHTML = '';
@@ -868,13 +883,18 @@ function drawHome() {
         const box = $('.page-apps', pg);
         if (kind === 'new') { box.innerHTML = '<div class="page-new-hint">Página nova: arraste widgets ou apps para cá</div>'; break; }
         if (!showA) { first = false; break; }
-        const per = paged ? appsPer(pg, box, cfg.am, showW) : Infinity;
+        const side = showW && (disp === 'wleft' || disp === 'wright');
+        const fit = appsPer(pg, box, cfg.am, showW, side);
+        const per = paged ? fit : Infinity;
         const slice = apps.slice(k, k + per);
         box.innerHTML = slice.map((it, i) => itemHTML(it, n + i)).join('');
         k += slice.length; n += slice.length; first = false;
       } while (k < apps.length);
     }
   }
+  // a Régua deste desenho (no modo Organizar fica a de antes: os ícones não mudam ao organizar)
+  const real = wEditing ? regua : refK ? reguaW(refK) : reguaSemWidgets(grid);
+  if (Math.abs(real - regua) > 1) { curRegua = real; if (again < 2) return drawHome(again + 1); }
   const pages = $$('.app-page', track), total = pages.length;
   pages.forEach((el, i) => el.setAttribute('aria-label', `Página ${i + 1} de ${total}`));
   page = clamp(page, 0, total - 1);
@@ -903,6 +923,7 @@ function fillWidgets(pg, real, list, { both, side, mobile }) {
   const spaceH = freeHeight(box) - (both && !side ? icon + 60 : 0);
   const rows = wEditing ? mr : Math.max(1, usedRows(list.map(([, , p]) => p)));
   const q = mobile ? null : quadro(spaceW, spaceH, mc, rows);
+  if (q && !side && refK == null) refK = q.k; // a primeira Área de widgets dá a Régua
   let k = q?.k ?? 1, cc = 0;
   if (!q) { // estreito demais: compacta em menos colunas (2 no celular), na ordem de leitura
     cc = mobile ? 2 : clamp(Math.floor((spaceW + Q.gapX) / (175 + Q.gapX)), 1, mc);
@@ -912,25 +933,21 @@ function fillWidgets(pg, real, list, { both, side, mobile }) {
   // cabe na altura que sobra (com uma fileira de apps embaixo, quando divide a tela)? false = transbordou
   return !!cc || side || (rows * (Q.h + Q.label) + (rows - 1) * Q.gapY) * k <= spaceH + 1;
 }
-// Quantos apps cabem nesta tela. Medida fixa: colunas × linhas (os ícones encolhem até ~44 px; abaixo
-// disso, menos colunas). Automática: o que couber na largura e na altura, como antes.
-function appsPer(pg, box, am, withWidgets) {
-  const icon = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-icon')) || 64;
-  const baseW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-w')) || 116;
-  const width = box.clientWidth || innerWidth - 32;
-  if (Array.isArray(am)) {
-    const [c, r] = am, w = Math.floor(width / c);
-    if (w < baseW) { // ícones menores para caber as colunas pedidas
-      const aw = Math.max(64, w);
-      box.style.setProperty('--app-w', `${aw}px`);
-      box.style.setProperty('--app-icon', `${Math.max(44, Math.min(icon, Math.round(aw * 0.68)))}px`);
-      if (w >= 64) box.style.gridTemplateColumns = `repeat(${c}, var(--app-w))`;
-    } else box.style.gridTemplateColumns = `repeat(${c}, var(--app-w))`;
-    return c * r;
-  }
-  const cols = Math.max(1, Math.floor(Math.min(width, baseW * 8) / baseW));
+// Colunas e largura da Área de apps nesta tela, e quantos apps cabem nela (0.13.1). O ícone tem sempre
+// o Tamanho escolhido; a Medida que não cabe mostra menos colunas. O Espaço entre os ícones diz se a casa
+// estica até a Régua (ou até a sobra ao lado dos widgets). Medida fixa: colunas × linhas. Automática: o
+// que couber na Régua e na altura.
+function appsPer(pg, box, am, withWidgets, side) {
+  const cs = getComputedStyle(document.documentElement);
+  const icon = parseFloat(cs.getPropertyValue('--app-icon')) || 60, casa = parseFloat(cs.getPropertyValue('--app-w')) || 95;
+  const avail = (side ? box.clientWidth : box.parentElement?.clientWidth) || innerWidth - 32;
+  const lay = appCols({ avail, target: side ? avail : curRegua || avail, icon, casa, medida: am, gap: set().iconGap });
+  box.style.gridTemplateColumns = `repeat(${lay.cols}, var(--app-w))`;
+  box.style.columnGap = `${lay.extra}px`;
+  box.style.width = side ? '' : `${lay.width}px`;
+  if (Array.isArray(am)) return am[0] * am[1];
   const rows = Math.floor(freeHeight(box) / (icon + 60));
-  return Math.max(1, cols * Math.max(withWidgets ? 1 : 2, rows)); // nunca 0 (senão as telas de continuação não acabam)
+  return Math.max(1, lay.cols * Math.max(withWidgets ? 1 : 2, rows)); // nunca 0 (senão as telas de continuação não acabam)
 }
 
 /* Pastas (E3) e páginas (E4) */
@@ -1454,7 +1471,10 @@ function settingsRows() {
       ctrl: `<div class="wp-ctrl"><div class="seg wp-mode"><button class="${st.wallpaperMode !== 'schedule' ? 'on' : ''}" data-wpmode="single">Um só</button><button class="${st.wallpaperMode === 'schedule' ? 'on' : ''}" data-wpmode="schedule">Por horário</button></div>${st.wallpaperMode === 'schedule' ? scheduleHTML(wps) : `<div class="wp-thumbs">${wps.map((id) => `<span class="wp-thumb-wrap"><button class="wp-thumb ${st.wallpaper === id ? 'on' : ''}" data-wp="${esc(id)}" style="background-image:url('${esc(wallpaperUrl(id, { thumb: true }))}')" aria-label="Papel de parede"></button>${id.startsWith('upload:') ? `<button class="wp-del" data-wp-del="${esc(id.slice(7))}" aria-label="Apagar">${svg('x')}</button>` : ''}</span>`).join('')}<button class="wp-thumb add" data-wp-add aria-label="Enviar imagem">${svg('plus')}</button></div>`}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip" title="Cor atual"><i></i></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
-    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'Ícones da tela inicial', ctrl: range('iconSize', 48, 88, 'px') },
+    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Tamanho dos ícones', desc: 'O mesmo em todas as páginas, medido pela largura dos widgets: no Grande, 16 colunas de apps vão de uma ponta à outra dos widgets. Não muda com a Medida; quando as colunas não cabem, aparecem menos',
+      ctrl: `<div class="seg">${Object.entries(ICON_SIZES).map(([k, s]) => `<button class="${iconSizeKey(st.iconSize) === k ? 'on' : ''}" data-iconsize="${k}">${s.name}</button>`).join('')}</div>` },
+    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Espaço entre os ícones', desc: 'Fixo: sempre o mesmo espaço, apps centralizados. Elástico: estica um pouco para alinhar com os widgets. Preencher: os apps vão sempre de uma ponta à outra dos widgets',
+      ctrl: `<div class="seg">${Object.entries(ICON_GAPS).map(([k, l]) => `<button class="${(st.iconGap || 'fixo') === k ? 'on' : ''}" data-icongap="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets e as integrações com os apps na janela Widgets', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
     (() => {
       const total = realPageCount(), p = Math.min(cfgPage, total - 1), c = pageCfg(p);
@@ -1601,6 +1621,8 @@ function wireSettings(body) {
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
+    else if ((el = q('[data-iconsize]'))) { st.iconSize = el.dataset.iconsize; save(); renderApps(); redraw(); }
+    else if ((el = q('[data-icongap]'))) { st.iconGap = el.dataset.icongap; save(); renderApps(); redraw(); }
     else if ((el = q('[data-lockmode]'))) { st.lockMode = el.dataset.lockmode; save(); redraw(); }
     else if ((el = q('[data-act]'))) {
       const a = el.dataset.act;

@@ -82,7 +82,7 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     Runtipi não fica sabendo (o app volta ao estado dele quando o Runtipi/servidor reinicia); a interface
     avisa na confirmação. O proxy do Docker passou a liberar `GET containers/<id>/logs` e
     `POST containers/<id>/(start|stop)`; o BrunOS só aceita containers do projeto do app pedido.
-26. **Monitor de disponibilidade sem guardar em disco** (0.7.0). 24 h × 1 ponto/minuto por app em
+26. **Monitor de disponibilidade sem guardar em disco** (0.7.0; substituída pela 53 a partir da 0.14.0). 24 h × 1 ponto/minuto por app em
     memória (alguns KB); reiniciar o BrunOS zera o gráfico. Avisa só depois de 2 minutos seguidos fora
     do ar, e app parado de propósito não conta como queda.
 27. **Internet medida por TCP, não por ping** (0.8.0). ICMP exigiria `CAP_NET_RAW` no container. Abrir
@@ -225,3 +225,21 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     no servidor, com chave presa a uma lista fixa de leituras (nada escreve), para achar problemas sem
     prints. O script e o desenho ficam em `docs/privado/` (saíram do repositório em 12/11/2026). O BrunOS
     de teste no servidor (opção B, com discos só leitura) está em `ideias-futuras.md`.
+52. **Tamanho do ícone em degraus medidos pela Régua** (0.13.1, combinado em 12/11/2026). O ícone
+    encolhia para caber a Medida e não tinha relação com os widgets. Agora são 4 tamanhos (o Grande é o
+    maior em que 16 colunas cabem na largura dos widgets com 6 colunas), com piso em px para o celular;
+    a Medida que não cabe vira Área compacta, nunca ícone menor. O espaço entre os ícones é escolha do
+    Bruno (Fixo, padrão; Elástico; Preencher): ele começou querendo espaço fixo, depois flexível, e
+    preferiu deixar configurável.
+53. **Históricos guardados pelo próprio BrunOS, em três camadas** (0.14.0, opção A do Bruno; substitui a
+    26). Recusados: usar o banco do Beszel (dependeria de um app que nem todos têm, e os avisos do sino
+    precisam dos dados próprios de qualquer jeito) e Prometheus/InfluxDB (centenas de MB de RAM).
+    Camadas escolhidas pelo Bruno: 1 min por 48 h, 5 min por 7 dias, 20 min por 30 dias (média + pico
+    nas duas últimas, para os picos não sumirem na média); ~4,5 MB para ~100 séries, binário em
+    `/data/tsdb/`.
+54. **Formatar só com a Senha de formatação conferida pelo servidor** (0.16.0, ideia do Bruno com o
+    cadastro pela opção A). Se o BrunOS conferisse a senha, quem invadisse o container pularia a
+    conferência. Por isso quem confere é o servidor, fora do container, com trava após erros e nova
+    conferência do disco antes de apagar. O cadastro é feito uma vez, direto no servidor, para um invasor
+    não cadastrar a senha dele antes do Bruno. Montar e desmontar não pedem essa senha (o script tem
+    travas próprias). Detalhes: `docs/privado/seguranca.md`.

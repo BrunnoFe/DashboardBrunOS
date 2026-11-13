@@ -45,9 +45,25 @@ _Evite_: grade de apps, grade de ícones (Grade é um Formato)
 **Medida**:
 Quantas colunas por quantas linhas tem uma Área: em Quadros na Área de widgets (até 6 × 4), em ícones
 na Área de apps (até 16 × 6, ou Automática: quantos couberem). É o máximo: linhas vazias no fim não
-ocupam espaço na tela. Telas estreitas demais mostram a Área compacta (menos colunas, na ordem de
-leitura) sem mudar a Medida guardada.
+ocupam espaço na tela. Telas estreitas demais (ou, na Área de apps, um Tamanho do ícone grande demais)
+mostram a Área compacta (menos colunas, na ordem de leitura) sem mudar a Medida guardada.
 _Evite_: grade, conformação, tamanho (Tamanho é de um Widget)
+
+**Régua**:
+A largura que a Área de widgets teria com 6 colunas naquela tela, seja qual for a Medida da Página. Os
+Tamanhos do ícone e o Espaço entre os ícones são medidos por ela; muda só quando a tela muda.
+_Evite_: largura da tela, largura útil
+
+**Tamanho do ícone**:
+Pequeno, Médio, Grande ou Enorme, o mesmo em todas as Páginas. O Grande é o maior em que 16 colunas de
+apps ainda cabem na Régua; os outros são proporções dele (o Enorme não deixa caber 16 colunas).
+_Evite_: zoom, escala, tamanho (sozinho, que é de um Widget)
+
+**Espaço entre os ícones**:
+Como a Área de apps usa a largura: Fixo (ícone e espaço constantes, área centralizada, o padrão),
+Elástico (o espaço estica até um limite para alinhar com a Régua e depois centraliza) ou Preencher
+(sempre de ponta a ponta na Régua).
+_Evite_: espaçamento, gap, margem
 
 ## Tela inicial
 
@@ -96,6 +112,42 @@ _Evite_: conexão, app conectado, conta
 Alerta para o sino que um Tipo de integração oferece, que o Bruno liga, desliga e ajusta (ex.:
 "aparelho novo na rede").
 _Evite_: regra, alerta personalizado, gatilho
+
+**Histórico**:
+Os valores passados de uma Métrica que muda o tempo todo, guardados no servidor por até 30 dias (mais
+detalhados quanto mais recentes); sobrevive ao reinício do BrunOS.
+_Evite_: log, registro, banco de dados
+
+**Período**:
+Quanto tempo um gráfico mostra: 5 min (ao vivo), 1 h, 24 h, 48 h, 7 dias ou 30 dias. Cada gráfico tem o
+seu.
+_Evite_: intervalo, janela de tempo, range
+
+**Ponta viva**:
+A bolinha com o valor atual no fim de um gráfico que se mexe na frente do Bruno (Período ao vivo); os
+gráficos de Períodos longos não têm.
+_Evite_: cursor, marcador
+
+## Discos
+
+**Disco**:
+Um aparelho de armazenamento ligado ao servidor (HD, SSD ou NVMe, interno ou USB), reconhecido pelo
+número de série; as letras (sda, sdb) são só o nome do momento.
+_Evite_: drive, volume, HD (sozinho, quando pode ser SSD)
+
+**Pasta de montagem**:
+Onde o conteúdo de um Disco aparece no servidor, sempre dentro de /mnt. Um Disco sem Pasta de montagem
+está conectado mas não montado.
+_Evite_: ponto de montagem, mount, caminho
+
+**Formatar**:
+Apagar um Disco inteiro e deixá-lo com uma única partição vazia (ext4, Btrfs, NTFS ou exFAT).
+_Evite_: limpar, zerar, inicializar
+
+**Senha de formatação**:
+Senha própria, criada uma vez pelo Terminal com sudo, que o servidor confere antes de Formatar;
+diferente da senha do BrunOS.
+_Evite_: senha de admin, senha do sudo, PIN
 
 ## Energia
 

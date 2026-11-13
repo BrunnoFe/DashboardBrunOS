@@ -94,6 +94,16 @@ Lições dos testes com Playwright: `justify-content: center` antigo da `.app-pa
 vertical; a grade de apps com `auto-fill` alargava a tela no lado a lado (`min-width: 0`); soltar fora da
 tela inicial deixava o fantasma preso (ouvir os eventos de soltar na janela inteira).
 
+## 0.13.1 (12/11): ícones com tamanho fixo (Régua)
+O ícone encolhia conforme a Medida da Área de apps (a área era limitada a 8 casas e o `appsPer` diminuía o
+ícone até 44 px). Agora: Tamanho do ícone em 4 degraus (Pequeno, Médio, Grande, Enorme) medidos pela
+Régua (largura dos widgets com 6 colunas; no Grande, 16 colunas vão de uma ponta à outra), com piso em px
+no celular (6 / 5 / 4 / 3 colunas em 360 px), e Espaço entre os ícones (Fixo, Elástico, Preencher). A
+Medida que não cabe mostra menos colunas; o ícone nunca encolhe. Lição: a Régua depende do zoom do Quadro,
+que só se conhece depois de desenhar os widgets; o desenho usa a do anterior e refaz na hora se mudou. A
+sobra do Elástico/Preencher vai como espaço entre as colunas (cada coluna fica com a casa mínima), senão
+poucas colunas largas passavam da tela.
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

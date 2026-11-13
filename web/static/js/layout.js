@@ -113,3 +113,66 @@ export function quadro(spaceW, spaceH, cols, rows, { min = 150, max = 260, gapX 
   const w = Math.max(min, Math.min(byW, byH, max));
   return { k: w / Q.w, w };
 }
+
+/* ── Ícones da Área de apps (0.13.1, decisão 52) ─────────────────────────────────────────────────
+   Régua = largura da Área de widgets com 6 colunas naquela tela. O ícone Grande é o maior em que 16
+   colunas cabem nela com as bordas dos ícones nas bordas dos widgets: 15 casas + 1 ícone = Régua. Os
+   outros Tamanhos são proporções do Grande, com piso em px (no celular quem manda é o piso). A casa
+   (largura de cada coluna, com o nome embaixo) é o ícone × CASA. */
+export const ICON_SIZES = {
+  p: { k: 0.75, floor: 44, name: 'Pequeno' },
+  m: { k: 0.88, floor: 52, name: 'Médio' },
+  g: { k: 1, floor: 60, name: 'Grande' },
+  e: { k: 1.2, floor: 72, name: 'Enorme' },
+};
+export const CASA = 1.58;
+export const ICON_GAPS = { fixo: 'Fixo', elastico: 'Elástico', preencher: 'Preencher' };
+const ELASTIC_MAX = 1.6; // o Elástico estica a casa até 1,6 × a mínima
+
+/** Largura da Régua para o zoom k do Quadro. */
+export const reguaW = (k) => (6 * Q.w + 5 * Q.gapX) * k;
+
+/** Tamanho do ícone guardado → 'p' | 'm' | 'g' | 'e'. Aceita o número antigo (px do controle 48–88). */
+export function iconSizeKey(v) {
+  if (typeof v === 'string' && ICON_SIZES[v]) return v;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 'g';
+  return n < 52 ? 'p' : n < 60 ? 'm' : n < 72 ? 'g' : 'e';
+}
+
+export const CASA_CELULAR = 1.3; // no celular a casa é mais justa (≈ 6 / 5 / 4 / 3 colunas em 360 px)
+
+/** Ícone e casa (px) de um Tamanho do ícone para uma Régua. `ratio`: casa ÷ ícone. */
+export function iconMetrics(regua, size, ratio = CASA) {
+  const t = ICON_SIZES[iconSizeKey(size)];
+  const big = regua / (15 * CASA + 1);
+  const icon = Math.round(Math.max(t.floor, t.k * big));
+  return { icon, casa: Math.round(icon * ratio * 100) / 100 };
+}
+
+/**
+ * Colunas e largura da Área de apps numa tela.
+ * avail: largura disponível (px); target: até onde o Elástico e o Preencher esticam (a Régua, ou a
+ * sobra ao lado dos widgets); medida: 'auto' ou [colunas, linhas]; gap: 'fixo' | 'elastico' | 'preencher'.
+ * Devolve { cols, casa, extra, width }: casa = distância entre os centros de duas colunas; cada coluna
+ * tem a casa mínima de largura e `extra` px de espaço entre elas (o nome embaixo fica sempre da mesma
+ * largura); width = (cols − 1) × casa + casa mínima. Quando a Medida não cabe, menos colunas (Área
+ * compacta); o ícone nunca encolhe.
+ */
+export function appCols({ avail, target, icon, casa, medida, gap = 'fixo' }) {
+  target = Math.min(target, avail);
+  const maxCols = Math.max(1, Math.floor((avail + 0.5) / casa));
+  const want = Array.isArray(medida)
+    ? Math.max(1, medida[0])
+    : Math.min(16, Math.max(1, Math.floor((target - icon + 0.5) / casa) + 1));
+  const cols = Math.min(want, maxCols);
+  // casa que deixa a borda do primeiro e do último ícone nas bordas do alvo
+  const fill = cols > 1 ? (target - icon) / (cols - 1) : casa;
+  let c = casa;
+  if (gap === 'preencher') c = Math.max(casa, fill);
+  else if (gap === 'elastico') c = Math.max(casa, Math.min(fill, casa * ELASTIC_MAX));
+  if (cols > 1) c = Math.max(casa, Math.min(c, (avail - casa) / (cols - 1))); // a caixa nunca passa do disponível
+  c = Math.floor(c * 100) / 100;
+  const extra = Math.round((c - casa) * 100) / 100;
+  return { cols, casa: c, extra, width: Math.round(((cols - 1) * c + casa) * 100) / 100 };
+}
