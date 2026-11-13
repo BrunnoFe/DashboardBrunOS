@@ -103,7 +103,7 @@ export async function powerDialog({ openTerminal } = {}) {
   };
   const drawConn = () => {
     const host = cfg.host || data.suggestedHost || '';
-    // servidor configurado com o comando antigo (shutdown -h +1, recusado pelo Ubuntu 26.04)
+    // servidor configurado com o comando antigo (shutdown -h +1, recusado pelas versões novas do Ubuntu)
     const update = needsUpdate ? `<div class="pw-step pw-update"><span class="pw-n">${svg('alert')}</span><div class="pw-step-body"><b>Atualize a configuração do servidor</b>
         <small>O Ubuntu passou a recusar o comando de desligar que o BrunOS usava, porque as atualizações automáticas seguram o desligamento. Os comandos novos instalam um script pequeno (<code>/usr/local/sbin/brunos-host</code>) que só aceita desligar e ajustar o limite de carga, e trocam a chave do usuário <code>${esc(cfg.user)}</code>. Depois de colar, clique em <b>Testar</b> no passo 2: o teste confirma a atualização.</small>
         ${showUpdate && setup ? `<pre class="pw-cmds" tabindex="0">${esc(setup.updateCommands)}</pre>

@@ -8,8 +8,8 @@
   "port": 8790,
   "categories": ["utilities"],
   "description": "",
-  "tipi_version": 27,
-  "version": "0.15.0",
+  "tipi_version": 28,
+  "version": "0.15.1",
   "source": "https://github.com/BrunnoFe/DashboardBrunOS",
   "exposable": true,
   "dynamic_config": true,
@@ -22,7 +22,7 @@
       "label": "Pasta do Runtipi no servidor",
       "hint": "Onde o Runtipi está instalado. O BrunOS lê os apps daqui, sem alterar nada.",
       "env_variable": "BRUNOS_RUNTIPI_PATH",
-      "default": "/home/ptbruno/runtipi",
+      "default": "/home/usuario/runtipi",
       "required": true
     },
     {
@@ -57,5 +57,5 @@
     }
   ],
   "created_at": 1794018606000,
-  "updated_at": 1794571333713
+  "updated_at": 1794574500000
 }

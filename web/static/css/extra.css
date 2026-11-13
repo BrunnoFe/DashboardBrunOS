@@ -1568,6 +1568,14 @@ button.disk-row { width: 100%; text-align: left; }
 .pill-btn.busy { pointer-events: none; opacity: .7; }
 .pill-btn.busy .svg { animation: spin .9s linear infinite; }
 .dk-tests { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.dk-progress .track > i { transition: width 1s linear; }
+.dk-lastrun { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; margin-bottom: 10px; border-radius: 11px; background: rgba(255,255,255,.05); font-size: 12.5px; }
+.dk-lastrun > .svg { font-size: 16px; flex: none; margin-top: 1px; }
+.dk-lastrun span { display: flex; flex-direction: column; gap: 2px; }
+.dk-lastrun small { opacity: .6; font-size: 11.5px; line-height: 1.4; }
+.dk-lastrun.ok { background: rgba(95,211,138,.1); } .dk-lastrun.ok > .svg { color: #8ff0b1; }
+.dk-lastrun.warn { background: rgba(255,190,70,.12); } .dk-lastrun.warn > .svg { color: #ffd27a; }
+.dk-lastrun.bad { background: rgba(255,90,90,.12); } .dk-lastrun.bad > .svg { color: #ffb3b3; }
 .dk-tline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
 .dk-tline .svg { font-size: 15px; flex: none; }
 .dk-tline.ok .svg { color: #8ff0b1; }

@@ -4,7 +4,7 @@
 set -euo pipefail
 T="${1:?uso: fixture.sh <pasta>}"
 rm -rf "$T"
-mkdir -p "$T"/data "$T"/files/home/usuario/{Documentos,Fotos} "$T"/files/mnt/1TB_HDD/Filmes "$T"/files/mnt/1TB_HDD2 "$T"/outside \
+mkdir -p "$T"/data "$T"/files/home/usuario/{Documentos,Fotos} "$T"/files/mnt/Disco1/Filmes "$T"/files/mnt/Disco2 "$T"/outside \
   "$T"/runtipi/apps/migrated/syncthing/metadata "$T"/runtipi/app-data/migrated/syncthing \
   "$T"/runtipi/apps/personal-store/dashdot-lite/metadata "$T"/runtipi/app-data/personal-store/dashdot-lite "$T"/runtipi/state
 echo segredo > "$T"/outside/secret.txt

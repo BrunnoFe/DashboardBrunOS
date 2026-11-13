@@ -1,6 +1,6 @@
 // Package events é a central de notificações do BrunOS (o sino da tela inicial).
 //
-// Cada parte do sistema chama Emit com um aviso. Avisos com Key (ex.: "disk-unmounted:1TB_HDD")
+// Cada parte do sistema chama Emit com um aviso. Avisos com Key (ex.: "disk-unmounted:Disco1")
 // não se repetem enquanto o problema continuar: só voltam a aparecer depois de Resolve(key).
 // Tudo fica em /data/events.json (no máximo 500 avisos e 30 dias).
 package events

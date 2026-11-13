@@ -13,7 +13,7 @@ import (
 
 func TestCheckDisks(t *testing.T) {
 	ev := events.New("")
-	hd := files.DiskInfo{Name: "1TB_HDD", Mapped: true, Mounted: true}
+	hd := files.DiskInfo{Name: "Disco1", Mapped: true, Mounted: true}
 	other := files.DiskInfo{Name: "SSD", Mapped: false, Mounted: false} // não mapeado: nunca alerta
 
 	checkDisks([]files.DiskInfo{hd, other}, ev)
@@ -39,7 +39,7 @@ func TestCheckDisks(t *testing.T) {
 	hd.Mapped = false
 	checkDisks([]files.DiskInfo{hd}, ev)
 	l, _ = ev.List()
-	if len(l) != 3 || ev.IsActive("disk-unmounted:1TB_HDD") {
+	if len(l) != 3 || ev.IsActive("disk-unmounted:Disco1") {
 		t.Fatalf("desmapear deveria só encerrar o alerta: %+v", l)
 	}
 }
@@ -47,7 +47,7 @@ func TestCheckDisks(t *testing.T) {
 func TestCheckHot(t *testing.T) {
 	ev := events.New("")
 	temp := func(v float64) *float64 { return &v }
-	hd := sysinfo.Disk{Name: "1TB_HDD", Rotational: true, Temp: temp(45)}
+	hd := sysinfo.Disk{Name: "Disco1", Rotational: true, Temp: temp(45)}
 	ssd := sysinfo.Disk{Name: "Sistema", Temp: temp(60)} // 60 °C é normal para SSD
 	none := sysinfo.Disk{Name: "Sem sensor"}
 
@@ -59,12 +59,12 @@ func TestCheckHot(t *testing.T) {
 	checkHot([]sysinfo.Disk{hd, ssd}, ev)
 	checkHot([]sysinfo.Disk{hd, ssd}, ev)
 	l, _ := ev.List()
-	if len(l) != 1 || l[0].Kind != "disk-hot" || l[0].Title != "O disco 1TB_HDD está quente (56 °C)" {
+	if len(l) != 1 || l[0].Kind != "disk-hot" || l[0].Title != "O disco Disco1 está quente (56 °C)" {
 		t.Fatalf("esperava um aviso de HD quente: %+v", l)
 	}
 	hd.Temp = temp(52) // entre 50 e 55: continua aberto
 	checkHot([]sysinfo.Disk{hd}, ev)
-	if !ev.IsActive("disk-hot:1TB_HDD") {
+	if !ev.IsActive("disk-hot:Disco1") {
 		t.Fatal("ainda não esfriou o bastante")
 	}
 	hd.Temp = temp(48)

@@ -169,7 +169,7 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     legível para todos. A estimativa calibrada aprende o "resto da máquina" durante as quedas.
 43. **SMART e temperatura dos discos USB pelo smartctl, sem Scrutiny** (0.11.0). O Scrutiny seria outro
     container com banco (100–200 MB) para dados que mudam pouco. `smartctl -n standby` não acorda HD
-    parado; adaptadores USB (ASM225 e similares) não deixam o drivetemp passar, mas o `-d sat` costuma
+    parado; muitos adaptadores USB não deixam o drivetemp passar, mas o `-d sat` costuma
     passar, então a temperatura deles vem do SMART a cada 20 min.
 44. **Atualizações (apps e Linux): como se descobre** (0.11.0; a parte "só avisam" foi substituída pela
     47). Apps: a cópia instalada (`apps/`) contra a loja baixada (`repos/`), pelo `tipi_version`, sem

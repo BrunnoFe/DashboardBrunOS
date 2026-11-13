@@ -388,7 +388,7 @@ func fakeSys(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	all := map[string]string{"class/power_supply/BAT0/type": "Battery\n", "class/power_supply/AC/type": "Mains\n",
-		"class/dmi/id/sys_vendor": "Dell Inc.\n", "class/dmi/id/product_name": "Inspiron 3542\n"}
+		"class/dmi/id/sys_vendor": "Acme Inc.\n", "class/dmi/id/product_name": "Notebook 15\n"}
 	for k, v := range files {
 		all[k] = v
 	}
@@ -406,7 +406,7 @@ func TestChargeDetect(t *testing.T) {
 		files map[string]string
 		kind  string
 	}{
-		{"Inspiron 3542 (nada)", nil, ChargeNone},
+		{"Notebook 15 (nada)", nil, ChargeNone},
 		{"ThinkPad (contínuo)", map[string]string{"class/power_supply/BAT0/charge_control_end_threshold": "80\n"}, ChargeRange},
 		{"Samsung (liga/desliga)", map[string]string{"class/power_supply/BAT0/charge_types": "[Standard] Long_Life\n"}, ChargeToggle},
 		{"IdeaPad antigo (conservação)", map[string]string{"bus/platform/drivers/ideapad_acpi/VPC2004_00/conservation_mode": "0\n"}, ChargeToggle},
@@ -417,7 +417,7 @@ func TestChargeDetect(t *testing.T) {
 		if c.kind != tc.kind {
 			t.Errorf("%s: esperava %s, veio %s", tc.name, tc.kind, c.kind)
 		}
-		if c.model != "Dell Inspiron 3542" {
+		if c.model != "Acme Notebook 15" {
 			t.Errorf("modelo errado: %q", c.model)
 		}
 	}
@@ -500,7 +500,7 @@ func TestChargeNoneDoesNothing(t *testing.T) {
 	called := false
 	m.HostRun = func(context.Context, Config, string) (string, error) { called = true; return "", nil }
 	info, err := m.SetCharge(context.Background(), 80, "")
-	if err == nil || info.Kind != ChargeNone || info.Model != "Dell Inspiron 3542" {
+	if err == nil || info.Kind != ChargeNone || info.Model != "Acme Notebook 15" {
 		t.Fatalf("notebook sem limite deveria recusar e dizer o modelo: %+v %v", info, err)
 	}
 	m.checkCharge()

@@ -356,6 +356,17 @@ func TestStartAndFollow(t *testing.T) {
 	if list[0].Level != events.Aviso || !strings.Contains(list[0].Body, "Could not get lock") {
 		t.Fatalf("aviso de erro: %+v", list[0])
 	}
+	// espera o acompanhamento desta atualização sair: ele grava o arquivo uma última vez e poderia
+	// gravar por cima do andamento da próxima (o teste ficava instável)
+	for i := 0; i < 300; i++ {
+		c.mu.Lock()
+		busy := c.following
+		c.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// BrunOS reiniciou no meio: o andamento fica gravado para retomar
 	t2 := t1 + 100

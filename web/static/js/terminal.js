@@ -120,7 +120,7 @@ export function terminalWindow(ctx) {
   // ── Abas ─────────────────────────────────────────────────────────
   const connOf = (t) => conns().find((x) => x.host && `${x.host}:${x.port || 22}` === t.addr && x.user === t.user);
   const baseTitle = (t) => { const c = connOf(t); return c?.name && conns().length > 1 ? c.name : `${t.user}@${shortAddr(t.addr)}`; };
-  // duas Abas no mesmo lugar ganham número: "ptbruno@servidor (2)"
+  // duas Abas no mesmo lugar ganham número: "usuario@servidor (2)"
   const tabTitle = (t) => {
     const same = tabs.filter((x) => baseTitle(x) === baseTitle(t));
     return same.length > 1 ? `${baseTitle(t)} (${same.indexOf(t) + 1})` : baseTitle(t);
@@ -327,7 +327,7 @@ export function terminalWindow(ctx) {
       <div class="term-grid">
         <label class="fld fld-host"><span>Servidor</span><input class="text-input" name="host" required value="${esc(prev?.host || main?.host || ctx.defaultHost || '')}" placeholder="192.168.1.50"></label>
         <label class="fld fld-port"><span>Porta</span><input class="text-input" name="port" type="number" min="1" max="65535" value="${esc(portValue(prev?.port || main?.port))}" placeholder="22"></label>
-        <label class="fld fld-user"><span>Usuário</span><input class="text-input" name="user" required value="${esc(prev?.user || main?.user || '')}" placeholder="ptbruno" autocapitalize="off" spellcheck="false"></label>
+        <label class="fld fld-user"><span>Usuário</span><input class="text-input" name="user" required value="${esc(prev?.user || main?.user || '')}" placeholder="usuario" autocapitalize="off" spellcheck="false"></label>
       </div>
       <div class="seg term-method">${k.exists ? `<button type="button" data-m="key" class="${method === 'key' ? 'on' : ''}">Chave do Terminal</button>` : ''}<button type="button" data-m="password" class="${method === 'password' ? 'on' : ''}">Senha</button><button type="button" data-m="paste" class="${method === 'paste' ? 'on' : ''}">Colar chave</button></div>
       <div data-auth="key" ${method === 'key' ? '' : 'hidden'}><small class="hint">A chave precisa estar autorizada neste servidor (⚙ Configurar → Chave do Terminal mostra o comando).</small></div>

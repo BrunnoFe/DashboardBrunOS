@@ -143,6 +143,19 @@ testes. Testes: `internal/disks`, `tests/script-discos.sh` (o script de verdade 
 `hdparm`, `journalctl`, `smartctl` e `dd` falsos). Lição: o plano dizia `/data/disks.json`, mas esse
 arquivo já guarda os discos mapeados do Arquivos; conferir os nomes em `/data` antes de criar um.
 
+## 0.15.1 (13/11): teste do disco que não some e dados genéricos
+Teste do próprio disco conferido a cada 30 s (antes, 3 min), com andamento em "X% concluído" que avança
+segundo a segundo (o disco informa de 10 em 10%; o tempo decorrido completa a barra) e o tempo desde o
+começo. Todo teste pedido termina com aviso no sino e na Linha do tempo, inclusive "interrompido" e "sem
+resultado anotado", e o resultado fica na tela (`lastRun`). A estimativa usa quanto o teste levou de
+verdade da última vez (a do disco era curta demais). Disco que anota "interrompido pelo computador" depois
+de ser perguntado no meio do teste passa a ser conferido só quando o tempo estimado acaba (`quietTest`);
+durante um teste, as leituras de rotina deixam o disco em paz. Lição do teste do Bruno: o SSD do sistema
+já tinha testes interrompidos de antes do BrunOS, e o kernel não registrou nenhum reset; um disco não
+interrompe o teste do outro. Dados reais (usuário, nome do servidor, notebook, discos, versão do Ubuntu)
+trocados por genéricos no modo demonstração, nos testes e nos comentários; corrida antiga no teste de
+`updates` corrigida.
+
 ## Pegadinhas que ainda valem
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).

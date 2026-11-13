@@ -9,8 +9,8 @@
 // "limite 50..100", "protecao on|off" ou "versao", e chama a si mesmo pelo sudo (o sudoers
 // libera só ele), conferindo o pedido de novo já como root.
 //
-// Por que systemctl e não "shutdown -h +1" para desligar: desde o systemd 257 (o Ubuntu 26.04
-// usa o 259) uma trava de desligamento ("block inhibitor") vale até para o root. O
+// Por que systemctl e não "shutdown -h +1" para desligar: desde o systemd 257 (as versões novas
+// do Ubuntu já usam) uma trava de desligamento ("block inhibitor") vale até para o root. O
 // unattended-upgrades segura uma o tempo todo, e o "shutdown -h +1" era recusado.
 // --check-inhibitors=no passa por cima da trava: numa queda de energia, desligar é mais seguro
 // que esperar a bateria acabar.

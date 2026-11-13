@@ -83,7 +83,7 @@ func detectCharge(sys string) chargeCap {
 	return c
 }
 
-// dmiModel monta "Dell Inspiron 3542" a partir do DMI (legível sem root).
+// dmiModel monta "Acme Notebook 15" a partir do DMI (legível sem root).
 func dmiModel(sys string) string {
 	vendor := strings.Fields(readTrim(filepath.Join(sys, "class/dmi/id/sys_vendor")))
 	product := readTrim(filepath.Join(sys, "class/dmi/id/product_name"))

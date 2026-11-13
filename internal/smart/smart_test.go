@@ -98,7 +98,7 @@ func byDev(s Snapshot, dev string) Disk {
 	return Disk{}
 }
 
-// Os casos do servidor do Bruno: case ASMedia (sat funciona), JMicron JMS583 com HD SATA (sat funciona,
+// Casos comuns: case USB que aceita o sat, case com chip de NVMe e um HD SATA dentro (sat funciona,
 // auto trava), disco interno, NVMe, HD parado, NVMe em case USB (sat recusa na hora, auto funciona) e
 // um case que trava com qualquer modo.
 func TestModesAndNoSmart(t *testing.T) {
@@ -113,7 +113,7 @@ func TestModesAndNoSmart(t *testing.T) {
 			"smart sda sat":      ataJSON("ST1000LM035", "S1", true, 0, 0, 36),
 			"smart sdb sat":      ataJSON("WDC WD10", "S2", true, 0, 0, 33),
 			"smart sdb auto":     hang,
-			"smart sdc auto":     ataJSON("SSD 360GB", "S3", true, 0, 0, 40),
+			"smart sdc auto":     ataJSON("SSD SATA 240GB", "S3", true, 0, 0, 40),
 			"smart nvme0n1 auto": nvmeJSON,
 			"smart sde sat":      standbyJSON,
 			"smart sdf sat":      refusedJSON,
@@ -217,7 +217,7 @@ func TestHealthEvents(t *testing.T) {
 	shortWaits(t)
 	dir := t.TempDir()
 	ev := events.New(filepath.Join(dir, "events.json"))
-	f := &fakeHost{disks: diskLine("sda", "sata", "WX1"), resp: map[string]string{"smart sda auto": ataJSON("WDC WD10JPVX", "WX1", true, 0, 0, 33)}}
+	f := &fakeHost{disks: diskLine("sda", "sata", "WX1"), resp: map[string]string{"smart sda auto": ataJSON("HD SATA 1TB", "WX1", true, 0, 0, 33)}}
 	now := time.Unix(1_800_000_000, 0)
 	m := New(filepath.Join(dir, "smart.json"), f.query, ev)
 	m.Now = func() time.Time { return now }
@@ -229,7 +229,7 @@ func TestHealthEvents(t *testing.T) {
 	}
 	// setores realocados → aviso uma vez; a mesma leitura de novo não repete
 	now = now.Add(6 * time.Hour)
-	f.resp["smart sda auto"] = ataJSON("WDC WD10JPVX", "WX1", true, 8, 1, 35)
+	f.resp["smart sda auto"] = ataJSON("HD SATA 1TB", "WX1", true, 8, 1, 35)
 	_ = m.Refresh(context.Background())
 	_ = m.Refresh(context.Background())
 	list, _ := ev.List()
@@ -240,7 +240,7 @@ func TestHealthEvents(t *testing.T) {
 		t.Fatalf("atenção e histórico: %+v", d)
 	}
 	// o disco declara falha → crítico
-	f.resp["smart sda auto"] = ataJSON("WDC WD10JPVX", "WX1", false, 8, 1, 35)
+	f.resp["smart sda auto"] = ataJSON("HD SATA 1TB", "WX1", false, 8, 1, 35)
 	_ = m.Refresh(context.Background())
 	list, _ = ev.List()
 	if len(list) != 2 || list[0].Level != "critico" || byDev(m.Snapshot(), "sda").Health != HealthFail {

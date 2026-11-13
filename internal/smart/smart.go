@@ -6,7 +6,7 @@
 //
 // Modo: disco USB tenta primeiro "sat" (-d sat, disco SATA atrás do adaptador) e, se o adaptador
 // recusar na hora, "auto" (o smartctl decide, e conhece as pontes USB de NVMe). O chip do case não diz
-// o que tem dentro: o JMicron JMS583 é de NVMe e pode ter um HD SATA, e aí o "auto" trava. O modo que
+// o que tem dentro: um chip feito para NVMe pode ter um HD SATA dentro, e aí o "auto" trava. O modo que
 // funcionou fica guardado pelo número de série (as letras sda, sdb mudam ao reiniciar).
 //
 // "Basta uma vez": um disco que travou (o adaptador não responde e o kernel reinicia o USB do disco
@@ -109,6 +109,23 @@ type Disk struct {
 	LongMin   int          `json:"longMin,omitempty"`   // e o longo
 	TestAsked int64        `json:"testAsked,omitempty"` // quando o BrunOS pediu o teste em andamento
 	TestKind  string       `json:"testKind,omitempty"`  // curto ou longo (o pedido do BrunOS)
+	// 0.15.1: o resultado do último teste pedido (nunca "some"), quanto os testes levaram de verdade e se
+	// o disco interrompe o teste quando é perguntado no meio (aí o BrunOS só pergunta no fim).
+	LastRun   *LastRun `json:"lastRun,omitempty"`
+	ShortTook int      `json:"shortTook,omitempty"` // segundos
+	LongTook  int      `json:"longTook,omitempty"`
+	QuietTest bool     `json:"quietTest,omitempty"`
+	TestReads int      `json:"testReads,omitempty"` // leituras feitas durante o teste atual
+}
+
+// LastRun é como terminou o último teste pedido pelo BrunOS.
+type LastRun struct {
+	Kind   string `json:"kind"`   // curto ou longo
+	Asked  int64  `json:"asked"`  // quando foi pedido
+	Ended  int64  `json:"ended"`  // quando o BrunOS viu que terminou
+	Result string `json:"result"` // ok, falhou, interrompido, sem-resultado
+	Status string `json:"status,omitempty"`
+	Quiet  bool   `json:"quiet,omitempty"` // a partir deste teste o BrunOS só pergunta no fim
 }
 
 // Attr é um atributo do SMART. ATA: número, valor normalizado, pior, limite e o valor cru. NVMe: Key é
@@ -167,12 +184,16 @@ type Monitor struct {
 	base     context.Context // contexto do Run (leituras em segundo plano)
 	lastFull time.Time
 	lastTemp time.Time
-	lastTest time.Time // última leitura de um disco com teste em andamento
+	testAt   map[string]time.Time // última leitura de cada disco com teste em andamento
 	running  bool
 }
 
-// testEvery: com um teste do próprio disco em andamento, o disco é lido de novo neste intervalo.
-const testEvery = 3 * time.Minute
+// testEvery: com um teste do próprio disco em andamento, o andamento é conferido neste intervalo
+// (discos que interrompem o teste quando perguntados: só depois do tempo estimado, a cada quietEvery).
+var (
+	testEvery  = 30 * time.Second
+	quietEvery = time.Minute
+)
 
 func New(file string, q Query, ev *events.Store) *Monitor {
 	m := &Monitor{File: file, Query: q, Events: ev, Now: time.Now, st: state{Version: stateVersion, Disks: map[string]*Disk{}}}
@@ -204,7 +225,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.mu.Lock()
 	m.base = ctx
 	m.mu.Unlock()
-	t := time.NewTicker(time.Minute)
+	t := time.NewTicker(10 * time.Second) // cada leitura tem sua hora; o passo curto é para o andamento dos testes
 	defer t.Stop()
 	select { // espera o servidor subir antes da primeira leitura
 	case <-ctx.Done():
@@ -289,6 +310,12 @@ func (m *Monitor) refresh(ctx context.Context) error {
 			if ctx.Err() != nil {
 				err = ctx.Err()
 				break
+			}
+			m.mu.Lock()
+			testing := m.st.Disks[k] != nil && m.st.Disks[k].Test != nil
+			m.mu.Unlock()
+			if testing { // o acompanhamento do teste lê este disco no tempo dele
+				continue
 			}
 			evs, e := m.readFull(ctx, k, now)
 			notify = append(notify, evs...)
@@ -387,26 +414,53 @@ func (m *Monitor) SelfTest(ctx context.Context, key, kind string) error {
 	}
 	now := m.Now()
 	m.mu.Lock()
-	d.TestAsked, d.TestKind, d.Test = now.Unix(), kind, &TestRun{Kind: kind, Remaining: 100}
-	m.lastTest = now
+	d.TestAsked, d.TestKind, d.Test, d.TestReads = now.Unix(), kind, &TestRun{Kind: kind, Remaining: 100}, 0
+	if m.testAt == nil {
+		m.testAt = map[string]time.Time{}
+	}
+	m.testAt[key] = now // a primeira conferência fica para daqui a testEvery
+	quiet := d.QuietTest
 	m.mu.Unlock()
+	slog.Info("smart: teste pedido", "disco", d.Dev, "tipo", kind, "soNoFim", quiet)
 	m.note(key, "teste", "info", "Teste "+kind+" iniciado pelo BrunOS")
 	m.save()
 	return nil
 }
 
-// testing devolve os discos com teste em andamento que já estão na hora de ser lidos de novo.
+// estimate: quanto o teste deve levar (o que levou da última vez, senão o que o disco diz).
+func estimate(d *Disk) time.Duration {
+	took, poll, def := d.ShortTook, d.ShortMin, 2*time.Minute
+	if d.TestKind == hostcmd.TestLong {
+		took, poll, def = d.LongTook, d.LongMin, 2*time.Hour
+	}
+	switch {
+	case took > 0:
+		return time.Duration(took) * time.Second
+	case poll > 0:
+		return time.Duration(poll) * time.Minute
+	}
+	return def
+}
+
+// testing devolve os discos com teste em andamento que já estão na hora de ser conferidos: a cada 30 s;
+// disco que interrompe o teste quando perguntado (QuietTest), só depois do tempo estimado.
 func (m *Monitor) testing(now time.Time) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if now.Sub(m.lastTest) < testEvery {
-		return nil
-	}
 	var keys []string
 	for k, d := range m.st.Disks {
-		if d.Test != nil && !d.Gone && !d.NoSmart {
-			keys = append(keys, k)
+		if d.Test == nil || d.Gone || d.NoSmart {
+			continue
 		}
+		last := m.testAt[k]
+		if d.QuietTest {
+			if now.Before(time.Unix(d.TestAsked, 0).Add(estimate(d)+15*time.Second)) || now.Sub(last) < quietEvery {
+				continue
+			}
+		} else if now.Sub(last) < testEvery {
+			continue
+		}
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	return keys
@@ -420,7 +474,15 @@ func (m *Monitor) followTests(ctx context.Context, keys []string) {
 	defer m.end()
 	now := m.Now()
 	m.mu.Lock()
-	m.lastTest = now
+	if m.testAt == nil {
+		m.testAt = map[string]time.Time{}
+	}
+	for _, k := range keys {
+		m.testAt[k] = now
+		if d := m.st.Disks[k]; d != nil {
+			d.TestReads++
+		}
+	}
 	m.mu.Unlock()
 	var notify []events.Event
 	for _, k := range keys {
@@ -592,8 +654,12 @@ func (m *Monitor) readFull(ctx context.Context, key string, now time.Time) ([]ev
 		apply(d, r.data, now, true)
 		evs := changes(prev, d)
 		notes := timeline(prev, d)
-		if prev.Test != nil && d.Test == nil {
-			d.TestAsked, d.TestKind = 0, ""
+		if prev.Test != nil && d.Test == nil { // o teste terminou: o resultado nunca "some"
+			ev, note := finishTest(prev, d, now)
+			if ev != nil {
+				evs = append(evs, *ev)
+			}
+			notes = append(notes, note)
 		}
 		if d.Temp != nil && m.SetTemp != nil {
 			m.SetTemp(d.Dev, *d.Temp, now)
@@ -656,7 +722,7 @@ func (m *Monitor) readTemps(ctx context.Context) {
 	m.mu.Lock()
 	m.lastTemp = now
 	for k, d := range m.st.Disks {
-		if !d.Gone && !d.NoSmart && d.Mode != "" {
+		if !d.Gone && !d.NoSmart && d.Mode != "" && d.Test == nil { // em teste: só o acompanhamento pergunta
 			jobs = append(jobs, job{k, d.Dev, d.Mode})
 		}
 	}
@@ -727,19 +793,91 @@ func changes(prev Disk, d *Disk) []events.Event {
 			Body: fmt.Sprintf("Realocados: %d · pendentes: %d · incorrigíveis: %d. Pode ser o começo de uma falha: confira o backup.",
 				d.Reallocated, d.Pending, d.Uncorrectable)})
 	}
-	// teste pedido pelo BrunOS terminou (0.15.0)
-	if prev.Test != nil && d.Test == nil && prev.TestAsked > 0 && len(d.Tests) > 0 {
-		t := d.Tests[0]
-		ev := events.Event{Kind: "disk-selftest", Level: events.Info, Key: fmt.Sprintf("smart-test:%s:%d", id, prev.TestAsked),
-			Title: "Teste " + prev.TestKind + " terminou sem erros: " + name,
-			Body:  "O próprio disco se testou e não achou problema."}
-		if !t.Passed {
-			ev.Level, ev.Title = events.Aviso, "Teste "+prev.TestKind+" com problema: "+name
-			ev.Body = "O disco terminou o teste com o resultado \"" + t.Status + "\". Se for erro de leitura, confira o backup do que está nele; se foi interrompido, dá para pedir de novo na janela Discos."
-		}
-		out = append(out, ev)
-	}
 	return out
+}
+
+// finishTest: o disco parou de mostrar o teste em andamento. Monta o resultado (que fica no LastRun e
+// nunca some), aprende quanto o teste levou e marca o disco que interrompe o teste quando é perguntado.
+func finishTest(prev Disk, d *Disk, now time.Time) (*events.Event, [3]string) {
+	name := d.Dev
+	if d.Model != "" {
+		name = fmt.Sprintf("%s (%s)", d.Dev, d.Model)
+	}
+	id := d.Serial
+	if id == "" {
+		id = d.Dev
+	}
+	kind := prev.TestKind
+	if kind == "" {
+		kind = "do disco"
+	}
+	lr := &LastRun{Kind: prev.TestKind, Asked: prev.TestAsked, Ended: now.Unix(), Result: "sem-resultado"}
+	isNew := len(d.Tests) > 0 && (len(prev.Tests) == 0 || d.Tests[0] != prev.Tests[0])
+	took := 0
+	if prev.TestAsked > 0 {
+		took = int(now.Unix() - prev.TestAsked)
+	}
+	if isNew {
+		t := d.Tests[0]
+		lr.Status = t.Status
+		switch {
+		case t.Passed:
+			lr.Result = "ok"
+		case strings.Contains(strings.ToLower(t.Status), "aborted") || strings.Contains(strings.ToLower(t.Status), "interrupted"):
+			lr.Result = "interrompido"
+		default:
+			lr.Result = "falhou"
+		}
+	}
+	if lr.Result == "ok" && took > 0 {
+		if prev.TestKind == hostcmd.TestLong {
+			d.LongTook = took
+		} else if prev.TestKind == hostcmd.TestShort {
+			d.ShortTook = took
+		}
+	}
+	// "interrompido pelo computador" depois de o BrunOS perguntar o andamento: este disco não gosta de ser
+	// perguntado durante o teste; dos próximos em diante, só no fim
+	if lr.Result == "interrompido" && strings.Contains(strings.ToLower(lr.Status), "host") && prev.TestReads > 0 && !d.QuietTest {
+		d.QuietTest, lr.Quiet = true, true
+	}
+	slog.Info("smart: teste terminou", "disco", d.Dev, "tipo", kind, "resultado", lr.Result, "registro", lr.Status,
+		"segundos", took, "leiturasNoMeio", prev.TestReads)
+	if prev.TestAsked > 0 {
+		d.LastRun = lr
+	}
+	d.TestAsked, d.TestKind, d.TestReads = 0, "", 0
+	mins := ""
+	if took >= 60 {
+		mins = fmt.Sprintf(" Levou cerca de %d min.", (took+30)/60)
+	}
+	var ev events.Event
+	note := [3]string{"teste", "info", ""}
+	switch lr.Result {
+	case "ok":
+		ev = events.Event{Level: events.Info, Title: "Teste " + kind + " terminou sem erros: " + name, Body: "O próprio disco se testou e não achou problema." + mins}
+		note[2] = "Teste " + kind + " terminou sem erros"
+	case "falhou":
+		ev = events.Event{Level: events.Aviso, Title: "Teste " + kind + " com problema: " + name,
+			Body: "O disco terminou o teste com o resultado \"" + lr.Status + "\". Confira o backup do que está nele."}
+		note[1], note[2] = "aviso", "Teste "+kind+" com problema: "+lr.Status
+	case "interrompido":
+		body := "O disco anotou o teste como interrompido (\"" + lr.Status + "\"). Isso acontece quando o disco é desligado, reiniciado ou entra em economia de energia no meio do teste. Pode pedir de novo na janela Discos."
+		if lr.Quiet {
+			body = "O disco anotou \"" + lr.Status + "\". Alguns discos param o teste quando alguém pergunta o andamento no meio dele. Nos próximos testes deste disco o BrunOS só pergunta quando o tempo estimado acabar. Pode pedir de novo na janela Discos."
+		}
+		ev = events.Event{Level: events.Aviso, Title: "Teste " + kind + " interrompido: " + name, Body: body}
+		note[1], note[2] = "aviso", "Teste "+kind+" interrompido: "+lr.Status
+	default:
+		ev = events.Event{Level: events.Aviso, Title: "Teste " + kind + " terminou sem resultado: " + name,
+			Body: "O disco parou de mostrar o teste em andamento, mas não anotou o resultado no registro dele. Pode pedir de novo; se acontecer sempre, este disco não guarda o resultado dos testes."}
+		note[1], note[2] = "aviso", "Teste "+kind+" terminou sem resultado anotado pelo disco"
+	}
+	if prev.TestAsked == 0 { // teste que não foi o BrunOS que pediu: só a Linha do tempo
+		return nil, note
+	}
+	ev.Kind, ev.Key = "disk-selftest", fmt.Sprintf("smart-test:%s:%d", id, prev.TestAsked)
+	return &ev, note
 }
 
 // timeline: o que entra na Linha do tempo do disco nesta leitura (tipo, nível, texto).
@@ -756,15 +894,7 @@ func timeline(prev Disk, d *Disk) [][3]string {
 	if d.Reallocated > prev.Reallocated || d.Pending > prev.Pending {
 		out = append(out, [3]string{"smart", "aviso", fmt.Sprintf("Setores com problema: %d realocados, %d pendentes", d.Reallocated, d.Pending)})
 	}
-	if prev.Test != nil && d.Test == nil && len(d.Tests) > 0 {
-		t := d.Tests[0]
-		lvl := "info"
-		if !t.Passed {
-			lvl = "aviso"
-		}
-		out = append(out, [3]string{"teste", lvl, "Teste terminou: " + t.Kind + " · " + t.Status})
-	}
-	return out
+	return out // o fim de um teste é anotado pelo finishTest
 }
 
 // Snapshot é o que a interface recebe.
@@ -790,6 +920,10 @@ func (m *Monitor) Snapshot() Snapshot {
 		if d.Test != nil {
 			t := *d.Test
 			cp.Test = &t
+		}
+		if d.LastRun != nil {
+			lr := *d.LastRun
+			cp.LastRun = &lr
 		}
 		out.Disks = append(out.Disks, cp)
 	}
@@ -992,7 +1126,7 @@ func attrsOf(s *smartJSON) []Attr {
 func testsOf(d *Disk, s *smartJSON, now time.Time) {
 	var run *TestRun
 	var res []TestResult
-	known := false
+	known, logSeen := false, false
 	if s.ATAData != nil && s.ATAData.SelfTest != nil {
 		known = true
 		st := s.ATAData.SelfTest
@@ -1006,7 +1140,7 @@ func testsOf(d *Disk, s *smartJSON, now time.Time) {
 		}
 	}
 	if s.ATALog != nil && s.ATALog.Standard != nil {
-		known = true
+		known, logSeen = true, true
 		for _, t := range s.ATALog.Standard.Table {
 			if len(res) >= 5 {
 				break
@@ -1018,7 +1152,7 @@ func testsOf(d *Disk, s *smartJSON, now time.Time) {
 		}
 	}
 	if s.NVMeLog != nil {
-		known = true
+		known, logSeen = true, true
 		if s.NVMeLog.Current.Value != 0 {
 			rem := 100
 			if c := s.NVMeLog.Completion; c != nil {
@@ -1047,7 +1181,9 @@ func testsOf(d *Disk, s *smartJSON, now time.Time) {
 		run.Kind = d.TestKind
 	}
 	d.Test = run
-	d.Tests = res
+	if logSeen { // leitura sem o registro (o adaptador não mandou) não apaga os resultados conhecidos
+		d.Tests = res
+	}
 }
 
 // apply copia os números para o disco. full = leitura completa (-H -i -A), senão só temperatura (-A).

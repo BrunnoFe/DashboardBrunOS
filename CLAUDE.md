@@ -37,7 +37,9 @@ disco, caminhos de pastas dele), modelo do notebook/discos/adaptadores, versão 
 do acesso ao servidor** (usuários e chaves SSH restritos, pedidos aceitos pelo script, onde ficam os
 segredos, parâmetros da senha, travas de formatação). Use nomes genéricos (`<usuário>`, `/mnt/disco1`,
 `192.168.1.50` de exemplo). Esses detalhes ficam em `docs/privado/` (`seguranca.md`, `servidor.md`),
-que o git ignora. Em dúvida, pergunte ao Bruno. O Bruno pediu isso desde o commit `1713d35` e reforçou na
+que o git ignora. Vale também para o modo demonstração (`web/static/js/api.js`), testes, fixtures e
+comentários: nomes de pastas, discos e modelos sempre genéricos (`Disco1`, `HD USB 1TB`). Em dúvida,
+pergunte ao Bruno. O Bruno pediu isso desde o commit `1713d35` e reforçou na
 limpeza de 12/11/2026.
 
 ## Regras de engenharia (não quebre sem combinar)

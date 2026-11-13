@@ -310,12 +310,12 @@ function makeDemo() {
   const nowS = Math.floor(Date.now() / 1000);
   const disks = [
     { name: 'Sistema', device: '/dev/sdc2', total: 312 * GB, used: 33 * GB, system: true, rotational: false, model: 'SSD', temp: 34, tempAt: nowS },
-    { name: '1TB_HDD', device: '/dev/sdd', total: 984 * GB, used: 463 * GB, rotational: true, model: 'HDD', temp: 41, tempAt: nowS },
-    { name: '1TB_HDD2', device: '/dev/sda', total: 984 * GB, used: 246 * GB, rotational: true, model: 'HDD', temp: 37, tempAt: nowS - 3 * 3600 }, // parado há 3 h
-    { name: '1TB_HDD3', device: '/dev/sdb', total: 984 * GB, used: 462 * GB, rotational: true, model: 'HDD', temp: 52, tempAt: nowS },
+    { name: 'Disco1', device: '/dev/sdd', total: 984 * GB, used: 463 * GB, rotational: true, model: 'HDD', temp: 41, tempAt: nowS },
+    { name: 'Disco2', device: '/dev/sda', total: 984 * GB, used: 246 * GB, rotational: true, model: 'HDD', temp: 37, tempAt: nowS - 3 * 3600 }, // parado há 3 h
+    { name: 'Disco3', device: '/dev/sdb', total: 984 * GB, used: 462 * GB, rotational: true, model: 'HDD', temp: 52, tempAt: nowS },
   ].map((d) => ({ ...d, free: d.total - d.used }));
   // previsão de disco cheio: 30 dias de histórico simulado (GB por dia de cada disco)
-  const growth = { Sistema: 0.15, '1TB_HDD': 3.6, '1TB_HDD2': 0, '1TB_HDD3': 12.4 };
+  const growth = { Sistema: 0.15, 'Disco1': 3.6, 'Disco2': 0, 'Disco3': 12.4 };
   const forecast = disks.map((d) => {
     const g = growth[d.name] * GB;
     const points = Array.from({ length: 30 }, (_, i) => ({ d: new Date((nowS - (29 - i) * 86400) * 1000).toISOString().slice(0, 10), u: d.used - (29 - i) * g, f: d.free + (29 - i) * g }));
@@ -362,18 +362,18 @@ function makeDemo() {
   const F = (name, size, ago) => ({ name, size, mtime: now - ago * day });
   const D = (name, children, ago = 2) => ({ name, dir: true, children, mtime: now - ago * day });
   const tree = {
-    home: D('', [D('ptbruno', [
+    home: D('', [D('usuario', [
       D('Documentos', [D('Mestrado', [F('Dissertação_v12.docx', 3.1e6, 4), F('analise_ERP.py', 18e3, 2), F('figuras_P300.png', 840e3, 2)]), F('Laudo_modelo.docx', 210e3, 30), F('Planilha_correcao.xlsx', 96e3, 3), F('notas.md', 4e3, 0)]),
       D('Downloads', [F('ubuntu-24.04-live-server-amd64.iso', 2.6e9, 21), F('Neuropsychologia_guide.pdf', 1.4e6, 7)]),
       D('Fotos', [F('IMG_2041.heic', 3.2e6, 7), F('wallpaper-lago.jpg', 2.1e6, 60)]),
       D('runtipi', [D('apps', []), D('app-data', [])], 40),
     ])]),
-    '1tb-hdd': D('', [D('Filmes', [F('Filme (2003).mkv', 7.4e9, 30), F('Outro filme.mkv', 2.2e9, 31)]), D('Séries', [])]),
-    '1tb-hdd2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
-    '1tb-hdd3': D('', [D('Immich', []), D('Nextcloud', [])]),
+    'disco1': D('', [D('Filmes', [F('Filme (2003).mkv', 7.4e9, 30), F('Outro filme.mkv', 2.2e9, 31)]), D('Séries', [])]),
+    'disco2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
+    'disco3': D('', [D('Immich', []), D('Nextcloud', [])]),
   };
-  const rootsMeta = [['home', 'Home', 312, 33], ['1tb-hdd', '1TB_HDD', 984, 463], ['1tb-hdd2', '1TB_HDD2', 984, 246], ['1tb-hdd3', '1TB_HDD3', 984, 462], ['ssd', 'SSD', 0, 0], ['ssd-nvme', 'SSD_NVME', 0, 0]];
-  let demoMapped = ['1TB_HDD', '1TB_HDD2', '1TB_HDD3'];
+  const rootsMeta = [['home', 'Home', 312, 33], ['disco1', 'Disco1', 984, 463], ['disco2', 'Disco2', 984, 246], ['disco3', 'Disco3', 984, 462], ['ssd', 'SSD', 0, 0], ['ssd-nvme', 'SSD_NVME', 0, 0]];
+  let demoMapped = ['Disco1', 'Disco2', 'Disco3'];
   // Janela Discos (0.15.0): SMART com atributos e testes, e a lista detalhada dos discos
   const at = (id, name, value, worst, thresh, raw, extra = {}) => ({ id, name, value, worst, thresh, raw, ...extra });
   const hdAttrs = (realloc, pending, temp, hours, crc = 0) => [at(1, 'Raw_Read_Error_Rate', 100, 100, 62, 0, { prefail: true }), at(3, 'Spin_Up_Time', 140, 133, 33, 1820, { prefail: true }),
@@ -382,15 +382,16 @@ function makeDemo() {
     at(194, 'Temperature_Celsius', 100 - temp, 45, 0, temp, { rawStr: `${temp} (Min/Max 18/52)` }), at(197, 'Current_Pending_Sector', 100, 100, 0, pending), at(198, 'Offline_Uncorrectable', 100, 100, 0, 0),
     at(199, 'UDMA_CRC_Error_Count', 200, 200, 0, crc), at(241, 'Total_LBAs_Written', 100, 100, 0, 9.1e10), at(242, 'Total_LBAs_Read', 100, 100, 0, 2.3e11)];
   const demoSmartDisks = [
-    { key: 'D-SDA', dev: 'sda', tran: 'usb', mode: 'sat', model: 'TOSHIBA MQ01ABD100', health: 'atencao', passed: true, temp: 39, tempAt: now - 600, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+    { key: 'D-SDA', dev: 'sda', tran: 'usb', mode: 'sat', model: 'HD USB 1TB', health: 'atencao', passed: true, temp: 39, tempAt: now - 600, powerOnHours: 38900, powerCycles: 5400, reallocated: 8, pending: 1, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
       history: [{ at: now - 86400 * 20, reallocated: 0, pending: 0, passed: true }, { at: now - 3600, reallocated: 8, pending: 1, passed: true }],
       attrs: hdAttrs(8, 1, 39, 38900, 3), shortMin: 2, longMin: 182, tests: [{ kind: 'Short offline', status: 'Completed without error', passed: true, hours: 38750 }, { kind: 'Extended offline', status: 'Completed: read failure', passed: false, hours: 38020 }] },
-    { key: 'D-SDB', dev: 'sdb', tran: 'usb', model: 'JMicron Tech', health: '', noSmart: true, noSmartWhy: 'travou', noSmartAt: now - 7200, failMode: 'sat', reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: 0 },
-    { key: 'D-SDC', dev: 'sdc', tran: 'sata', mode: 'auto', model: 'SSD 360GB', health: 'ok', passed: true, temp: 34, tempAt: now - 300, powerOnHours: 9100, powerCycles: 880, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+    { key: 'D-SDB', dev: 'sdb', tran: 'usb', model: 'Case USB', health: '', noSmart: true, noSmartWhy: 'travou', noSmartAt: now - 7200, failMode: 'sat', reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: 0 },
+    { key: 'D-SDC', dev: 'sdc', tran: 'sata', mode: 'auto', model: 'SSD SATA 240GB', health: 'ok', passed: true, temp: 34, tempAt: now - 300, powerOnHours: 9100, powerCycles: 880, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
       attrs: [at(5, 'Reallocated_Sector_Ct', 100, 100, 10, 0, { prefail: true }), at(9, 'Power_On_Hours', 99, 99, 0, 9100), at(12, 'Power_Cycle_Count', 99, 99, 0, 880), at(174, 'Unexpect_Power_Loss_Ct', 100, 100, 0, 41),
         at(177, 'Wear_Leveling_Count', 94, 94, 0, 61, { prefail: true }), at(194, 'Temperature_Celsius', 66, 52, 0, 34), at(199, 'UDMA_CRC_Error_Count', 100, 100, 0, 0), at(241, 'Total_LBAs_Written', 99, 99, 0, 3.4e10)],
-      shortMin: 2, longMin: 30, tests: [] },
-    { key: 'D-SDD', dev: 'sdd', tran: 'sata', mode: 'auto', model: 'WDC WD10JPVX-75J', health: 'ok', passed: true, temp: 33, tempAt: now - 900, powerOnHours: 17200, powerCycles: 2100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
+      shortMin: 2, longMin: 30, quietTest: true, lastRun: { kind: 'curto', asked: now - 5400, ended: now - 5130, result: 'interrompido', status: 'Aborted by host', quiet: true },
+      tests: [{ kind: 'Short offline', status: 'Aborted by host', passed: false, hours: 9100 }, { kind: 'Short offline', status: 'Completed without error', passed: true, hours: 8800 }] },
+    { key: 'D-SDD', dev: 'sdd', tran: 'sata', mode: 'auto', model: 'HD SATA 1TB', health: 'ok', passed: true, temp: 33, tempAt: now - 900, powerOnHours: 17200, powerCycles: 2100, reallocated: 0, pending: 0, uncorrectable: 0, crcErrors: 0, mediaErrors: 0, checkedAt: now - 3600,
       attrs: hdAttrs(0, 0, 33, 17200), shortMin: 2, longMin: 160, tests: [{ kind: 'Short offline', status: 'Completed without error', passed: true, hours: 17100 }] },
   ];
   const demoSpeeds = { 'D-SDD': { mbps: 112.4, bytes: 1073741824, secs: 9.55, at: now - 86400 * 2 } };
@@ -398,17 +399,17 @@ function makeDemo() {
   const demoEjected = new Set();
   const P = (name, size, fsType, label, mounts, used, extra = {}) => ({ name, path: `/dev/${name}`, fsType, label, size: size * GB, mounts, ...(used != null ? { used: used * GB, avail: (size * 0.985 - used) * GB } : {}), ...extra });
   const demoDiskList = () => [
-    { key: 'D-SDA', dev: 'sda', model: 'TOSHIBA MQ01ABD100', vendor: 'TOSHIBA', serial: 'D-SDA', rev: 'AX1P5E', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-TOSHIBA_MQ01ABD100_D-SDA-0:0',
-      parts: [P('sda1', 1000, 'ext4', '1TB_HDD2', ['/mnt/1TB_HDD2'], 246, { fstab: '/mnt/1TB_HDD2', hist: '1TB_HDD2', root: '1tb-hdd2' })], first: now - 86400 * 210,
-      apps: [{ urn: 'syncthing:migrated', name: 'Syncthing', folders: ['/mnt/1TB_HDD2/Backups'] }] },
-    { key: 'D-SDB', dev: 'sdb', model: 'JMicron Tech', vendor: 'JMicron', serial: 'D-SDB', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-JMicron_Tech_D-SDB-0:0',
-      parts: [P('sdb1', 1000, 'ext4', '1TB_HDD3', ['/mnt/1TB_HDD3'], 462, { fstab: '/mnt/1TB_HDD3', hist: '1TB_HDD3', root: '1tb-hdd3' })], first: now - 86400 * 180,
-      apps: [{ urn: 'immich:migrated', name: 'Immich', folders: ['/mnt/1TB_HDD3/Immich'] }, { urn: 'nextcloud-mini:migrated', name: 'Nextcloud', folders: ['/mnt/1TB_HDD3/Nextcloud'] }] },
-    { key: 'D-SDC', dev: 'sdc', model: 'SSD 360GB', serial: 'D-SDC', rev: 'S0516A0', tran: 'sata', ptType: 'gpt', size: 360 * GB, rotational: false, system: true, byId: '/dev/disk/by-id/ata-SSD_360GB_D-SDC',
+    { key: 'D-SDA', dev: 'sda', model: 'HD USB 1TB', vendor: 'Genérico', serial: 'D-SDA', rev: 'AX1P5E', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-Generico_HD_USB_1TB_D-SDA-0:0',
+      parts: [P('sda1', 1000, 'ext4', 'Disco2', ['/mnt/Disco2'], 246, { fstab: '/mnt/Disco2', hist: 'Disco2', root: 'disco2' })], first: now - 86400 * 210,
+      apps: [{ urn: 'syncthing:migrated', name: 'Syncthing', folders: ['/mnt/Disco2/Backups'] }] },
+    { key: 'D-SDB', dev: 'sdb', model: 'Case USB', vendor: 'Genérico', serial: 'D-SDB', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-Generico_Case_USB_D-SDB-0:0',
+      parts: [P('sdb1', 1000, 'ext4', 'Disco3', ['/mnt/Disco3'], 462, { fstab: '/mnt/Disco3', hist: 'Disco3', root: 'disco3' })], first: now - 86400 * 180,
+      apps: [{ urn: 'immich:migrated', name: 'Immich', folders: ['/mnt/Disco3/Immich'] }, { urn: 'nextcloud-mini:migrated', name: 'Nextcloud', folders: ['/mnt/Disco3/Nextcloud'] }] },
+    { key: 'D-SDC', dev: 'sdc', model: 'SSD SATA 240GB', serial: 'D-SDC', rev: 'S0516A0', tran: 'sata', ptType: 'gpt', size: 360 * GB, rotational: false, system: true, byId: '/dev/disk/by-id/ata-SSD_SATA_240GB_D-SDC',
       parts: [P('sdc1', 1.1, 'vfat', '', ['/boot/efi'], 0.006), P('sdc2', 312, 'ext4', '', ['/'], 33, { hist: 'Sistema' }), P('sdc3', 46, 'swap', '', ['[SWAP]'])], first: now - 86400 * 240, apps: [] },
-    { key: 'D-SDD', dev: 'sdd', model: 'WDC WD10JPVX-75J', vendor: 'ATA', serial: 'D-SDD', rev: '01.01A01', tran: 'sata', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/ata-WDC_WD10JPVX-75J_D-SDD',
-      parts: [P('sdd1', 1000, 'ext4', '1TB_HDD', ['/mnt/1TB_HDD'], 463, { fstab: '/mnt/1TB_HDD', hist: '1TB_HDD', root: '1tb-hdd' })], first: now - 86400 * 240,
-      apps: [{ urn: 'plex:migrated', name: 'Plex', folders: ['/mnt/1TB_HDD/Filmes', '/mnt/1TB_HDD/Séries'] }, { urn: 'transmission:migrated', name: 'Transmission', folders: ['/mnt/1TB_HDD/Downloads'] }] },
+    { key: 'D-SDD', dev: 'sdd', model: 'HD SATA 1TB', vendor: 'ATA', serial: 'D-SDD', rev: '01.01A01', tran: 'sata', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/ata-HD_SATA_1TB_D-SDD',
+      parts: [P('sdd1', 1000, 'ext4', 'Disco1', ['/mnt/Disco1'], 463, { fstab: '/mnt/Disco1', hist: 'Disco1', root: 'disco1' })], first: now - 86400 * 240,
+      apps: [{ urn: 'plex:migrated', name: 'Plex', folders: ['/mnt/Disco1/Filmes', '/mnt/Disco1/Séries'] }, { urn: 'transmission:migrated', name: 'Transmission', folders: ['/mnt/Disco1/Downloads'] }] },
     { key: 'D-SDE', dev: 'sde', model: 'Ultra Fit', vendor: 'SanDisk', serial: 'D-SDE', rev: '1.00', tran: 'usb', ptType: 'dos', size: 64 * GB, rotational: false, removable: true, byId: '/dev/disk/by-id/usb-SanDisk_Ultra_Fit_D-SDE-0:0',
       parts: [P('sde1', 64, 'exfat', 'PENDRIVE', [], null)], first: now - 3 * 3600, apps: [] },
   ].filter((d) => !demoEjected.has(d.key)).map((d) => {
@@ -418,7 +419,7 @@ function makeDemo() {
   const demoTimeline = {
     'D-SDA': [{ at: now - 3600, kind: 'smart', level: 'aviso', text: 'Saúde (SMART) mudou de OK para Atenção' }, { at: now - 3600, kind: 'smart', level: 'aviso', text: 'Setores com problema: 8 realocados, 1 pendentes' },
       { at: now - 86400 * 4, kind: 'temperatura', text: 'Esfriou: 48 °C' }, { at: now - 86400 * 4 - 5400, kind: 'temperatura', level: 'aviso', text: 'Chegou a 56 °C (alerta a partir de 55 °C)' },
-      { at: now - 86400 * 9, kind: 'montado', text: 'Montado em /mnt/1TB_HDD2' }, { at: now - 86400 * 9 - 60, kind: 'conectado', text: 'Conectado de novo como /dev/sda' },
+      { at: now - 86400 * 9, kind: 'montado', text: 'Montado em /mnt/Disco2' }, { at: now - 86400 * 9 - 60, kind: 'conectado', text: 'Conectado de novo como /dev/sda' },
       { at: now - 86400 * 9 - 900, kind: 'sumiu', level: 'aviso', text: 'Sumiu da lista de discos (desligado ou desconectado)' }, { at: now - 86400 * 210, kind: 'visto', text: 'Visto pela primeira vez pelo BrunOS como /dev/sda' }],
     'D-SDE': [{ at: now - 3 * 3600, kind: 'novo', text: 'Conectado pela primeira vez como /dev/sde' }],
   };
@@ -432,8 +433,8 @@ function makeDemo() {
     E(60 * 8, 'login-new', 'aviso', 'Novo acesso: Safari no iPhone', 'Alguém entrou no BrunOS com Safari no iPhone pela internet (177.32.10.4). Se foi você, pode ignorar. Se não foi, troque a senha em Configurações → Trocar senha.', false),
     E(60 * 40, 'power-restored', 'info', 'A energia voltou', 'Ficou 12 min na bateria e gastou 9% da carga.', false),
     E(60 * 52, 'power-outage', 'aviso', 'A energia caiu', 'O servidor está funcionando na bateria (97%). Autonomia estimada: 2 h 10 min.', false),
-    E(86400 * 2, 'disk-mounted', 'info', 'O disco 1TB_HDD3 voltou', 'O disco está montado de novo.'),
-    E(86400 * 2 + 600, 'disk-unmounted', 'critico', 'O disco 1TB_HDD3 se desmontou', 'A pasta continua mapeada, mas não tem disco montado nela. O que for gravado ali vai para o disco do sistema. Confira o cabo e a montagem (sudo mount -a).'),
+    E(86400 * 2, 'disk-mounted', 'info', 'O disco Disco3 voltou', 'O disco está montado de novo.'),
+    E(86400 * 2 + 600, 'disk-unmounted', 'critico', 'O disco Disco3 se desmontou', 'A pasta continua mapeada, mas não tem disco montado nela. O que for gravado ali vai para o disco do sistema. Confira o cabo e a montagem (sudo mount -a).'),
   ];
   const countdown = location.hash === '#contagem';
   // #atualizar simula um servidor configurado na 0.8.0 (comando antigo de desligar)
@@ -441,8 +442,8 @@ function makeDemo() {
   let powerCfg = oldSetup
     ? { enabled: true, threshold: 20, graceSec: 120, simulate: false, host: '192.168.1.50', port: 22, user: 'brunos-power', testedAt: now - 86400, hostSetup: 0 }
     : { enabled: countdown, threshold: 20, graceSec: 120, simulate: true, host: '', port: 22, user: 'brunos-power', testedAt: 0, hostSetup: 0 };
-  // limite de carga: #semlimite (Inspiron 3542), #protecao (liga/desliga) ou contínuo (padrão)
-  const chargeState = location.hash === '#semlimite' || oldSetup ? { kind: 'none', model: 'Dell Inspiron 3542' }
+  // limite de carga: #semlimite (Notebook 15), #protecao (liga/desliga) ou contínuo (padrão)
+  const chargeState = location.hash === '#semlimite' || oldSetup ? { kind: 'none', model: 'Acme Notebook 15' }
     : location.hash === '#protecao' ? { kind: 'toggle', model: 'Lenovo IdeaPad 3', on: false, protect: '' }
     : { kind: 'range', model: 'Lenovo ThinkPad T480', current: 100, want: 0 };
   const demoCharge = () => ({ ...chargeState, ready: !!powerCfg.testedAt && powerCfg.hostSetup >= 2, checkedAt: now });
@@ -565,12 +566,12 @@ function makeDemo() {
     now_media: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38, img: '13' }, { k: 'Um Filme', v: 'Bruno · Celular · pausado', n: 72, img: '10' }] } });
   const dev = (k, v, id) => ({ k, v, id });
   const wyValues = () => ({ online: { n: 14 }, offline: { n: 9 }, total: { n: 23 }, known: { n: 21 }, unknown: { n: 2 },
-    online_list: { l: [dev('Notebook do Bruno', '192.168.1.20 · Dell'), dev('TV da sala', '192.168.1.31 · LG'), dev('iPhone', '192.168.1.40 · Apple'), dev('homeio (servidor)', '192.168.1.50 · Dell'), dev('Chromecast', '192.168.1.61 · Google'), dev('Impressora', '192.168.1.70 · HP')] },
+    online_list: { l: [dev('Notebook do Bruno', '192.168.1.20 · Dell'), dev('TV da sala', '192.168.1.31 · LG'), dev('iPhone', '192.168.1.40 · Apple'), dev('servidor (servidor)', '192.168.1.50 · Dell'), dev('Chromecast', '192.168.1.61 · Google'), dev('Impressora', '192.168.1.70 · HP')] },
     unknown_list: { l: [dev('galaxy-a54', '192.168.1.88 · Samsung', 'bb:bb'), dev('192.168.1.93', 'Espressif (ESP32)', 'cc:cc')] } });
   const tsValues = () => ({ state: { t: 'Conectado' }, state_ok: { n: 1 }, online: { n: 3 }, total: { n: 5 }, self_ip: { t: '100.64.0.1' }, exit_node: { t: 'direto (sem saída por outro aparelho)' }, health: { t: 'nenhum' },
     peers: { l: [dev('iphone-bruno', 'online · 100.64.0.2 · iOS'), dev('notebook', 'online · 100.64.0.3 · windows'), dev('tablet', 'online · 100.64.0.4 · android'), dev('pc-trabalho', 'há 3 h · 100.64.0.5 · windows'), dev('raspberry', 'há 12 dias · 100.64.0.6 · linux')] } });
   const trValues = () => ({ down: { n: 2.1e6 + Math.random() * 4e5 }, up: { n: 48e3 }, downloading: { n: 2 }, seeding: { n: 7 }, active: { n: 9 }, paused: { n: 1 }, total: { n: 12 }, errors: { n: 0 }, downloaded: { n: 5.2e11 }, uploaded: { n: 1.9e11 },
-    downloading_list: { l: [{ k: 'ubuntu-26.04-live-server-amd64.iso', v: '82% · 1,8 MB/s · falta 2 min' }, { k: 'Documentário (2024) 1080p', v: '38% · 340 KB/s · falta 41 min' }] } });
+    downloading_list: { l: [{ k: 'ubuntu-24.04-live-server-amd64.iso', v: '82% · 1,8 MB/s · falta 2 min' }, { k: 'Documentário (2024) 1080p', v: '38% · 340 KB/s · falta 41 min' }] } });
   const syValues = () => ({ folders: { n: 4 }, synced: { n: 3 }, need: { n: 2.5e9 }, errors: { n: 0 }, devices_online: { n: 2 }, devices: { n: 3 }, version: { t: 'v1.29.0' }, uptime: { n: 3 * 86400 },
     folders_list: { l: [dev('Fotos do celular', 'em dia'), dev('Documentos', 'em dia'), dev('Música', 'sincronizando · falta 2,5 GB'), dev('Backups', 'em dia')] },
     devices_list: { l: [dev('Celular do Bruno', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
@@ -643,9 +644,19 @@ function makeDemo() {
     smart: (() => {
       const disks = demoSmartDisks;
       // teste do próprio disco: o andamento cai 10% a cada leitura e termina sem erros
-      const step = () => disks.forEach((d) => { if (d.test) { d.test.remaining -= 10; if (d.test.remaining <= 0) { d.tests = [{ kind: d.test.kind === 'longo' ? 'Extended offline' : 'Short offline', status: 'Completed without error', passed: true, hours: d.powerOnHours }, ...(d.tests || [])].slice(0, 5); d.test = null; } } });
+      // (a cada leitura cai 10%; no fim fica o resultado no lastRun e quanto levou)
+      const step = () => disks.forEach((d) => {
+        if (!d.test) return;
+        d.test.remaining = Math.max(0, 100 - Math.floor((Date.now() / 1000 - d.testAsked) / 6) * 10);
+        if (d.test.remaining > 0) return;
+        const t = Math.floor(Date.now() / 1000);
+        d.tests = [{ kind: d.test.kind === 'longo' ? 'Extended offline' : 'Short offline', status: 'Completed without error', passed: true, hours: d.powerOnHours }, ...(d.tests || [])].slice(0, 5);
+        d.lastRun = { kind: d.test.kind, asked: d.testAsked, ended: t, result: 'ok', status: 'Completed without error' };
+        if (d.test.kind === 'curto') d.shortTook = t - d.testAsked;
+        d.test = null; d.testAsked = 0;
+      });
       return { get: () => { step(); return wait({ disks, checkedAt: now - 3600 }); }, refresh: () => wait({ disks, checkedAt: Math.floor(Date.now() / 1000) }, 900), retry: () => wait({ disks, checkedAt: now - 3600 }, 1500),
-        selftest: (key, kind) => { const d = disks.find((x) => x.key === key); if (d?.test) return Promise.reject(Object.assign(new Error('este disco já está fazendo um teste: espere terminar'), { status: 409 })); d.test = { kind, remaining: 100 }; return wait({ disks, checkedAt: now - 3600 }, 700); } };
+        selftest: (key, kind) => { const d = disks.find((x) => x.key === key); if (d?.test) return Promise.reject(Object.assign(new Error('este disco já está fazendo um teste: espere terminar'), { status: 409 })); d.test = { kind, remaining: 100 }; d.testKind = kind; d.testAsked = Math.floor(Date.now() / 1000); return wait({ disks, checkedAt: now - 3600 }, 700); } };
     })(),
     updates: (() => {
       const s = { apps: [{ urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' }],
@@ -818,11 +829,11 @@ function makeDemo() {
     },
     processes: () => wait({ summary: { total: 214, threads: 1180, running: 2, cores: 2, memKB: 7.7e6, load: 0.42 }, procs: [
       { pid: 1820, name: 'immich', cmd: 'node /usr/src/app/dist/main', user: 'root', cpu: 6.4, mem: 512e6, memPct: 6.5, threads: 11, app: 'Immich' },
-      { pid: 2210, name: 'Plex Media Serv', cmd: '/usr/lib/plexmediaserver/Plex Media Server', user: 'ptbruno', cpu: 3.1, mem: 260e6, memPct: 3.3, threads: 23, app: 'Plex' },
+      { pid: 2210, name: 'Plex Media Serv', cmd: '/usr/lib/plexmediaserver/Plex Media Server', user: 'usuario', cpu: 3.1, mem: 260e6, memPct: 3.3, threads: 23, app: 'Plex' },
       { pid: 2981, name: 'postgres', cmd: 'postgres: immich immich 172.18.0.5(45234) idle', user: 'uid 999', cpu: 1.2, mem: 140e6, memPct: 1.8, threads: 1, app: 'Immich' },
       { pid: 1, name: 'systemd', cmd: '/sbin/init', user: 'root', cpu: 0.3, mem: 12e6, memPct: 0.2, threads: 1 },
       { pid: 911, name: 'dockerd', cmd: '/usr/bin/dockerd -H fd://', user: 'root', cpu: 0.9, mem: 95e6, memPct: 1.2, threads: 18 },
-      { pid: 3012, name: 'brunos', cmd: '/brunos', user: 'ptbruno', cpu: 0.2, mem: 11e6, memPct: 0.1, threads: 7, app: 'BrunOS' },
+      { pid: 3012, name: 'brunos', cmd: '/brunos', user: 'usuario', cpu: 0.2, mem: 11e6, memPct: 0.1, threads: 7, app: 'BrunOS' },
       { pid: 1204, name: 'sshd', cmd: 'sshd: /usr/sbin/sshd -D [listener]', user: 'root', cpu: 0, mem: 8e6, memPct: 0.1, threads: 1 },
     ].map((p) => ({ ppid: 1, state: 'S', ...p })) }, 300),
     system: () => wait({ info: { hostname: 'server', os: 'Ubuntu 24.04 LTS', kernel: '6.8.0', cpuModel: 'Intel(R) Core(TM) i5 (demonstração)', cores: 2, arch: 'amd64' }, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false, version: 'demo', startedAt: now - 7200, maxUploadGB: 50 }),
@@ -863,7 +874,7 @@ function makeDemo() {
       // várias Abas: cada sessão guarda a tela (para reabrir depois de minimizar) e a linha digitada
       const enc = new TextEncoder(), tabs = new Map();
       let trusted = false, keyInfo = { exists: false, unlocked: false }, n = 0;
-      const prompt = '\x1b[1;32mptbruno@homeio\x1b[0m:\x1b[1;34m~\x1b[0m$ ';
+      const prompt = '\x1b[1;32musuario@servidor\x1b[0m:\x1b[1;34m~\x1b[0m$ ';
       const write = (t, s) => { t.hist += s; t.out?.(enc.encode(s)); };
       const fp = 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM';
       return {
@@ -905,7 +916,7 @@ function makeDemo() {
           const t = tabs.get(id); if (!t) { setTimeout(() => h.onExit('sessão encerrada'), 10); return () => {}; }
           if (h.replay && t.hist) setTimeout(() => h.onData(enc.encode(t.hist)), 50);
           t.out = h.onData;
-          if (!t.hist) setTimeout(() => write(t, 'Welcome to Ubuntu 26.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt), 300);
+          if (!t.hist) setTimeout(() => write(t, 'Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt), 300);
           return () => { if (t.out === h.onData) t.out = null; };
         },
       };

@@ -62,8 +62,9 @@ export function mountDisks(body, opts = {}) {
   const root = $('.dk', body);
   root.addEventListener('click', onClick);
   const offStats = D.ctx.onStats?.(onStats);
+  const clock = setInterval(() => { if (D) tickTests(D.body); }, 1000); // andamento dos testes, segundo a segundo
   load();
-  return () => { offStats?.(); clearTimeout(D?.timer); D?.charts.forEach((c) => c.destroy?.()); D = null; };
+  return () => { offStats?.(); clearInterval(clock); clearTimeout(D?.timer); D?.charts.forEach((c) => c.destroy?.()); D = null; };
 }
 
 /** Janela já aberta: escolhe outro disco/aba (Uso ao vivo → "Abrir Discos" de um disco). */
@@ -173,7 +174,7 @@ function paintPane(force = false) {
   D.charts.forEach((c) => c.destroy?.()); D.charts = [];
   const scroll = pane.scrollTop;
   if (D.tab === 'overview') renderOverview(d, pane);
-  else if (D.tab === 'health') renderHealth(d, pane);
+  else if (D.tab === 'health') { renderHealth(d, pane); tickTests(pane); }
   else if (D.tab === 'space') renderSpace(d, pane);
   else if (D.tab === 'timeline') renderTimeline(d, pane);
   pane.scrollTop = scroll;
@@ -297,6 +298,51 @@ function attrRow(a) {
   return { st, html: `<div class="dk-attr ${st}"><span class="dk-attr-name"><b>${esc(name)}</b>${a.id ? `<small class="dk-dim">#${a.id}</small>` : ''}${desc ? `<small>${esc(desc)}</small>` : ''}</span>
     <span class="dk-attr-val">${esc(val)}${norm}</span>${pill}</div>` };
 }
+/* teste do próprio disco: duração (o que levou de verdade da última vez, senão o que o disco diz),
+   andamento progressivo e o resultado do último teste pedido */
+const fmtDur = (sec) => (sec >= 5400 ? `${Math.round(sec / 3600)} h` : sec >= 60 ? `${Math.round(sec / 60)} min` : `${Math.max(1, Math.round(sec))} s`);
+function testEstimate(s, kind) {
+  const took = kind === 'longo' ? s.longTook : s.shortTook, poll = kind === 'longo' ? s.longMin : s.shortMin;
+  if (took) return { sec: took, learned: true };
+  if (poll) return { sec: poll * 60, learned: false };
+  return { sec: kind === 'longo' ? 7200 : 120, learned: false, guess: true };
+}
+const durLabel = (s, kind) => { const e = testEstimate(s, kind); return e.guess ? '' : ` (~${fmtDur(e.sec)})`; };
+function testProgressHTML(s) {
+  const t = s.test, kind = t.kind || s.testKind || '', e = testEstimate(s, kind);
+  const estTxt = e.learned ? `da última vez levou ${fmtDur(e.sec)}` : e.guess ? 'o disco não diz quanto demora' : `o disco estima ${fmtDur(e.sec)}, mas costuma demorar mais`;
+  const how = s.quietTest
+    ? 'Este disco interrompe o teste se for perguntado no meio, então o BrunOS só confere quando o tempo estimado acabar. O andamento abaixo é uma estimativa pelo tempo.'
+    : 'O BrunOS confere o andamento com o disco a cada 30 segundos e avisa no sino quando terminar.';
+  // data-*: o relógio da janela (1 s) atualiza o tempo e a barra sem perguntar nada ao servidor
+  return `<div class="dk-progress" data-tprog data-since="${s.testAsked || 0}" data-est="${e.sec}" data-done="${100 - t.remaining}" data-quiet="${s.quietTest ? 1 : 0}">
+      <span>Teste ${esc(kind)} rodando · <b data-tpct>${100 - t.remaining}%</b> concluído</span>
+      <span class="track"><i data-tbar style="width:${100 - t.remaining}%"></i></span>
+      <small class="dk-dim">${s.testAsked ? `Começou há <span data-tago></span> · ` : ''}${esc(estTxt)}.</small>
+      <small class="dk-dim">${esc(how)}</small></div>`;
+}
+// andamento: o disco informa de 10 em 10%; entre um degrau e outro, o tempo decorrido completa a barra
+function tickTests(root) {
+  const now = Date.now() / 1000;
+  for (const el of root.querySelectorAll('[data-tprog]')) {
+    const since = +el.dataset.since, est = +el.dataset.est, done = +el.dataset.done, quiet = el.dataset.quiet === '1';
+    const byTime = since ? Math.min(99, ((now - since) / Math.max(1, est)) * 100) : 0;
+    const pct = Math.floor(quiet ? byTime : Math.min(Math.max(byTime, done), done === 100 ? 100 : done + 9));
+    const p = el.querySelector('[data-tpct]'), bar = el.querySelector('[data-tbar]'), ago = el.querySelector('[data-tago]');
+    if (p) p.textContent = `${pct}%`;
+    if (bar) bar.style.width = `${pct}%`;
+    if (ago) { const s = Math.max(0, Math.round(now - since)); ago.textContent = s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`; }
+  }
+}
+const LAST = { ok: ['ok', 'check', 'terminou sem erros'], falhou: ['bad', 'alert', 'terminou com problema'], interrompido: ['bad', 'alert', 'foi interrompido'], 'sem-resultado': ['warn', 'info', 'terminou, mas o disco não anotou o resultado'] };
+function lastRunHTML(s) {
+  const r = s.lastRun; if (!r) return '';
+  const [cls, ico, txt] = LAST[r.result] || ['', 'info', r.result];
+  const took = r.asked && r.ended > r.asked ? ` · levou ${fmtDur(r.ended - r.asked)}` : '';
+  const extra = r.quiet ? ' Este disco para o teste quando é perguntado no meio; nos próximos, o BrunOS só confere no fim.' : r.result === 'interrompido' ? ' Pode pedir de novo.' : '';
+  return `<div class="dk-lastrun ${cls}">${svg(ico)}<span><b>Último teste pedido (${esc(r.kind || 'disco')}): ${txt}</b>
+    <small>${esc(when(r.ended))}${took}${r.status ? ` · o disco anotou "${esc(tStatus(r.status))}"` : ''}.${esc(extra)}</small></span></div>`;
+}
 const TKIND = (k) => (/short/i.test(k) ? 'Curto' : /extended|long/i.test(k) ? 'Longo' : /conveyance/i.test(k) ? 'Transporte' : k);
 function tStatus(s) {
   const r = [[/without error/i, 'sem erros'], [/aborted by host/i, 'interrompido pelo computador'], [/interrupted/i, 'interrompido (o disco foi desligado ou reiniciado)'],
@@ -325,10 +371,9 @@ function renderHealth(d, pane) {
   const test = s.test;
   const testCard = `<div class="card dk-test"><div class="dk-test-head"><b>Teste do próprio disco</b>
       <span class="dk-dim">O disco lê a si mesmo procurando defeitos, sem apagar nada. Dá para continuar usando enquanto isso (fica um pouco mais lento).</span></div>
-    ${test ? `<div class="dk-progress"><span>Teste ${esc(test.kind || '')} rodando · falta ${test.remaining}%</span><span class="track"><i style="width:${100 - test.remaining}%"></i></span>
-      <small class="dk-dim">O BrunOS confere o andamento a cada 3 minutos e avisa no sino quando terminar.</small></div>` : ''}
-    <div class="btn-row start"><button class="pill-btn" data-act="test" data-kind="curto" ${test ? 'disabled' : ''}>${svg('play')}Teste curto${s.shortMin ? ` (~${s.shortMin} min)` : ''}</button>
-      <button class="pill-btn" data-act="test" data-kind="longo" ${test ? 'disabled' : ''}>${svg('play')}Teste longo${s.longMin ? ` (~${s.longMin >= 90 ? `${Math.round(s.longMin / 60)} h` : `${s.longMin} min`})` : ''}</button></div>
+    ${test ? testProgressHTML(s) : lastRunHTML(s)}
+    <div class="btn-row start"><button class="pill-btn" data-act="test" data-kind="curto" ${test ? 'disabled' : ''}>${svg('play')}Teste curto${durLabel(s, 'curto')}</button>
+      <button class="pill-btn" data-act="test" data-kind="longo" ${test ? 'disabled' : ''}>${svg('play')}Teste longo${durLabel(s, 'longo')}</button></div>
     ${(s.tests || []).length ? `<div class="dk-tests">${s.tests.map((t) => `<div class="dk-tline ${t.passed ? 'ok' : 'bad'}">${svg(t.passed ? 'check' : 'alert')}<span>${esc(TKIND(t.kind))}: ${esc(tStatus(t.status))}</span><small class="dk-dim">com ${fmtN(t.hours)} h ligado</small></div>`).join('')}</div>` : '<p class="dk-small">Nenhum teste registrado neste disco ainda.</p>'}</div>`;
   const rows = (s.attrs || []).map(attrRow).sort((a, b) => ({ bad: 0, warn: 1 }[a.st] ?? 2) - ({ bad: 0, warn: 1 }[b.st] ?? 2));
   const hint = s.attrs?.length ? '' : '<p class="dk-small">A lista completa dos atributos aparece na próxima leitura (o script do servidor precisa estar na versão 10).</p>';
@@ -518,8 +563,8 @@ async function onClick(e) {
     return;
   }
   if (act === 'test') {
-    const kind = b.dataset.kind, s = d.smart;
-    const dur = kind === 'curto' ? (s?.shortMin ? `uns ${s.shortMin} minutos` : 'uns 2 minutos') : (s?.longMin ? `umas ${Math.max(1, Math.round(s.longMin / 60))} horas` : 'algumas horas');
+    const kind = b.dataset.kind, s = d.smart, e = testEstimate(s || {}, kind);
+    const dur = e.guess ? (kind === 'curto' ? 'alguns minutos' : 'algumas horas') : `cerca de ${fmtDur(e.sec)}${e.learned ? ' (o que levou da última vez)' : ', pela estimativa do disco (costuma demorar mais)'}`;
     const ok = await confirmDialog(`Teste ${kind} em ${diskName(d)}?`, `O disco lê a si mesmo procurando defeitos, sem apagar nada. Leva ${dur}. Dá para continuar usando o disco (fica um pouco mais lento). Se o disco for desligado no meio, o teste é interrompido.${kind === 'longo' && d.tran === 'usb' ? ' Alguns cases USB desligam o disco parado no meio do teste longo; se isso acontecer, o resultado aparece como interrompido.' : ''}`, 'Começar o teste');
     if (!ok) return;
     b.disabled = true;
