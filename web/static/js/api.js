@@ -916,7 +916,7 @@ function makeDemo() {
           const t = tabs.get(id); if (!t) { setTimeout(() => h.onExit('sessão encerrada'), 10); return () => {}; }
           if (h.replay && t.hist) setTimeout(() => h.onData(enc.encode(t.hist)), 50);
           t.out = h.onData;
-          if (!t.hist) setTimeout(() => write(t, 'Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.17.0-8-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.100.20\r\n' + prompt), 300);
+          if (!t.hist) setTimeout(() => write(t, 'Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-generic x86_64)\r\n\r\n * Modo demonstração: nada aqui roda de verdade.\r\n\r\nLast login: Sat Nov  7 17:40:02 2026 from 192.168.1.20\r\n' + prompt), 300);
           return () => { if (t.out === h.onData) t.out = null; };
         },
       };
