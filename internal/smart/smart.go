@@ -360,7 +360,6 @@ func (m *Monitor) Retry(key string) <-chan error {
 	d.Force = otherMode(d.FailMode)
 	m.mu.Unlock()
 	go func() {
-		defer m.end()
 		ctx := m.bg()
 		evs, err := m.readFull(ctx, key, m.Now())
 		m.emit(evs)
@@ -370,6 +369,7 @@ func (m *Monitor) Retry(key string) <-chan error {
 		}
 		m.mu.Unlock()
 		m.save()
+		m.end() // antes de responder: quem pedir outra leitura logo em seguida não leva "já estou lendo"
 		done <- err
 	}()
 	return done
