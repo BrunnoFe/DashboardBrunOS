@@ -14,6 +14,8 @@ import { diskRowsHTML } from './disks.js';
 import { internetDialog } from './internet.js';
 import { initLock, lockNow, showLock, hideLock, isScreenLocked } from './lockscreen.js';
 import { mountNotes, noteFocus, restoreNoteFocus, noteChanged, deleteNote, refreshNotes } from './notes.js';
+import * as wins from './windows.js';
+import { appWindow } from './appwindow.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -29,6 +31,8 @@ const DEFAULTS = {
   // 0.10.0: Bloqueio (J1) e Terminal (K1–K3)
   lockMode: 'senha', lockIdleMin: 15, termIdleMin: 15, termConnections: [], termSnippets: [], termSnippetBar: true,
   appUpdateNotify: true, // 0.11.0: aviso no sino de versão nova de app
+  // 0.17.0: Janelas de app (openIn 'brunos'), Estilo das janelas, dock com app maximizado, limite de apps abertos
+  winStyle: 'float', dockWithMax: 'auto', winLimitPc: 8, winLimitMobile: 5,
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
 function runtipiBase() {
@@ -207,6 +211,7 @@ const serverHost = () => set().serverHost || location.hostname || S.tipi.interna
 function appUrl(a, forceMode) {
   if (a.kind === 'link') return a.url || '';
   if (!forceMode && a.o.url) return a.o.url;
+  if (a.demoUrl) return a.demoUrl; // só no modo demonstração (página de exemplo local)
   const mode = forceMode || a.o.urlMode || set().urlMode;
   const domainUrl = a.exposedDomain ? `https://${a.exposedDomain}` : a.localDomain ? `${a.protocol === 'http' ? 'http' : 'https'}://${a.localDomain}` : '';
   const portUrl = a.port ? `http://${serverHost()}:${a.port}` : '';
@@ -237,14 +242,38 @@ function appIconHTML(a, cls = 'app-icon', extra = '') {
     : `<span class="initial">${esc((a.name || '?')[0])}</span>`;
   return `<span class="${cls}" style="--tile:${tileCss(a, info)}">${inner}${extra}</span>`;
 }
-function openApp(a) {
+// Por que um app não abre em Janela de app ('' = abre). Só em aba (o próprio app recusa, conferido pelo
+// servidor) ou BrunOS em https com app em http (o navegador bloqueia). Decisão 58.
+function windowBlock(a, url = appUrl(a)) {
+  if (a.frame === 'no') return 'O próprio app não permite ser mostrado dentro de outra página (proteção dele). Ele abre em nova aba.';
+  if (location.protocol === 'https:' && /^http:/i.test(url)) return 'O BrunOS está em https e o app em http: o navegador bloqueia. Abra o app em nova aba ou use o mesmo tipo de endereço nos dois.';
+  return '';
+}
+const opensInWindow = (a) => set().openIn === 'brunos' && !a.o.forceTab && !windowBlock(a);
+// mode: undefined = conforme "Abrir apps em"; 'window' = Abrir em janela; 'tab' = Abrir em nova aba
+function openApp(a, { mode, originEl } = {}) {
   if (!a) return;
   const url = appUrl(a);
   if (!url) { toast(`${a.name} não tem endereço`, 'Clique com o botão direito no ícone → Editar.'); return; }
+  if (mode === 'window' || (mode !== 'tab' && opensInWindow(a))) {
+    if (currentSheet) closeSheet(); // a folha do sistema ficaria por cima do app
+    wins.open(appWindow(a, url, { iconHTML: appIconHTML(a, 'win-app-ico'), originEl, blocked: windowBlock(a, url) }));
+    return;
+  }
   const link = document.createElement('a');
   link.href = url; link.rel = 'noopener noreferrer';
-  if (set().openIn === 'tab') link.target = '_blank';
+  if (mode === 'tab' || set().openIn !== 'same') link.target = '_blank';
   link.click();
+}
+// Clique normal num ícone de app (<a href>): no modo "No BrunOS" vira Janela de app. Ctrl/Shift/clique
+// do meio continuam com o navegador (nova aba). Devolve true quando tratou o clique.
+function appClick(e, a, el) {
+  if (!a) return false;
+  if (!appUrl(a)) { e.preventDefault(); openApp(a); return true; }
+  if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || !opensInWindow(a)) return false;
+  e.preventDefault();
+  openApp(a, { originEl: el?.querySelector('.app-icon') || el });
+  return true;
 }
 
 /* ── Saudação ──────────────────────────────────────────────────── */
@@ -1034,7 +1063,7 @@ function statusDot(a) {
 }
 function appTileHTML(a, i, extra = '') {
   const url = appUrl(a);
-  return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn === 'tab' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="false" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
+  return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn !== 'same' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="false" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
     ${appIconHTML(a, 'app-icon', statusDot(a) + (a.update ? `<i class="app-upd" title="Atualização disponível: ${esc(a.update.available || '')}">${svg('arrowUp')}</i>` : ''))}<span class="app-name">${esc(a.name)}</span></a>`;
 }
 function itemHTML(it, i) {
@@ -1134,8 +1163,8 @@ function openFolder(id) {
     if (e.target.closest('[data-fd="rename"]')) { renameFolder(id); return; }
     const el = e.target.closest('.app'); if (!el) return;
     const a = appById(el.dataset.app);
-    if (!appUrl(a)) { e.preventDefault(); openApp(a); }
-    else setTimeout(() => d.close(), 50);
+    if (appClick(e, a, el) && !appUrl(a)) return;
+    setTimeout(() => d.close(), 50);
   });
   d.el.addEventListener('contextmenu', (e) => {
     const el = e.target.closest('.app'); if (!el) return;
@@ -1167,8 +1196,7 @@ function folderMenu(id, x, y) {
     const dot = e.target.closest('[data-page]'); if (dot) { goPage(+dot.dataset.page); return; }
     const fo = e.target.closest('[data-folder]'); if (fo) { openFolder(fo.dataset.folder); return; }
     const el = e.target.closest('.app'); if (!el) return;
-    const a = appById(el.dataset.app);
-    if (!appUrl(a)) { e.preventDefault(); openApp(a); }
+    appClick(e, appById(el.dataset.app), el);
   });
   grid.addEventListener('contextmenu', (e) => {
     const fo = e.target.closest('[data-folder]');
@@ -1277,7 +1305,7 @@ function folderMenu(id, x, y) {
   // setas do teclado trocam de página (fora de campos de texto, janelas e menus)
   document.addEventListener('keydown', (e) => {
     if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey) return;
-    if (dialogs.length || currentSheet || menuOpen() || document.body.classList.contains('is-locked') || e.target.closest?.('input,textarea,select,.xterm,.cm-editor')) return;
+    if (dialogs.length || currentSheet || wins.frontId() || menuOpen() || document.body.classList.contains('is-locked') || e.target.closest?.('input,textarea,select,.xterm,.cm-editor')) return;
     if (goPage(page + (e.key === 'ArrowRight' ? 1 : -1))) e.preventDefault();
   });
 })();
@@ -1286,8 +1314,15 @@ function appMenu(a, x, y, el) {
   const pinned = st.dock.includes(a.id);
   const alt = a.kind === 'runtipi' && a.port && a.localDomain;
   el?.classList.add('menu-open');
+  const url = appUrl(a), brunos = st.openIn === 'brunos', open = wins.has(a.id);
+  const origin = el?.querySelector('.app-icon') || el?.closest?.('.dock-item') || null;
+  const setForceTab = (v) => { st.apps[a.id] = { ...(st.apps[a.id] || {}), forceTab: v }; save(); };
   contextMenu(x, y, [
-    { icon: 'external', label: 'Abrir', run: () => openApp(a) },
+    { icon: 'external', label: open ? 'Mostrar janela' : 'Abrir', run: () => (open ? wins.open({ id: a.id }) : openApp(a, { originEl: origin })) },
+    { icon: 'winMax', label: a.frame === 'no' ? 'Abrir em janela (o app não permite)' : 'Abrir em janela', hidden: !url || open || (brunos && opensInWindow(a)), run: () => openApp(a, { mode: 'window', originEl: origin }) },
+    { icon: 'external', label: 'Abrir em nova aba', hidden: !url || (!brunos && !open), run: () => openApp(a, { mode: 'tab' }) },
+    { icon: 'x', label: 'Fechar janela', hidden: !open, run: () => wins.close(a.id) },
+    { icon: 'external', label: a.o.forceTab ? 'Voltar a abrir no BrunOS' : 'Sempre abrir em nova aba', hidden: !brunos || !url || (a.frame === 'no' && !a.o.forceTab), run: () => setForceTab(!a.o.forceTab) },
     { icon: 'info', label: 'Detalhes, logs e uso…', hidden: a.kind !== 'runtipi', run: () => openAppDetails(a) },
     { icon: 'globe', label: 'Abrir pelo domínio local', hidden: !alt, run: () => window.open(appUrl(a, 'domain'), '_blank', 'noopener') },
     { icon: 'network', label: `Abrir por IP:porta (${a.port})`, hidden: !alt, run: () => window.open(appUrl(a, 'port'), '_blank', 'noopener') },
@@ -1349,12 +1384,22 @@ function renderDock() {
   const sysHTML = Object.entries(SYS).filter(([k]) => k !== 'terminal' || (S.terminal !== false && (!dockHidden('terminal') || tabs > 0))).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? (tabs ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : 'Terminal') : it.label)}">
     <button style="--tile:${it.tile}" aria-label="${esc(it.label)}">${it.icon ? `<img src="assets/icons/${it.icon}.webp" alt="">` : svg(it.glyph, 'glyph')}</button><span class="open-dot"></span></div>`).join('');
   const pins = set().dock.map(appById).filter(Boolean);
-  const pinHTML = pins.map((a) => {
+  const appItem = (a) => {
     const info = iconInfo(a);
     return `<div class="dock-item" data-app="${esc(a.id)}" data-label="${esc(a.name)}"><button style="--tile:${tileCss(a, info)}" aria-label="${esc(a.name)}">${info.src ? `<img src="${esc(info.src)}" alt="" class="${info.full ? 'full' : ''}">` : `<span class="initial">${esc(a.name[0])}</span>`}</button><span class="open-dot"></span></div>`;
-  }).join('');
-  box.innerHTML = sysHTML + (pins.length ? '<div class="dock-divider"></div>' + pinHTML : '');
-  sizeDock(); markDockOpen();
+  };
+  // Janelas de app abertas de apps não fixados: depois de um segundo divisor, somem ao fechar (0.17.0)
+  const opened = dockOpened();
+  box.innerHTML = sysHTML + (pins.length ? '<div class="dock-divider"></div>' + pins.map(appItem).join('') : '')
+    + (opened.length ? '<div class="dock-divider"></div>' + opened.map(appItem).join('') : '');
+  dockSig = opened.map((a) => a.id).join('|');
+  sizeDock(); markDockOpen(); wins.layout();
+}
+var dockSig = ''; // var: renderDock pode rodar antes desta linha
+function dockOpened() { return wins.list().map((w) => w.id).filter((id) => !set().dock.includes(id)).map(appById).filter(Boolean); }
+// as janelas mudaram: redesenha a dock só se mudou quem aparece nela (senão só o pontinho)
+function onWindowsChange() {
+  if (dockOpened().map((a) => a.id).join('|') !== dockSig) renderDock(); else markDockOpen();
 }
 function sizeDock() {
   const items = $$('.dock-item'), n = items.length || 1, mobile = innerWidth < 640, gap = mobile ? 6 : 10, pad = mobile ? 8 : 12;
@@ -1400,7 +1445,8 @@ function positionTip() {
     const item = e.target.closest('.dock-item'); if (!item) return;
     item.classList.remove('bounce'); void item.offsetWidth; item.classList.add('bounce');
     if (item.dataset.sys) { const k = item.dataset.sys; if (currentSheet === k) closeSheet(); else SYS[k].run(item); }
-    else openApp(appById(item.dataset.app));
+    else if (wins.has(item.dataset.app)) { if (currentSheet) closeSheet(); wins.dockClick(item.dataset.app); }
+    else openApp(appById(item.dataset.app), { originEl: item });
   });
   dock.addEventListener('contextmenu', (e) => {
     const item = e.target.closest('.dock-item[data-app]'); if (!item) return;
@@ -1410,7 +1456,7 @@ function positionTip() {
 })();
 const markDockOpen = () => {
   const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0; // o pontinho do Terminal = há Abas abertas
-  $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.sys === 'terminal' ? tabs > 0 : !!el.dataset.sys && el.dataset.sys === currentSheet));
+  $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.app ? wins.has(el.dataset.app) : el.dataset.sys === 'terminal' ? tabs > 0 : !!el.dataset.sys && el.dataset.sys === currentSheet));
 };
 
 /* ── Sheets ────────────────────────────────────────────────────── */
@@ -1562,6 +1608,10 @@ function settingsRows() {
     })(),
     { group: 'Aparência', cat: 'look', icon: 'phone', title: 'No celular, widgets e apps em telas separadas', desc: 'Na tela pequena, os widgets de uma página ficam numa tela e os apps na seguinte (deslize para o lado). Desligado, ficam um embaixo do outro', ctrl: sw('mobileSplit', 'Widgets e apps em telas separadas no celular') },
     { group: 'Aparência', cat: 'look', icon: 'sparkles', title: 'Reduzir animações', desc: 'Desliga a ampliação do dock e as transições', ctrl: sw('reduceMotion') },
+    { group: 'Aparência', cat: 'look', icon: 'winMax', title: 'Estilo das janelas', desc: 'Flutuante: arraste pela barra, mude o tamanho pelas bordas, encaixe nas laterais e deixe vários apps abertos lado a lado. Folha: uma janela por vez, centralizada. No celular as duas ocupam a tela inteira',
+      ctrl: `<div class="seg">${[['float', 'Flutuante'], ['sheet', 'Folha']].map(([k, l]) => `<button class="${(st.winStyle || 'float') === k ? 'on' : ''}" data-winstyle="${k}">${l}</button>`).join('')}</div>` },
+    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Dock com app maximizado', desc: 'Sempre visível: a dock fica por cima do app. Esconde sozinha: some e volta quando o mouse chega na beirada de baixo (no celular, toque na beirada). App acima da dock: o app para onde a dock começa',
+      ctrl: `<div class="seg">${[['visible', 'Sempre visível'], ['auto', 'Esconde sozinha'], ['above', 'App acima da dock']].map(([k, l]) => `<button class="${(st.dockWithMax || 'auto') === k ? 'on' : ''}" data-dockmax="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelos ícones Runtipi e Loja de apps do dock. Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
     { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor para IP:porta', desc: `Vazio = o mesmo endereço que você usou para abrir o BrunOS (${esc(location.hostname || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
@@ -1571,7 +1621,8 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'bell', title: 'Avisar quando um app cair', desc: 'A cada minuto o BrunOS confere se cada app responde e avisa no sino se algum parar. Dá para desligar por app em Detalhes do app', ctrl: sw('appMonitor', 'Avisar quando um app cair') },
     { group: 'Apps', cat: 'apps', icon: 'arrowUp', title: 'Avisar atualização de apps', desc: (() => { const n = S.updates?.apps.length || 0; return `Avisa no sino quando um app tem versão nova na loja do Runtipi. ${n ? `Agora: ${n} ${n === 1 ? 'app com atualização' : 'apps com atualização'} (seta ↑ no ícone)` : 'Agora: tudo em dia'}`; })(), ctrl: sw('appUpdateNotify', 'Avisar atualização de apps') },
     { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Dividir em páginas', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
-    { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'Nova aba ou na mesma aba', ctrl: `<div class="seg"><button class="${st.openIn === 'tab' ? 'on' : ''}" data-openin="tab">Nova aba</button><button class="${st.openIn === 'same' ? 'on' : ''}" data-openin="same">Mesma aba</button></div>` },
+    { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'No BrunOS: o app abre numa janela aqui dentro, que dá para minimizar para a dock. Apps que não permitem (proteção deles) continuam abrindo em nova aba. Ctrl+clique sempre abre em nova aba',
+      ctrl: `<div class="seg">${[['tab', 'Nova aba'], ['same', 'Mesma aba'], ['brunos', 'No BrunOS']].map(([k, l]) => `<button class="${st.openIn === k ? 'on' : ''}" data-openin="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? hidden.map((a) => a.name).join(', ') : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
     { group: 'Apps', cat: 'apps', icon: 'sort', title: 'Ordem dos apps', desc: 'Arraste os ícones na tela inicial para reordenar', ctrl: st.order.length ? `<button class="pill-btn" data-act="reset-order">Ordem alfabética</button>` : '' },
     { group: 'Conta', cat: 'account', icon: 'user', title: 'Nome de exibição', desc: 'Usado na saudação e na tela de login', ctrl: `<input class="text-input" data-input="displayName" value="${esc(displayName())}" aria-label="Nome de exibição">` },
@@ -1595,6 +1646,9 @@ function settingsRows() {
     })(),
     { group: 'Sistema', cat: 'system', icon: 'clock', title: 'Procurar atualizações', desc: 'De quanto em quanto tempo o BrunOS confere se há versão nova dos apps e do Linux. O botão ao lado do sino confere na hora',
       ctrl: `<select class="text-input sm" data-upd-every aria-label="Procurar atualizações">${[['6h', 'A cada 6 horas'], ['12h', 'A cada 12 horas'], ['24h', 'Uma vez por dia'], ['168h', 'Uma vez por semana'], ['manual', 'Só quando eu mandar']].map(([v, l]) => `<option value="${v}" ${(S.updates?.every || '24h') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` },
+    { group: 'Sistema', cat: 'system', icon: 'winMax', title: 'Limite de apps abertos', desc: 'Quantas janelas de app podem ficar abertas ao mesmo tempo (minimizadas contam). Cada app aberto usa memória do seu computador ou celular, não do servidor. Ao passar do limite, o BrunOS pergunta qual fechar',
+      ctrl: `<label class="win-lim">Computador <select class="text-input sm" data-select="winLimitPc" aria-label="Limite no computador">${[2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => `<option value="${v}" ${(st.winLimitPc ?? 8) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="win-lim">Celular <select class="text-input sm" data-select="winLimitMobile" aria-label="Limite no celular">${[1, 2, 3, 4, 5, 6, 8].map((v) => `<option value="${v}" ${(st.winLimitMobile ?? 5) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
@@ -1696,6 +1750,8 @@ function wireSettings(body) {
     else if ((el = q('[data-pgpick]'))) pagePicker(el.dataset.pgpick, +el.dataset.pg, el, redraw);
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
+    else if ((el = q('[data-winstyle]'))) { st.winStyle = el.dataset.winstyle; save(); wins.layout(); redraw(); }
+    else if ((el = q('[data-dockmax]'))) { st.dockWithMax = el.dataset.dockmax; save(); wins.layout(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
     else if ((el = q('[data-lockmode]'))) { st.lockMode = el.dataset.lockmode; save(); redraw(); }
     else if ((el = q('[data-act]'))) {
@@ -1768,8 +1824,8 @@ async function backupsDialog() {
   d.el.addEventListener('click', async (e) => {
     if (e.target.closest('[data-c]')) { d.close(); return; }
     const b = e.target.closest('[data-restore]'); if (!b) return;
-    if (!(await confirmDialog('Restaurar esta cópia?', `As preferências voltam a ser como estavam em ${day(b.dataset.restore)}. A página vai recarregar.`, 'Restaurar'))) return;
-    try { await api.settingsRestore(b.dataset.restore); S.settingsLoaded = false; location.reload(); } catch (err) { toastError(err); }
+    if (!(await confirmDialog('Restaurar esta cópia?', `As preferências voltam a ser como estavam em ${day(b.dataset.restore)}. A página vai recarregar${wins.count() ? ' e os apps abertos vão ser recarregados' : ''}.`, 'Restaurar'))) return;
+    try { await api.settingsRestore(b.dataset.restore); S.settingsLoaded = false; wins.allowUnload(); location.reload(); } catch (err) { toastError(err); }
   });
 }
 // Atualizações do Linux (0.11.0): lista de pacotes e o botão que digita o comando no Terminal
@@ -2077,7 +2133,7 @@ function commandPalette() {
   list.addEventListener('click', (e) => {
     const b = e.target.closest('[data-i]'); if (b) { run(+b.dataset.i); return; }
     const a = e.target.closest('[data-app]');
-    if (a) { const app = appById(a.dataset.app); if (!appUrl(app)) { e.preventDefault(); openApp(app); } d.close(); }
+    if (a) { appClick(e, appById(a.dataset.app), a); d.close(); }
   });
   draw();
   setTimeout(() => input.focus(), 30);
@@ -2145,12 +2201,17 @@ $('#login-form').addEventListener('submit', async (e) => {
   finally { btn.disabled = false; btn.classList.remove('busy'); }
 });
 async function logout() {
+  const n = wins.count();
+  if (n && !(await confirmDialog('Sair do BrunOS?', `${n === 1 ? 'O app aberto vai ser fechado' : `Os ${n} apps abertos vão ser fechados`}.`, 'Sair'))) return;
   try { await api.logout(); } catch { /* sessão já expirada */ }
   lock();
 }
+// Fim da Sessão (Sair ou expirou): tela de login. As Janelas de app são fechadas (quem entrar depois não
+// encontra os apps abertos); o Bloqueio (lockscreen.js) só esconde.
 function lock() {
   hideLock(true);
   dialogs.slice().forEach((c) => c());
+  wins.closeAll();
   closeSheet(); closeMenu(); closePanel(); paintBanner(null);
   if (wEditing) { wEditing = false; document.body.classList.remove('w-editing'); $('#w-done')?.remove(); }
   S.stopStream?.(); S.stopStream = null;
@@ -2166,6 +2227,8 @@ function weatherNow() {
   if (!v?.temp) return null;
   return { temp: `${fmt(v.temp.n, 0)}°`, icon: v.cond?.i, text: v.cond?.t || '' };
 }
+// Janelas (0.17.0): o gerenciador pergunta pelo diálogo do BrunOS e avisa a dock quando algo muda
+wins.initWindows({ settings: () => set(), confirm: (t, x, ok) => confirmDialog(t, x, ok), onChange: () => onWindowsChange() });
 initLock({
   settings: () => set(),
   greeting: () => greeting(),
@@ -2263,6 +2326,7 @@ function applyPrefs() {
   b.classList.toggle('reduce-motion', st.reduceMotion);
   r.setProperty('--glass-blur', st.blur + 'px');
   applyBrand(); renderGreeting(); renderWidgets(); renderApps();
+  wins.layout(); // Estilo das janelas e "Dock com app maximizado" mudam na hora
 }
 
 /* ── Eventos globais ───────────────────────────────────────────── */

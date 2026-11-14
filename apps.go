@@ -19,6 +19,7 @@ import (
 
 	"brunos/internal/appmon"
 	"brunos/internal/dockerc"
+	"brunos/internal/framecheck"
 	"brunos/internal/runtipi"
 	"brunos/internal/tsdb"
 )
@@ -486,8 +487,11 @@ func (s *server) checkApps(ctx context.Context) {
 	}
 	on, skip := s.monitorPrefs()
 	alive := map[string]bool{}
+	aliveURN := map[string]bool{}
+	frameBudget := 4
 	for _, a := range apps {
 		alive[a.Project] = true
+		aliveURN[a.URN] = true
 		total, running, restarting := 0, 0, 0
 		for _, c := range cts {
 			if c.Project() != a.Project {
@@ -520,6 +524,14 @@ func (s *server) checkApps(ctx context.Context) {
 		default:
 			sample.Up = appmon.Up
 		}
+		// Janela de app (0.17.0): pergunta ao app se aceita ser mostrado dentro do BrunOS. Vale mesmo com
+		// o monitor desligado; poucas por minuto para a volta não demorar.
+		if running > 0 && a.Port > 0 && info.InternalIP != "" && frameBudget > 0 && s.frames.Need(a.URN, a.Version, time.Now()) {
+			frameBudget--
+			fctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			s.frames.Set(a.URN, a.Version, framecheck.Check(fctx, framecheck.Client, info.InternalIP, a.Port), time.Now())
+			cancel()
+		}
 		s.appmon.Add(a.Project, sample)
 		if s.tsdb != nil && total > 0 { // Histórico de 30 dias (0.14.0); app sem container não grava zeros
 			pref := "app." + a.Project + "."
@@ -536,4 +548,5 @@ func (s *server) checkApps(ctx context.Context) {
 		}
 	}
 	s.appmon.Forget(alive)
+	s.frames.Forget(aliveURN)
 }

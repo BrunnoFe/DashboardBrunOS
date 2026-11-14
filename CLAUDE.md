@@ -93,7 +93,7 @@ bash tests/fixture.sh /tmp/bt                                 # servidor fictíc
 BRUNOS_ADDR=127.0.0.1:8099 BRUNOS_DATA=/tmp/bt/data BRUNOS_FILES=/tmp/bt/files \
   BRUNOS_RUNTIPI=/tmp/bt/runtipi DOCKER_HOST=off HOST_PROC=/proc /tmp/brunos
 BASE=http://127.0.0.1:8099 FIX=/tmp/bt python3 tests/apitest.py   # testes da API (servidor novo)
-node --test tests/layout.test.mjs                             # encaixe dos widgets
+node --test tests/layout.test.mjs tests/windows.test.mjs      # encaixe dos widgets e contas das janelas
 cd web/static && python3 -m http.server 8765                  # interface em modo demonstração
 docker build -t brunos:teste . && FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste
 ```

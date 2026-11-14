@@ -60,6 +60,8 @@ const P = {
   plugOff: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4M3 3l18 18"/>',
   bag: '<path d="M5.5 8h13l-1 12.5h-11z"/><path d="M9 10.5V7a3 3 0 0 1 6 0v3.5"/>',
   minus: '<path d="M5 12h14"/>',
+  winMax: '<rect x="5" y="5" width="14" height="14" rx="2.5"/>',
+  winRestore: '<rect x="4.5" y="8.5" width="11" height="11" rx="2"/><path d="M8.5 5.5a1.5 1.5 0 0 1 1.5-1.5h8a2 2 0 0 1 2 2v8a1.5 1.5 0 0 1-1.5 1.5"/>',
   alert: '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.5h.01"/>',
   caret: '<path d="M10 8l5 4-5 4z" fill="currentColor" stroke-linejoin="round"/>',
   temp: '<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/><path d="M12 9v8"/>',

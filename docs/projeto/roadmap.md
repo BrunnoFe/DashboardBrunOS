@@ -20,6 +20,7 @@ celular.
 | 0.15.0 | Janela Discos: informações, SMART explicado, testes do disco, desempenho, espaço, Linha do tempo, ejetar (decisão 56) |
 | 0.15.1 | Teste do disco: andamento a cada 30 s e progressivo, resultado que não some, estimativa real, disco "só no fim"; dados genéricos |
 | 0.16.0 | Montar, desmontar, rótulo e Formatar com Senha de formatação; trava de container no ejetar (decisões 54 e 57) |
+| 0.17.0 | Janelas de app: apps dentro do BrunOS, Flutuante/Folha, dock com apps abertos, Só em aba automático (decisão 58) |
 
 ## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026: entregue
 
@@ -33,6 +34,15 @@ Resumo de cada versão no `historico.md` (o plano detalhado foi apagado ao termi
 | 0.14.0 | Históricos de 30 dias (`internal/tsdb`: servidor, containers, internet, leitura/escrita dos discos, integrações) e gráficos com eixo, valor no mouse, Período e Ponta viva | feito, aguardando teste no servidor |
 | 0.15.0 | Janela Discos: informações, SMART explicado, testes, desempenho, espaço, linha do tempo, ejetar | feito; testado, ajustes na 0.15.1 (teste do disco), aguardando teste no servidor |
 | 0.16.0 | Montar, desmontar e Formatar com Senha de formatação | feito, aguardando teste no servidor (primeiro com um pendrive) |
+
+## Etapa 12 (0.17.0 → 0.18.0), combinada em 13/11/2026
+
+Plano detalhado em `plano-etapa12.md`; termos em `CONTEXT.md` (seção Janelas); porquê na decisão 58.
+
+| Versão | O que | Status |
+|---|---|---|
+| 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado; aguardando teste no servidor com apps reais |
+| 0.18.0 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas | depois do teste da 0.17.0; detalhes a combinar |
 
 ## Em aberto
 

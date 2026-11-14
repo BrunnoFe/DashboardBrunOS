@@ -5,6 +5,7 @@ import { api } from './api.js';
 import { $, $$, esc, fmt, fmtBytes, fmtRate, svg, toast, toastError, confirmDialog, promptDialog, openDialog, timeAgo } from './ui.js';
 import { mountChart, periodSeg, PERIOD_LONG, fmtTime } from './charts.js';
 import { forecastText, driveTempHelp } from './disks.js';
+import { allowUnload, count as winCount } from './windows.js';
 
 const TABS = [['overview', 'Visão geral'], ['health', 'Saúde'], ['perf', 'Desempenho'], ['space', 'Espaço'], ['timeline', 'Linha do tempo']];
 const HEALTH = { ok: ['OK', 'ok', 'O disco não relata problemas.'],
@@ -524,6 +525,8 @@ const suggest = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replac
 
 // O container do BrunOS só enxerga as montagens que existiam quando ele ligou: reiniciar mostra (ou solta) o disco.
 function restartDialog(title, html) {
+  const n = winCount(); // 0.17.0: avisa que os apps abertos vão recarregar junto
+  if (n) html += '<p>Os apps abertos no BrunOS vão ser recarregados.</p>';
   const dlg = openDialog(`<h2>${svg('refresh')}${esc(title)}</h2>${html}
     <div class="dlg-actions"><button class="pill-btn" data-c="later">Depois</button><button class="pill-btn primary" data-c="restart">${svg('refresh')}Reiniciar o BrunOS agora</button></div>`, { width: 500 });
   dlg.el.addEventListener('click', async (e) => {
@@ -536,7 +539,7 @@ function restartDialog(title, html) {
       dlg.close();
       // espera ele sair e voltar
       setTimeout(async function wait(n = 0) {
-        try { const r = await fetch('/api/health', { cache: 'no-store' }); if (r.ok && n > 1) { location.reload(); return; } } catch { /* ainda reiniciando */ }
+        try { const r = await fetch('/api/health', { cache: 'no-store' }); if (r.ok && n > 1) { allowUnload(); location.reload(); return; } } catch { /* ainda reiniciando */ }
         if (n < 40) setTimeout(() => wait(n + 1), 1500);
       }, 2500);
     } catch (err) { toastError(err, 'Não deu para reiniciar'); dlg.close(); }

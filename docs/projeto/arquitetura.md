@@ -142,6 +142,14 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `POST /api/smart/selftest {key,kind:curto|longo}` pede o teste ao disco, e o disco em teste é lido de
   novo a cada 3 min (aviso `disk-selftest` ao terminar). `Note` manda SMART mudou e testes para a Linha do
   tempo do `internal/disks`. A temperatura lida vira a série `disk.<dev>.temp` no tsdb.
+- **`internal/framecheck`** (0.17.0, decisão 58): se o app aceita Janela de app. `Verdict(header)` lê
+  `X-Frame-Options` (DENY/SAMEORIGIN recusam; o app fica em outra porta/domínio) e a CSP `frame-ancestors`
+  (só `*`, `http:` ou `https:` aceitam; quando existe, vence o XFO). `Check` faz um GET na raiz do app em
+  `IP interno:porta`, seguindo até 3 redirecionamentos no mesmo endereço. `Cache` em memória por URN:
+  "ok"/"no" valem 6 h ou até a versão do app mudar, "" (não deu para saber) volta em 5 min sem apagar o
+  veredito anterior. Quem chama é o `checkApps` (vigia de apps, a cada minuto, até 4 checagens por volta,
+  mesmo com o monitor desligado). `GET /api/apps` devolve `frame` por app. A CSP do BrunOS libera
+  `frame-src 'self' http: https:` (o BrunOS continua com `frame-ancestors 'self'`).
 - **`internal/disks`** (0.15.0, decisão 56): a janela Discos. `discos-detalhe` (lsblk JSON + fstab só com
   identificador e pasta + `/dev/disk/by-id`) a cada 10 min e quando a lista do `/proc/diskstats` muda.
   Junta SMART, temperatura (SMART ou drivetemp), `hist` (nome no `diskhist`), `root` (raiz do Arquivos) e
@@ -324,6 +332,24 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   do dock (`dockPicker`). O atalho de teclado global ignora eventos dentro de `.xterm`.
 - `js/ui.js`: `$`, `$$`, `esc`, `html`, `fmt*`, `svg(nome)` (ícones inline), `contextMenu`,
   `openDialog(html, {width, cls, closeBtn, backdropClose, onClose})`, `confirmDialog`, `promptDialog`, `toast`.
+- `js/windows.js` (0.17.0, decisão 58): gerenciador de Janelas (genérico; hoje só Janelas de app).
+  `initWindows({settings, confirm, onChange})`, `open({id, title, icon, originEl, mount, tools})`,
+  `focus`, `minimize`, `restore`, `toggleMax`, `close`, `closeAll`, `dockClick`, `has`, `count`, `list`,
+  `frontId`, `layout`, `allowUnload`. Fica em `#win-host` (camada 33: acima da pesquisa e do sino, abaixo
+  da faixa `#dock-peek` e da dock; folha do sistema aberta sobe para 36). Modos por `data-mode`: `float`
+  (arrastar com Pointer Events, redimensionar por `.win-rz`, encaixe topo/laterais com `#win-snap`),
+  `sheet` (uma visível, `#win-backdrop` minimiza) e `full` (tela estreita: até 759 px ou altura < 500).
+  Classes no `body`: `has-wins`, `dock-auto`/`dock-peek` (dock que se esconde) e `dock-above`. Animações
+  com Web Animations (só transform/opacity). Lembra `{rect, state}` por app em `localStorage`
+  (`brunos.win.<id>`). Voltar do navegador (`pushState`/`popstate`) minimiza a da frente; `beforeunload`
+  pergunta com janela aberta. Contas puras em `js/winmath.js` (testadas em `tests/windows.test.mjs`).
+- `js/appwindow.js` (0.17.0): `appWindow(a, url, {iconHTML, originEl, blocked})` → opções do
+  `windows.open` com iframe sem sandbox, ⟳ e ↗ (sempre a página inicial do app) ou a explicação de Só em
+  aba. No `app.js`: `openApp(a, {mode, originEl})`, `appClick` (clique normal vira janela só com
+  "Abrir apps em: No BrunOS"; Ctrl/clique do meio seguem o navegador), `windowBlock(a)` (`frame: "no"` ou
+  https→http), dock com apps abertos não fixados depois de um segundo divisor. Preferências: `openIn`
+  (`tab`|`same`|`brunos`), `winStyle`, `dockWithMax` (`visible`|`auto`|`above`), `winLimitPc`,
+  `winLimitMobile`; por app `forceTab`. Demonstração: `demoUrl` → `assets/demo-app.html`.
 - `js/files.js`: janela Arquivos; exporta `mountFiles`, `navigate`, `mapDisksDialog(ctx, onDone)`.
 - `js/battery.js`: `batteryWidgetHTML`, `paintBattery(root, battery)`, `batteryDialog`.
 - `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.

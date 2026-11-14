@@ -180,7 +180,21 @@ os testes de disco viraram contêineres descartáveis com ferramentas falsas (no
 `smoke.sh`); reinício do BrunOS depois de montar/desmontar e a trava de container (decisão 57). Ideias
 anotadas e não aprovadas foram para o `ideias-futuras.md`.
 
+## 0.17.0 (13/11): Janelas de app (etapa 12, decisão 58)
+"Abrir apps em: No BrunOS" abre o app numa janela dentro do painel (iframe direto, sem proxy). Estilo das
+janelas Flutuante (arrastar, redimensionar, encaixar no topo e nas laterais, vários abertos) ou Folha (uma
+por vez); tela estreita sempre em tela cheia. Barra com ⟳, ↗, minimizar, maximizar e fechar; animações de
+~200 ms saindo do ícone e voando para a dock. Dock com os apps abertos (segundo divisor, pontinho, clique
+que restaura/traz para a frente/minimiza) e "Dock com app maximizado" (visível, esconde sozinha, app acima
+da dock). Limite de apps abertos (8 no PC, 5 no celular; pergunta antes de fechar). O vigia de apps lê os
+cabeçalhos de cada app (`internal/framecheck`) e o que recusa vira Só em aba, abrindo em nova aba como
+antes. Voltar minimiza; F5 com app aberto pergunta; Sair fecha os apps; Bloqueio só esconde. Lições do teste
+visual: o encaixe precisa guardar o tamanho de antes do arraste; no celular, o toque na faixa da dock
+precisa cancelar o clique que cairia no app (ele roubava o foco e escondia a dock).
+
 ## Pegadinhas que ainda valem
+- Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
+  para saber que o app foi tocado, o BrunOS usa o `blur` da página.
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).
 - Ao mudar JS/CSS, recompilar antes de testar contra o backend (`go:embed`).

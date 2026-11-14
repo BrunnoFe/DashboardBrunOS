@@ -35,6 +35,7 @@ import (
 	"brunos/internal/energy"
 	"brunos/internal/events"
 	"brunos/internal/files"
+	"brunos/internal/framecheck"
 	"brunos/internal/history"
 	"brunos/internal/hostcmd"
 	"brunos/internal/integrations"
@@ -116,6 +117,7 @@ type server struct {
 	logins    *logins.Store
 	diskHist  *diskhist.Store
 	appmon    *appmon.Monitor
+	frames    *framecheck.Cache // apps que aceitam Janela de app (0.17.0, decisão 58)
 	hist      *history.Store
 	tsdb      *tsdb.DB // Históricos de 30 dias (0.14.0)
 	procs     *procs.Reader
@@ -155,7 +157,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now(), appmon: appmon.New()}
+	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now(), appmon: appmon.New(), frames: framecheck.NewCache()}
 
 	hostProc := ""
 	if st, err := os.Stat(cfg.HostProc); err == nil && st.IsDir() {
@@ -405,8 +407,10 @@ func (s *server) routes() http.Handler {
 	return securityHeaders(mux)
 }
 
+// frame-src aceita http: e https: para as Janelas de app (0.17.0); o BrunOS continua recusando ser
+// embutido por outros (frame-ancestors 'self').
 const appCSP = "default-src 'self'; img-src 'self' data: blob: https://cdn.jsdelivr.net; media-src 'self' blob:; " +
-	"style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'self' http: https:; " +
 	"frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -1085,6 +1089,7 @@ type appOut struct {
 	Health     string          `json:"health"`           // up | down | unknown (monitor de disponibilidade)
 	Uptime     *float64        `json:"uptime,omitempty"` // % das últimas 24 h
 	Update     *runtipi.Update `json:"update,omitempty"` // atualização na loja (conferida 1×/dia)
+	Frame      string          `json:"frame"`            // "ok" | "no" (Só em aba) | "" (não testado)
 }
 
 func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
@@ -1123,6 +1128,9 @@ func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
 		}
 		if u, ok := s.updates.For(a.URN); ok {
 			o.Update = &u
+		}
+		if s.frames != nil {
+			o.Frame = s.frames.Get(a.URN)
 		}
 		out = append(out, o)
 	}

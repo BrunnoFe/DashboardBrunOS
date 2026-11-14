@@ -272,3 +272,13 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     quais programas ainda seguram o disco; (c) antes de desmontar, o Arquivos solta a pasta do disco
     (senão o próprio BrunOS apareceria como "em uso"). Alternativa recusada: montar `/mnt` com propagação
     fora do Runtipi (quebraria a instalação pela loja).
+58. **Janela de app é um iframe direto, com checagem dos cabeçalhos, sem proxy** (0.17.0, opção A do
+    Bruno, combinado em 13/11/2026). Cada app decide se aceita ser mostrado dentro de outra página
+    (`X-Frame-Options`, CSP `frame-ancestors`), e o navegador não conta à página quando um iframe foi
+    recusado. Em vez de reescrever as respostas dos apps por um proxy no BrunOS (pesado, quebra login,
+    cookies e WebSocket dos apps, e abre brecha de segurança), o vigia de apps, que já pede a página de
+    cada app a cada minuto, passa a ler esses cabeçalhos: app que recusa vira **Só em aba** e abre em nova
+    aba como antes; o que não deu para testar tenta a janela, com o botão "abrir em nova aba" sempre na
+    barra. O peso fica no navegador (cada app aberto é uma página), não no servidor; por isso há um
+    limite configurável de apps abertos. Alternativas recusadas: marcar à mão (o Bruno descobriria pela
+    tela branca) e tentar sempre (experiência feia nos apps que recusam).

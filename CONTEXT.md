@@ -99,6 +99,40 @@ App sem Página escolhida (por exemplo, recém-instalado no Runtipi); fica na ú
 app colocado.
 _Evite_: app sem lugar, app órfão
 
+## Janelas
+
+**Janela**:
+Qualquer quadro que abre por cima da tela inicial (Arquivos, Discos, um app...).
+_Evite_: modal, popup, diálogo (diálogo é a pergunta curta de confirmar)
+
+**Estilo das janelas**:
+Como as Janelas se comportam no computador: Flutuante ou Folha. No celular e em telas estreitas as duas
+ocupam a tela inteira.
+_Evite_: modo de janela, tipo de janela
+
+**Flutuante**:
+Estilo em que a Janela pode ser arrastada e maximizada, e várias ficam abertas ao mesmo tempo, uma por
+cima da outra (a última tocada fica na frente).
+_Evite_: livre, solta, janela do Windows
+
+**Folha**:
+Estilo em que a Janela fica centralizada, uma por vez, com o fundo escurecido.
+_Evite_: sheet, painel, modal
+
+**Janela de app**:
+Janela que mostra um app (do Runtipi ou um link) dentro do BrunOS, sem abrir outra aba.
+_Evite_: navegador embutido, iframe, visualizador
+
+**Minimizar**:
+Esconder uma Janela sem fechá-la: o que está nela continua carregado e ela fica na dock até voltar.
+Fechar descarta.
+_Evite_: ocultar, esconder, suspender
+
+**Só em aba**:
+App que não aceita ser mostrado dentro de outra página; sempre abre em nova aba, mesmo com "Abrir apps
+em: No BrunOS".
+_Evite_: app bloqueado, app incompatível
+
 ## Dados
 
 **Fonte**:

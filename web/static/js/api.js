@@ -353,11 +353,13 @@ function makeDemo() {
   for (let i = 0; i < 90; i++) tick();
   history.forEach((p, i) => { p.t -= (history.length - 1 - i) * 2; }); // um ponto a cada 2 s, como no servidor
 
-  const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', ...extra });
+  // Janela de app na demonstração (0.17.0): os apps abrem uma página de exemplo local (demoUrl); Nextcloud
+  // e Vaultwarden fazem o papel de apps que recusam (Só em aba).
+  const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', frame: 'ok', demoUrl: `assets/demo-app.html#${encodeURIComponent(name)}`, ...extra });
   const apps = [
-    A('immich', 'migrated', 'Immich', 2283, 'immich'), A('nextcloud-mini', 'migrated', 'Nextcloud', 8083, 'nextcloud'),
+    A('immich', 'migrated', 'Immich', 2283, 'immich'), A('nextcloud-mini', 'migrated', 'Nextcloud', 8083, 'nextcloud', { frame: 'no' }),
     A('plex', 'migrated', 'Plex', 32400, 'plex'), A('syncthing', 'migrated', 'Syncthing', 8384, 'syncthing'),
-    A('vaultwarden', 'migrated', 'Vaultwarden', 8107, 'vaultwarden'), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
+    A('vaultwarden', 'migrated', 'Vaultwarden', 8107, 'vaultwarden', { frame: 'no' }), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
     A('transmission', 'migrated', 'Transmission', 9091, 'transmission'), A('qbittorrent', 'migrated', 'qBittorrent', 8080, 'qbittorrent'),
     A('speedtest-tracker', 'migrated', 'Speedtest Tracker', 8765, 'speedtest-tracker'), A('watchyourlan', 'migrated', 'WatchYourLAN', 8840, 'watchyourlan'),
     A('filebrowser', 'migrated', 'File Browser', 8087, 'filebrowser'), A('dashdot-lite', 'personal-store', 'Dashdot', 3001, 'dashdot'),
