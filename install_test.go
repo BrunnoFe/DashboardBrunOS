@@ -1,0 +1,183 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"brunos/internal/events"
+	"brunos/internal/runtipi"
+)
+
+// fakeHost faz o papel do script do servidor: responde e anota os pedidos.
+type fakeHost struct {
+	mu    sync.Mutex
+	calls []string
+	ins   map[string][]byte
+	resp  map[string]string
+	fail  map[string]error
+}
+
+func (f *fakeHost) run(_ context.Context, cmd string, in []byte) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, cmd)
+	verb := strings.Fields(cmd)[0]
+	f.ins[verb] = in
+	if err := f.fail[verb]; err != nil {
+		return nil, err
+	}
+	return []byte(f.resp[verb]), nil
+}
+
+func writeFile(t *testing.T, p, s string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+var testRuntipiDir string
+
+func installServer(t *testing.T) (*server, *fakeHost) {
+	dir := t.TempDir()
+	testRuntipiDir = dir
+	writeFile(t, filepath.Join(dir, "repos/migrated/apps/alist/config.json"), `{"name":"AList","port":5244,"exposable":true,"tipi_version":1,"available":true,
+		"form_fields":[{"type":"text","label":"Usuário","env_variable":"ALIST_USER","required":true},
+		{"type":"password","label":"Senha","env_variable":"ALIST_PASS","required":true,"min":8},
+		{"type":"number","label":"Workers","env_variable":"WORKERS","min":1,"max":8},
+		{"type":"boolean","label":"Modo leitura","env_variable":"RO"},
+		{"type":"text","label":"Tema","env_variable":"THEME","options":[{"label":"Claro","value":"light"},{"label":"Escuro","value":"dark"}]},
+		{"type":"random","label":"Segredo","env_variable":"SECRET"}]}`)
+	writeFile(t, filepath.Join(dir, "repos/migrated/apps/plex/config.json"), `{"name":"Plex","port":32400,"tipi_version":1,"available":true}`)
+	writeFile(t, filepath.Join(dir, "apps/migrated/plex/config.json"), `{"name":"Plex","id":"plex","port":32400,"tipi_version":1}`)
+	f := &fakeHost{ins: map[string][]byte{}, resp: map[string]string{}, fail: map[string]error{}}
+	s := &server{tipi: runtipi.New(dir), events: events.New(""), storeHost: f.run}
+	return s, f
+}
+
+func call(t *testing.T, h http.HandlerFunc, method, path string, body any) (int, map[string]any) {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	r := httptest.NewRequest(method, path, bytes.NewReader(b))
+	w := httptest.NewRecorder()
+	h(w, r)
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	return w.Code, out
+}
+
+func TestInstall(t *testing.T) {
+	s, f := installServer(t)
+	ok := map[string]any{"urn": "alist:migrated", "port": 8123, "values": map[string]any{"ALIST_USER": "admin", "ALIST_PASS": "senha-boa-123", "WORKERS": 4, "RO": true, "THEME": "dark", "SECRET": "não-pode"}}
+	code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", ok)
+	if code != 200 {
+		t.Fatalf("instalar: %d %v", code, out)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(f.ins["instalar-app"], &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ALIST_USER"] != "admin" || body["ALIST_PASS"] != "senha-boa-123" || body["WORKERS"] != 4.0 || body["RO"] != true || body["THEME"] != "dark" ||
+		body["port"] != 8123.0 || body["exposed"] != false || body["openPort"] != true {
+		t.Fatalf("corpo: %v", body)
+	}
+	if _, has := body["SECRET"]; has {
+		t.Fatal("pergunta random não pode ir do navegador ao Runtipi")
+	}
+	if f.calls[len(f.calls)-1] != "instalar-app alist:migrated" {
+		t.Fatalf("pedido: %v", f.calls)
+	}
+	bad := []map[string]any{
+		{"urn": "alist:migrated", "values": map[string]any{"ALIST_PASS": "senha-boa-123"}},                                                    // falta obrigatória
+		{"urn": "alist:migrated", "values": map[string]any{"ALIST_USER": "a", "ALIST_PASS": "curta"}},                                         // min
+		{"urn": "alist:migrated", "values": map[string]any{"ALIST_USER": "a", "ALIST_PASS": "senha-boa-123", "WORKERS": 99}},                  // max
+		{"urn": "alist:migrated", "values": map[string]any{"ALIST_USER": "a", "ALIST_PASS": "senha-boa-123", "THEME": "roxo"}},                // opção
+		{"urn": "alist:migrated", "values": map[string]any{"ALIST_USER": "a\nb", "ALIST_PASS": "senha-boa-123"}},                              // quebra de linha
+		{"urn": "alist:migrated", "port": 80, "values": map[string]any{"ALIST_USER": "a", "ALIST_PASS": "senha-boa-123"}},                     // porta baixa
+		{"urn": "alist:migrated", "exposed": true, "domain": "x", "values": map[string]any{"ALIST_USER": "a", "ALIST_PASS": "senha-boa-123"}}, // domínio
+	}
+	for i, b := range bad {
+		if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", b); code != 400 {
+			t.Errorf("caso %d deveria ser recusado: %d %v", i, code, out)
+		}
+	}
+	if code, _ := call(t, s.hStoreInstall, "POST", "/api/store/install", map[string]any{"urn": "plex:migrated"}); code != 409 {
+		t.Error("instalar app já instalado deveria dar 409")
+	}
+	// erro do Runtipi traduzido
+	f.fail["instalar-app"] = errors.New(`{"statusCode":500,"message":"APP_ERROR_PORT_ALREADY_IN_USE","intlParams":{"port":8123}}`)
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", ok); code != 502 || !strings.Contains(out["error"].(string), "porta 8123 já é usada") {
+		t.Fatalf("erro traduzido: %d %v", code, out)
+	}
+}
+
+func TestReconfigGuardaSenhaESegredo(t *testing.T) {
+	s, f := installServer(t)
+	writeFile(t, filepath.Join(testRuntipiDir, "apps/migrated/alist/config.json"), `{"name":"AList","id":"alist","port":8123,"tipi_version":1}`)
+	s.tipi.Invalidate()
+	f.resp["info-app"] = `{"app":{"status":"running","port":8123,"config":{"ALIST_USER":"admin","ALIST_PASS":"antiga-123456","SECRET":"gerado"},"enableAuth":true}}`
+	code, out := call(t, s.hStoreInstall, "POST", "/api/store/reconfig", map[string]any{"urn": "alist:migrated", "values": map[string]any{"ALIST_USER": "novo", "ALIST_PASS": ""}})
+	if code != 200 {
+		t.Fatalf("editar: %d %v", code, out)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(f.ins["reconfigurar-app"], &body)
+	if body["ALIST_USER"] != "novo" || body["ALIST_PASS"] != "antiga-123456" || body["SECRET"] != "gerado" || body["enableAuth"] != true || body["port"] != 8123.0 {
+		t.Fatalf("corpo da edição: %v", body)
+	}
+	// a tela nunca recebe senha nem segredo
+	fields, _, _ := s.tipi.FormFields("alist:migrated")
+	var t2 tipiApp
+	_ = json.Unmarshal([]byte(f.resp["info-app"]), &t2)
+	c := currentOf(t2, fields)
+	if _, has := c.Values["ALIST_PASS"]; has || len(c.Secrets) != 1 || c.Secrets[0] != "ALIST_PASS" {
+		t.Fatalf("respostas atuais: %+v", c)
+	}
+	if _, has := c.Values["SECRET"]; has {
+		t.Fatal("segredo random foi para a tela")
+	}
+}
+
+func TestSettingsPreservaManual(t *testing.T) {
+	s, f := installServer(t)
+	f.resp["ajustes-ler"] = "services:\n  plex:\n    volumes:\n      - /mnt/disco1/Filmes:/movies # feito à mão\n    labels:\n      x: \"1\"\n"
+	settings := map[string]any{"mounts": []map[string]any{{"host": "/mnt/disco1/Filmes", "container": "/movies"}, {"host": "/mnt/disco1/Series", "container": "/tv", "readOnly": true}}, "memoryMB": 2048}
+	if code, _ := call(t, s.hStoreSettingsSave, "POST", "/api/store/settings", map[string]any{"urn": "plex:migrated", "settings": settings}); code != 400 {
+		t.Fatal("sem a Senha de configuração deveria dar 400")
+	}
+	code, out := call(t, s.hStoreSettingsSave, "POST", "/api/store/settings", map[string]any{"urn": "plex:migrated", "settings": settings, "password": "certa-123", "restart": true})
+	if code != 200 {
+		t.Fatalf("gravar: %d %v", code, out)
+	}
+	in := string(f.ins["ajustes-gravar"])
+	if !strings.HasPrefix(in, "certa-123\n") || !strings.Contains(in, "# feito à mão") || !strings.Contains(in, "x: \"1\"") ||
+		!strings.Contains(in, "/mnt/disco1/Series:/tv:ro") || !strings.Contains(in, "memory: 2G") {
+		t.Fatalf("arquivo gravado:\n%s", in)
+	}
+	if f.calls[len(f.calls)-1] != "reiniciar-app plex:migrated" {
+		t.Fatalf("deveria reiniciar: %v", f.calls)
+	}
+	// pasta perigosa: recusada antes de chegar ao servidor
+	f.calls = nil
+	bad := map[string]any{"mounts": []map[string]any{{"host": "/etc", "container": "/x"}}}
+	if code, _ := call(t, s.hStoreSettingsSave, "POST", "/api/store/settings", map[string]any{"urn": "plex:migrated", "settings": bad, "password": "certa-123"}); code != 400 {
+		t.Fatal("pasta do sistema deveria ser recusada")
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "ajustes-gravar") {
+			t.Fatal("gravou mesmo recusando")
+		}
+	}
+}

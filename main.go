@@ -280,11 +280,12 @@ func main() {
 	go s.watchApps(ctx)
 	go s.netmon.Run(ctx)
 	go s.integ.Run(ctx)
-	go s.energy.Run(ctx)  // consumo: uma amostra por minuto
-	go s.smart.Run(ctx)   // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
-	go s.disks.Run(ctx)   // janela Discos: lista a cada 10 min e quando um disco liga ou desliga
-	go s.updates.Run(ctx) // atualizações na frequência escolhida e acompanhamento das que estão rodando
-	go func() {           // Históricos: diário a cada 5 min, foto a cada 6 h
+	go s.energy.Run(ctx)          // consumo: uma amostra por minuto
+	go s.smart.Run(ctx)           // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
+	go s.disks.Run(ctx)           // janela Discos: lista a cada 10 min e quando um disco liga ou desliga
+	go s.updates.Run(ctx)         // atualizações na frequência escolhida e acompanhamento das que estão rodando
+	go s.watchConfigPassword(ctx) // avisa uma vez no sino enquanto a Senha de configuração não existe
+	go func() {                   // Históricos: diário a cada 5 min, foto a cada 6 h
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
 		for {
@@ -390,6 +391,13 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/store/logo", a(s.hStoreLogo))
 	mux.HandleFunc("POST /api/store/app", a(s.hStoreAppAction))
 	mux.HandleFunc("POST /api/store/stores", a(s.hStoreStores))
+	// 0.20.0: instalar, editar a instalação e Ajustes dentro do BrunOS
+	mux.HandleFunc("GET /api/store/form", a(s.hStoreForm))
+	mux.HandleFunc("POST /api/store/install", a(s.hStoreInstall))
+	mux.HandleFunc("POST /api/store/reconfig", a(s.hStoreInstall))
+	mux.HandleFunc("GET /api/store/status", a(s.hStoreStatus))
+	mux.HandleFunc("GET /api/store/settings", a(s.hStoreSettings))
+	mux.HandleFunc("POST /api/store/settings", a(s.hStoreSettingsSave))
 
 	s.files.Register(mux, a)
 	s.events.Register(mux, a)

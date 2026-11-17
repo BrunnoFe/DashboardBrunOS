@@ -66,8 +66,11 @@ const (
 	// "formatar" com a Senha de formatação, "discos-estado" e a trava de container no "ejetar", 0.16.0;
 	// 12 = janela Loja: "iniciar-app", "parar-app", "desinstalar-app", "adicionar-loja" e "remover-loja",
 	// todos pelo runtipi-cli, 0.18.0; 13 = a Senha de formatação passa a se chamar Senha de configuração,
-	// com o comando "senha-config" (o antigo "senha-formatar" continua funcionando), 0.19.0).
-	ScriptVersion = 13
+	// com o comando "senha-config" (o antigo "senha-formatar" continua funcionando), 0.19.0;
+	// 14 = "discos-estado" diz a data em que a Senha de configuração foi criada; instalar, editar a
+	// instalação e reiniciar pela API do Runtipi ("info-app", "instalar-app", "reconfigurar-app",
+	// "reiniciar-app") e os Ajustes ("ajustes-ler", "ajustes-gravar", com a Senha de configuração), 0.20.0).
+	ScriptVersion = 14
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -253,6 +256,13 @@ const (
 	CmdAppUninstall = "desinstalar-app" // "desinstalar-app <app>:<loja>": runtipi-cli app uninstall
 	CmdStoreAdd     = "adicionar-loja"  // "adicionar-loja <nome> <endereço https>": runtipi-cli appstore add
 	CmdStoreRemove  = "remover-loja"    // "remover-loja <nome>": runtipi-cli appstore remove
+	// 0.20.0 (script 14): pela API do Runtipi, com a chave do runtipi-cli, que não sai do servidor
+	CmdAppInfo     = "info-app"         // "info-app <app>:<loja>": estado e respostas da instalação (JSON)
+	CmdAppInstall  = "instalar-app"     // "instalar-app <app>:<loja>" + formulário (JSON) pela entrada padrão
+	CmdAppReconfig = "reconfigurar-app" // "reconfigurar-app <app>:<loja>" + respostas novas (JSON); reinicia
+	CmdAppRestart  = "reiniciar-app"    // "reiniciar-app <app>:<loja>"
+	CmdAppCfgRead  = "ajustes-ler"      // "ajustes-ler <app>:<loja>": user-config/<loja>/<app>/docker-compose.yml
+	CmdAppCfgWrite = "ajustes-gravar"   // "ajustes-gravar <app>:<loja>" + Senha de configuração e o arquivo novo
 )
 
 var (
@@ -272,7 +282,8 @@ func ValidStoreURL(s string) bool {
 func StoreActAllowed(cmd string) bool {
 	f := strings.Fields(cmd)
 	switch {
-	case len(f) == 2 && (f[0] == CmdAppStart || f[0] == CmdAppStop || f[0] == CmdAppUninstall):
+	case len(f) == 2 && (f[0] == CmdAppStart || f[0] == CmdAppStop || f[0] == CmdAppUninstall || f[0] == CmdAppInfo ||
+		f[0] == CmdAppInstall || f[0] == CmdAppReconfig || f[0] == CmdAppRestart || f[0] == CmdAppCfgRead || f[0] == CmdAppCfgWrite):
 		return ValidApp(f[1])
 	case len(f) == 2 && f[0] == CmdStoreRemove:
 		return ValidStoreName(f[1])
@@ -305,7 +316,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 13: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 14: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -313,7 +324,9 @@ const HostScript = `#!/bin/sh
 # velocidade <disco> | ejetar <disco> | montar <uuid> <pasta> | desmontar <pasta> |
 # rotulo <uuid> <rotulo> | formatar <disco> <serie> <ext4|btrfs|exfat|ntfs> <rotulo> | discos-estado |
 # iniciar-app <app>:<loja> | parar-app <app>:<loja> | desinstalar-app <app>:<loja> |
-# adicionar-loja <nome> <https://...> | remover-loja <nome> |
+# adicionar-loja <nome> <https://...> | remover-loja <nome> | info-app <app>:<loja> |
+# instalar-app <app>:<loja> | reconfigurar-app <app>:<loja> | reiniciar-app <app>:<loja> |
+# ajustes-ler <app>:<loja> | ajustes-gravar <app>:<loja> (Senha de configuração + arquivo pela entrada padrão) |
 # atualizar-script <assinatura> | versao. Recusa todo o resto.
 # Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-config | esquecer-senha-config (os nomes
 # antigos senha-formatar | esquecer-senha-formatar continuam valendo).
@@ -327,7 +340,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=13
+VERSAO=14
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -417,7 +430,7 @@ case "$acao" in
     [ $# -eq 3 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido"
     case "$modo" in sim|nao) ;; *) falha "pedido inválido" ;; esac ;;
-  tamanho-backup|iniciar-app|parar-app|desinstalar-app)
+  tamanho-backup|iniciar-app|parar-app|desinstalar-app|info-app|instalar-app|reconfigurar-app|reiniciar-app|ajustes-ler|ajustes-gravar)
     [ $# -eq 2 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido" ;;
   adicionar-loja)
@@ -546,6 +559,70 @@ confere_senha() {
   fi
   rm -f "$TRAVA"
   senha=""
+}
+# Chave de acesso à API do Runtipi, igual à do runtipi-cli (JWT HS256, sub "cli"), válida por 5 minutos.
+# O segredo vem pela entrada padrão (nunca na linha de comando, que outros usuários podem ver).
+PY_JWT='import base64,hashlib,hmac,json,sys,time
+k=sys.stdin.read().strip().encode()
+b=lambda x: base64.urlsafe_b64encode(x).rstrip(b"=").decode()
+n=int(time.time())
+h=b(json.dumps({"alg":"HS256","typ":"JWT"},separators=(",",":")).encode())
+p=b(json.dumps({"sub":"cli","iat":n,"nbf":n-5,"exp":n+300},separators=(",",":")).encode())
+print(h+"."+p+"."+b(hmac.new(k,(h+"."+p).encode(),hashlib.sha256).digest()))'
+# api_runtipi <método> <caminho>: chama a API do Runtipi deste servidor como o runtipi-cli faz (0.20.0:
+# instalar, editar a instalação e reiniciar pelo BrunOS). O corpo (JSON) vem pela entrada padrão; a
+# resposta sai na saída padrão. A chave é a do CLI: no Runtipi 4.12+ fica dentro do container (o
+# runtipi-cli lê com docker exec); antes, era o JWT_SECRET do .env. Chave e token só passam por arquivos
+# temporários com permissão 600, nunca pela linha de comando.
+api_runtipi() {
+  d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+  command -v curl >/dev/null 2>&1 || falha "falta o curl no servidor (sudo apt install curl)" 3
+  command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
+  ip=$(sed -n 's/^INTERNAL_IP=//p' "$d/.env" 2>/dev/null | head -n 1 | tr -d '"\r ')
+  porta=$(sed -n 's/^NGINX_PORT=//p' "$d/.env" 2>/dev/null | head -n 1 | tr -d '"\r ')
+  [ -n "$ip" ] || ip=localhost
+  [ -n "$porta" ] || porta=80
+  so_com "$ip" "A-Za-z0-9.-" 100 && so_com "$porta" "0-9" 5 || falha "endereço do Runtipi estranho no .env" 3
+  v=$(tr -d 'v \r\n' <"$d/VERSION" 2>/dev/null || true)
+  maj=${v%%.*}
+  min=${v#*.}
+  min=${min%%.*}
+  case "$maj$min" in ""|*[!0-9]*) falha "não deu para ler a versão do Runtipi" 3 ;; esac
+  umask 077
+  t=$(mktemp -d)
+  if [ "$maj" -gt 4 ] || { [ "$maj" -eq 4 ] && [ "$min" -ge 12 ]; }; then
+    timeout 20 docker exec runtipi cat /data/.secrets/cli-secret >"$t/k" 2>/dev/null || { rm -rf "$t"; falha "não deu para ler a chave do Runtipi (o container runtipi está rodando?)" 3; }
+  elif [ "$maj" -eq 4 ]; then
+    sed -n 's/^JWT_SECRET=//p' "$d/.env" | head -n 1 | tr -d '"\r' >"$t/k"
+  else
+    rm -rf "$t"
+    falha "esta versão do Runtipi ($v) não é aceita: atualize o Runtipi" 3
+  fi
+  [ -s "$t/k" ] || { rm -rf "$t"; falha "a chave do Runtipi está vazia" 3; }
+  tok=$(python3 -c "$PY_JWT" <"$t/k")
+  rm -f "$t/k"
+  printf 'header = "Authorization: Bearer %s"\n' "$tok" >"$t/cfg"
+  tok=""
+  head -c 65537 >"$t/corpo"
+  [ "$(wc -c <"$t/corpo")" -le 65536 ] || { rm -rf "$t"; falha "pedido grande demais" 2; }
+  if [ -s "$t/corpo" ]; then set -- "$1" "$2" -H "Content-Type: application/json" --data-binary "@$t/corpo"; else set -- "$1" "$2"; fi
+  m=$1
+  c=$2
+  shift 2
+  cod=$(curl -sS -m 120 -K "$t/cfg" -X "$m" "$@" -o "$t/resp" -w '%{http_code}' "http://$ip:$porta/api$c" 2>"$t/err") || cod=000
+  if [ "$cod" = 000 ]; then
+    e=$(head -c 300 "$t/err")
+    rm -rf "$t"
+    falha "o Runtipi não respondeu em $ip:$porta ($e)" 1
+  fi
+  if [ "$cod" -ge 400 ]; then
+    head -c 2000 "$t/resp" >&2
+    echo >&2
+    rm -rf "$t"
+    exit 1
+  fi
+  head -c 1000000 "$t/resp"
+  rm -rf "$t"
 }
 # tudo o que precisa ser verdade antes de apagar um disco (conferido de novo logo antes de apagar)
 checa_formatar() { # <disco> <série> <fs>
@@ -826,7 +903,12 @@ case "$acao" in
     exit 0 ;;
   discos-estado)
     if systemctl is-active --quiet brunos-discos 2>/dev/null; then echo "rodando"; else echo "parado"; fi
-    if [ -f "$SENHA" ]; then echo "senha sim"; else echo "senha nao"; fi
+    if [ -f "$SENHA" ]; then
+      echo "senha sim"
+      # a data em que a senha foi criada (último campo do resumo); nunca o resumo em si
+      d=$(cut -d'$' -f7 "$SENHA" 2>/dev/null | tr -cd '0-9T:-' | cut -c1-19)
+      [ -z "$d" ] || echo "senha-data $d"
+    else echo "senha nao"; fi
     if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; echo "trava ${n:-0} ${ate:-0}"; fi
     echo "=== registro"
     tail -n 40 "$LOGD" 2>/dev/null || true
@@ -907,6 +989,57 @@ case "$acao" in
       exit 1
     fi
     echo "feito"
+    exit 0 ;;
+  info-app)
+    # o que o Runtipi sabe do app (estado, respostas da instalação): para acompanhar e editar
+    api_runtipi GET "/apps/$valor" </dev/null
+    exit 0 ;;
+  instalar-app)
+    # o formulário (JSON) vem pela entrada padrão; o Runtipi instala sozinho, em segundo plano
+    api_runtipi POST "/app-lifecycle/$valor/install"
+    exit 0 ;;
+  reconfigurar-app)
+    # as respostas novas (JSON) pela entrada padrão; depois reinicia para valerem
+    api_runtipi PATCH "/app-lifecycle/$valor/update-config" >/dev/null
+    api_runtipi POST "/app-lifecycle/$valor/restart" </dev/null
+    exit 0 ;;
+  reiniciar-app)
+    api_runtipi POST "/app-lifecycle/$valor/restart" </dev/null
+    exit 0 ;;
+  ajustes-ler|ajustes-gravar)
+    # Ajustes do app: user-config/<loja>/<app>/docker-compose.yml, que o Runtipi junta ao compose do app
+    d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+    id=${valor%%:*}
+    loja=${valor#*:}
+    [ -d "$d/apps/$loja/$id" ] || falha "esse app não está instalado" 4
+    dir="$d/user-config/$loja/$id"
+    arq="$dir/docker-compose.yml"
+    if [ -L "$dir" ] || [ -L "$arq" ]; then falha "o arquivo de ajustes é um atalho: não mexo nele" 3; fi
+    if [ "$acao" = ajustes-ler ]; then
+      if [ -f "$arq" ]; then head -c 65537 "$arq"; fi
+      exit 0
+    fi
+    # gravar: primeira linha = Senha de configuração (conferida aqui), o resto = o arquivo novo
+    confere_senha ajustes
+    umask 022
+    t=$(mktemp)
+    head -c 65537 >"$t"
+    [ "$(wc -c <"$t")" -le 65536 ] || { rm -f "$t"; falha "arquivo de ajustes grande demais" 2; }
+    install -d -m 755 "$dir"
+    if [ -f "$arq" ]; then
+      # cópia do arquivo anterior (as 5 últimas ficam)
+      cp -p "$arq" "$dir/docker-compose.yml.brunos-$(date +%Y%m%d-%H%M%S).bak"
+      ls -1t "$dir"/docker-compose.yml.brunos-*.bak 2>/dev/null | tail -n +6 | while read -r b; do rm -f "$b"; done
+    fi
+    if [ -s "$t" ]; then
+      install -m 644 "$t" "$arq.novo"
+      chown --reference="$d/apps" "$arq.novo" 2>/dev/null || true
+      mv -f "$arq.novo" "$arq"
+    else
+      rm -f "$arq"
+    fi
+    rm -f "$t"
+    echo "ajustes gravados"
     exit 0 ;;
   tamanho-backup)
     d=$(pasta_runtipi) || falha "não achei a pasta do Runtipi" 3

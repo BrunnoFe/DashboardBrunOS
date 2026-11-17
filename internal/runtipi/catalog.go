@@ -71,11 +71,27 @@ type Catalog struct {
 	At     int64          `json:"at"`
 }
 
-// FormField é uma pergunta que o Runtipi faz ao instalar o app.
+// FormField é uma pergunta que o Runtipi faz ao instalar o app. Type, Env, Default, Options, Min, Max e
+// Regex (0.20.0) servem para o formulário de instalação dentro do BrunOS.
 type FormField struct {
-	Label    string `json:"label"`
-	Hint     string `json:"hint,omitempty"`
-	Required bool   `json:"required,omitempty"`
+	Label       string       `json:"label"`
+	Hint        string       `json:"hint,omitempty"`
+	Required    bool         `json:"required,omitempty"`
+	Type        string       `json:"type,omitempty"` // text, password, email, number, fqdn, ip, fqdnip, url, boolean
+	Env         string       `json:"env,omitempty"`  // env_variable
+	Default     string       `json:"default,omitempty"`
+	Placeholder string       `json:"placeholder,omitempty"`
+	Options     []FormOption `json:"options,omitempty"`
+	Min         *float64     `json:"min,omitempty"`
+	Max         *float64     `json:"max,omitempty"`
+	Regex       string       `json:"regex,omitempty"`
+	PatternErr  string       `json:"patternError,omitempty"`
+}
+
+// FormOption é uma escolha de uma pergunta com lista.
+type FormOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // CatalogDetail é a página de um app: o resumo, a descrição (Markdown) e o que a instalação pergunta.
@@ -83,6 +99,7 @@ type CatalogDetail struct {
 	CatalogApp
 	Description string      `json:"description"`
 	Fields      []FormField `json:"fields"`
+	Exposable   bool        `json:"exposable,omitempty"` // dá para expor num domínio
 }
 
 const (
@@ -110,12 +127,41 @@ type catalogConfig struct {
 	Archs      []string `json:"supported_architectures"`
 	Created    float64  `json:"created_at"` // milissegundos
 	Updated    float64  `json:"updated_at"`
+	Exposable  bool     `json:"exposable"`
 	Fields     []struct {
-		Label    string `json:"label"`
-		Hint     string `json:"hint"`
-		Required bool   `json:"required"`
-		Type     string `json:"type"`
+		Label       string          `json:"label"`
+		Hint        string          `json:"hint"`
+		Required    bool            `json:"required"`
+		Type        string          `json:"type"`
+		Env         string          `json:"env_variable"`
+		Default     json.RawMessage `json:"default"`
+		Placeholder string          `json:"placeholder"`
+		Options     []struct {
+			Label string          `json:"label"`
+			Value json.RawMessage `json:"value"`
+		} `json:"options"`
+		Min          *float64 `json:"min"`
+		Max          *float64 `json:"max"`
+		Regex        string   `json:"regex"`
+		PatternError string   `json:"pattern_error"`
 	} `json:"form_fields"`
+}
+
+// rawText transforma um valor JSON simples (texto, número, verdadeiro/falso) em texto.
+func rawText(r json.RawMessage) string {
+	var s string
+	if json.Unmarshal(r, &s) == nil {
+		return s
+	}
+	var v any
+	if json.Unmarshal(r, &v) == nil {
+		switch x := v.(type) {
+		case float64, bool:
+			b, _ := json.Marshal(x)
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // isDir e isFile não seguem atalhos: um symlink não é pasta nem arquivo para o catálogo.
@@ -392,14 +438,64 @@ func (d *Discoverer) CatalogDetail(urn string) (CatalogDetail, bool) {
 	}
 	var cfg catalogConfig
 	if b, ok := readLimited(filepath.Join(a.dir, "config.json"), maxConfig); ok && json.Unmarshal(b, &cfg) == nil {
+		out.Exposable = cfg.Exposable
 		for _, f := range cfg.Fields {
 			if f.Type == "random" || strings.TrimSpace(f.Label) == "" || len(out.Fields) >= maxFormFields {
 				continue // "random" o Runtipi gera sozinho, não pergunta
 			}
-			out.Fields = append(out.Fields, FormField{Label: clip(f.Label, 120), Hint: clip(f.Hint, 240), Required: f.Required})
+			ff := FormField{Label: clip(f.Label, 120), Hint: clip(f.Hint, 240), Required: f.Required, Type: clip(f.Type, 16),
+				Default: clip(rawText(f.Default), 300), Placeholder: clip(f.Placeholder, 120), Min: f.Min, Max: f.Max,
+				Regex: clip(f.Regex, 300), PatternErr: clip(f.PatternError, 200)}
+			if envNameOK(f.Env) {
+				ff.Env = f.Env
+			}
+			for _, o := range f.Options {
+				if len(ff.Options) < 100 {
+					ff.Options = append(ff.Options, FormOption{Label: clip(o.Label, 80), Value: clip(rawText(o.Value), 200)})
+				}
+			}
+			out.Fields = append(out.Fields, ff)
 		}
 	}
 	return out, true
+}
+
+// FormFields devolve todas as perguntas do app (inclusive as "random", que o Runtipi gera sozinho), para o
+// BrunOS conferir o formulário de instalação antes de mandar ao Runtipi.
+func (d *Discoverer) FormFields(urn string) ([]FormField, bool, bool) {
+	a, ok := d.catalogApp(urn)
+	if !ok || a.dir == "" {
+		return nil, false, false
+	}
+	var cfg catalogConfig
+	b, ok := readLimited(filepath.Join(a.dir, "config.json"), maxConfig)
+	if !ok || json.Unmarshal(b, &cfg) != nil {
+		return nil, false, false
+	}
+	out := []FormField{}
+	for _, f := range cfg.Fields {
+		if !envNameOK(f.Env) || len(out) >= maxFormFields*2 {
+			continue
+		}
+		ff := FormField{Label: clip(f.Label, 120), Required: f.Required, Type: f.Type, Env: f.Env, Default: rawText(f.Default), Min: f.Min, Max: f.Max, Regex: f.Regex}
+		for _, o := range f.Options {
+			ff.Options = append(ff.Options, FormOption{Label: o.Label, Value: rawText(o.Value)})
+		}
+		out = append(out, ff)
+	}
+	return out, cfg.Exposable, true
+}
+
+func envNameOK(s string) bool {
+	if s == "" || len(s) > 64 || (s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // CatalogLogo devolve o caminho do logo de um app do catálogo (instalado fora das lojas: o da cópia instalada).

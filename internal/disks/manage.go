@@ -47,6 +47,7 @@ type FormatJob struct {
 // FormatState: se a Senha de configuração existe, trava por erros e a formatação em andamento.
 type FormatState struct {
 	HasPassword bool       `json:"hasPassword"`
+	PasswordAt  int64      `json:"passwordAt,omitempty"` // quando a senha foi criada (script 14+)
 	LockedUntil int64      `json:"lockedUntil,omitempty"`
 	Fails       int        `json:"fails,omitempty"`
 	Job         *FormatJob `json:"job,omitempty"`
@@ -275,6 +276,10 @@ func parseStatus(out []byte) (running bool, st FormatState, log []string) {
 			running = true
 		case len(f) == 2 && f[0] == "senha":
 			st.HasPassword = f[1] == "sim"
+		case len(f) == 2 && f[0] == "senha-data":
+			if t, err := time.ParseInLocation("2006-01-02T15:04:05", f[1], time.Local); err == nil {
+				st.PasswordAt = t.Unix()
+			}
 		case len(f) == 3 && f[0] == "trava":
 			st.Fails, _ = strconv.Atoi(f[1])
 			st.LockedUntil, _ = strconv.ParseInt(f[2], 10, 64)
@@ -397,5 +402,8 @@ func (m *Monitor) FormatInfo(ctx context.Context) FormatState {
 		st.Job = &cp
 	}
 	m.fmt.mu.Unlock()
+	if st.Err == "" && m.PasswordSeen != nil {
+		m.PasswordSeen(st.HasPassword)
+	}
 	return st
 }

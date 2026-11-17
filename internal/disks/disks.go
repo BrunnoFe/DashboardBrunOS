@@ -119,6 +119,8 @@ type Monitor struct {
 	OnMount   func(folder string)
 	OnUnmount func(folder string)
 	Verify    func(w http.ResponseWriter, r *http.Request, password string) bool
+	// PasswordSeen recebe, a cada consulta, se a Senha de configuração existe (0.20.0: resolve o aviso)
+	PasswordSeen func(has bool)
 
 	fmt formatting
 

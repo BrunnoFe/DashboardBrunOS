@@ -224,6 +224,14 @@ func TestApplyLog(t *testing.T) {
 	if _, st, _ := parseStatus([]byte("parado\nsenha nao\ntrava 3 0\n=== registro\n")); st.HasPassword || st.Fails != 3 {
 		t.Fatalf("estado: %+v", st)
 	}
+	// script 14: a data em que a senha foi criada
+	want, _ := time.ParseInLocation("2006-01-02T15:04:05", "2026-11-18T09:30:00", time.Local)
+	if _, st, _ := parseStatus([]byte("parado\nsenha sim\nsenha-data 2026-11-18T09:30:00\n")); !st.HasPassword || st.PasswordAt != want.Unix() {
+		t.Fatalf("data da senha: %+v", st)
+	}
+	if _, st, _ := parseStatus([]byte("senha sim\nsenha-data lixo\n")); st.PasswordAt != 0 {
+		t.Fatalf("data estranha não vale: %+v", st)
+	}
 }
 
 var _ = http.MethodGet

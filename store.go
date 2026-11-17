@@ -27,8 +27,14 @@ var storeAnsi = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 // storeAct faz um pedido da janela Loja ao script do servidor (só os pedidos da Loja).
 // in vai pela entrada padrão do script: a Senha de configuração no desinstalar (nunca na linha de comando).
 func (s *server) storeAct(ctx context.Context, cmd string, in []byte) error {
+	_, err := s.storeRun(ctx, cmd, in)
+	return err
+}
+
+// storeRun é o storeAct que devolve também a saída do script (instalar, ler o app, ler os Ajustes).
+func (s *server) storeRun(ctx context.Context, cmd string, in []byte) ([]byte, error) {
 	if !hostcmd.StoreActAllowed(cmd) {
-		return errors.New("pedido não permitido")
+		return nil, errors.New("pedido não permitido")
 	}
 	run := s.storeHost
 	if run == nil {
@@ -36,10 +42,15 @@ func (s *server) storeAct(ctx context.Context, cmd string, in []byte) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	_, err := run(ctx, cmd, in)
+	out, err := run(ctx, cmd, in)
 	if err == nil {
-		return nil
+		return out, nil
 	}
+	return nil, storeErr(err)
+}
+
+// storeErr deixa o erro do script do servidor legível (sem cores do terminal, sem textão).
+func storeErr(err error) error {
 	msg := strings.TrimSpace(storeAnsi.ReplaceAllString(err.Error(), ""))
 	switch {
 	case errors.Is(err, hostcmd.ErrOldScript):
@@ -49,8 +60,17 @@ func (s *server) storeAct(ctx context.Context, cmd string, in []byte) error {
 	case len(msg) > 400:
 		msg = msg[len(msg)-400:]
 	}
-	return errors.New(msg)
+	return friendlyErr{msg, err}
 }
+
+// friendlyErr é a mensagem para a tela, guardando o erro original (errors.Is com ErrOldScript continua valendo).
+type friendlyErr struct {
+	msg string
+	err error
+}
+
+func (e friendlyErr) Error() string { return e.msg }
+func (e friendlyErr) Unwrap() error { return e.err }
 
 // panelKey guarda, junto dos apps, se o painel do Runtipi aceita abrir dentro do BrunOS (a tela de instalar).
 const panelKey = "@painel-runtipi"
@@ -136,7 +156,7 @@ func (s *server) hStoreAppAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
 		return
 	}
-	cmds := map[string]string{"start": hostcmd.CmdAppStart, "stop": hostcmd.CmdAppStop, "uninstall": hostcmd.CmdAppUninstall}
+	cmds := map[string]string{"start": hostcmd.CmdAppStart, "stop": hostcmd.CmdAppStop, "uninstall": hostcmd.CmdAppUninstall, "restart": hostcmd.CmdAppRestart}
 	cmd, ok := cmds[req.Action]
 	if !ok {
 		writeJSON(w, 400, map[string]string{"error": "ação inválida"})

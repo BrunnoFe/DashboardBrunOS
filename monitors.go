@@ -11,6 +11,7 @@ import (
 
 	"brunos/internal/disks"
 	"brunos/internal/energy"
+	"brunos/internal/events"
 	"brunos/internal/hostcmd"
 	"brunos/internal/runtipi"
 	"brunos/internal/smart"
@@ -75,6 +76,35 @@ func (s *server) setupMonitors(dataDir string) {
 	s.updates.NotifyApps = func() bool { v, ok := s.readSettings()["appUpdateNotify"].(bool); return !ok || v }
 }
 
+// cfgPasswordKey é o aviso "falta criar a Senha de configuração" (fica aberto até a senha existir).
+const cfgPasswordKey = "senha-config-falta"
+
+// watchConfigPassword (0.20.0): pouco depois de ligar e uma vez por dia, pergunta ao servidor se a Senha
+// de configuração existe. Se não existe, avisa no sino uma vez só (a chave fica aberta); quando passa a
+// existir, o aviso se resolve sem barulho. Sem conexão com o servidor, não diz nada.
+func (s *server) watchConfigPassword(ctx context.Context) {
+	t := time.NewTimer(3 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s.checkConfigPassword(ctx)
+		t.Reset(24 * time.Hour)
+	}
+}
+
+func (s *server) checkConfigPassword(ctx context.Context) {
+	// FormatInfo já resolve o aviso quando a senha existe (PasswordSeen)
+	if st := s.disks.FormatInfo(ctx); st.Err == "" && !st.HasPassword {
+		s.events.Emit(events.Event{Kind: "config-password", Level: events.Info, Key: cfgPasswordKey,
+			Title: "Crie a Senha de configuração",
+			Body:  "Ela protege as ações sensíveis do servidor (formatar discos e desinstalar apps). Em Configurações → Sistema → Senha de configuração, o botão Criar agora abre o Terminal com o comando pronto."})
+	}
+}
+
 // diskAct faz uma ação da janela Discos pelo script do servidor (só smart-teste, velocidade e ejetar).
 func (s *server) diskAct(ctx context.Context, cmd string) ([]byte, error) {
 	if !hostcmd.DiskActAllowed(cmd) {
@@ -118,6 +148,11 @@ func (s *server) setupDisks(dataDir, hostProc string) {
 	}
 	s.disks.OnUnmount = func(folder string) { s.setMappedFolder(folder, false) }
 	s.disks.Verify = s.verifyPassword
+	s.disks.PasswordSeen = func(has bool) {
+		if has {
+			s.events.Resolve(cfgPasswordKey, nil)
+		}
+	}
 }
 
 // setMappedFolder põe ou tira um disco (pasta de /mnt) da lista de discos mapeados do Arquivos.

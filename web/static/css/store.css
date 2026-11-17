@@ -204,3 +204,52 @@
 /* em tela cheia (celular), o fim da lista não fica debaixo da dock */
 #win-host[data-mode="full"] .st-content, #win-host[data-mode="full"] .st-dwrap { padding-bottom: calc(var(--dock-space, 90px) + 12px); }
 @media (prefers-reduced-motion: reduce) { .st-card, .st-scard, .st-app, .st-cat { transition: none; } }
+
+/* ── Instalar, editar a instalação e Ajustes (0.20.0, storeforms.js) ── */
+.sf { display: flex; flex-direction: column; gap: 6px; max-height: min(78vh, 900px); }
+.sf .st-loading { padding: 30px 0; }
+.sf-intro { font-size: 13px; line-height: 1.5; opacity: .75; margin: 0 0 4px; }
+.sf-form { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; margin: 0 -6px; padding: 0 6px 2px; }
+.sf-form h4 { margin: 10px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
+.sf-field { display: flex; flex-direction: column; gap: 5px; }
+.sf-lbl { font-size: 13px; font-weight: 600; }
+.sf-lbl i { font-style: normal; font-size: 10.5px; font-weight: 600; opacity: .55; margin-left: 4px; }
+.sf-field small, .sf-hint { font-size: 11.5px; opacity: .6; line-height: 1.4; }
+.sf-field .text-input, .sf-folder .text-input { width: 100%; }
+.sf-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,.04); font-size: 13px; }
+.sf-row small { display: block; font-size: 11.5px; opacity: .6; margin-top: 2px; }
+.sf-row .switch { flex: none; }
+.sf-folder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; flex: 1; min-width: 0; }
+.sf-mounts, .sf-envs { display: flex; flex-direction: column; gap: 8px; }
+.sf-mount { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 12px; background: rgba(255,255,255,.04); }
+.sf-mount .sf-dst { width: 150px; flex: none; }
+.sf-arrow { opacity: .5; flex: none; display: grid; }
+.sf-ro { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+.sf-ro small { font-size: 10px; opacity: .6; white-space: nowrap; }
+.sf-x { flex: none; padding: 0 8px; }
+.sf-env { display: flex; align-items: center; gap: 6px; }
+.sf-env [data-k] { width: 34%; flex: none; font-family: var(--mono, ui-monospace, monospace); }
+.sf-env [data-val] { flex: 1; min-width: 0; }
+.sf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sf-form > .pill-btn { align-self: flex-start; }
+.sf-ghost { background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.sf-empty { font-size: 12.5px; opacity: .6; margin: 0; padding: 8px 2px; }
+.sf-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sf-adv summary { cursor: pointer; font-size: 12.5px; opacity: .7; padding: 4px 0; }
+.sf-raw { max-height: 220px; overflow: auto; margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.28); font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.sf-save { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.07); }
+.sf-actions { flex-wrap: wrap; }
+.sf-grow { flex: 1; }
+.sf-progress { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: 14px; background: rgba(255,255,255,.05); font-size: 13px; line-height: 1.5; }
+.sf-progress .upd-spin { flex: none; margin-top: 2px; }
+.st-note.sf-warn { background: rgba(232,170,60,.1); }
+.sf .st-err code { font-size: 12px; }
+@media (max-width: 640px) {
+  .sf-mount { flex-wrap: wrap; }
+  .sf-mount .sf-folder { flex: 1 1 100%; grid-template-columns: 1fr; }
+  .sf-mount .sf-arrow { display: none; }
+  .sf-mount .sf-dst { flex: 1; width: auto; }
+  .sf-grid2 { grid-template-columns: 1fr; }
+  .sf-folder { grid-template-columns: 1fr; }
+  .sf-env [data-k] { width: 40%; }
+}

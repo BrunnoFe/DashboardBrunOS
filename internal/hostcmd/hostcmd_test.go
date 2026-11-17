@@ -237,6 +237,9 @@ func TestHostScriptRefuses(t *testing.T) {
 		"formatar-executar sda S1 ext4 X", "discos-estado x", "senha-formatar", "esquecer-senha-formatar",
 		// script 13 (Senha de configuração: nome novo do comando)
 		"senha-config", "esquecer-senha-config", "senha-config x",
+		// script 14 (instalar, editar e Ajustes pela Loja)
+		"instalar-app", "instalar-app immich", "instalar-app a:b:c", "info-app ../x:y", "reconfigurar-app immich:migrated x",
+		"reiniciar-app $(id):x", "ajustes-ler Immich:migrated", "ajustes-gravar immich:migrated;reboot", "ajustes-ler -x:y",
 		// script 12 (janela Loja)
 		"iniciar-app", "iniciar-app immich", "iniciar-app immich:migrated x", "iniciar-app ../x:y", "iniciar-app Immich:migrated",
 		"parar-app immich:migrated;reboot", "parar-app $(id):x", "desinstalar-app", "desinstalar-app a:b:c", "desinstalar-app -x:y",
@@ -258,6 +261,8 @@ func TestHostScriptRefuses(t *testing.T) {
 		"montar 1a2b-3C4D Disco_4", "desmontar Disco4", "rotulo 1a2b fotos", "formatar sdb SN-123_A.b:c ext4 Fotos", "formatar nvme0n1 X btrfs b",
 		"discos-estado",
 		"iniciar-app immich:migrated", "parar-app nextcloud_mini:brunnofe-store", "desinstalar-app immich:migrated",
+		"info-app immich:migrated", "instalar-app alist:casaos", "reconfigurar-app immich:migrated", "reiniciar-app plex:migrated",
+		"ajustes-ler plex:migrated", "ajustes-gravar plex:migrated",
 		"adicionar-loja minha-loja https://github.com/usuario/minha-loja", "adicionar-loja loja2 https://git.exemplo.org/a/b.git", "remover-loja minha-loja"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
@@ -269,7 +274,7 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("%s pelo SSH: %s", c, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 13") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 14") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa

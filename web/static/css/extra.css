@@ -430,6 +430,9 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
   .s-ctrl :is(.swatches, .wp-thumbs, .chips) { justify-content: flex-start; flex-wrap: wrap; }
   .s-row.pw-unsupported { flex-wrap: wrap; }
   .s-row.pw-unsupported > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
+  /* Senha de configuração ainda não criada: texto longo e dois botões, os botões descem */
+  .s-row.hot { flex-wrap: wrap; }
+  .s-row.hot > .s-ctrl { flex: 1 1 100%; justify-content: flex-start; padding-left: 42px; }
 }
 /* botão ☰ do Arquivos: só aparece quando a barra lateral vira gaveta */
 .f-menu-btn { display: none; }
@@ -742,6 +745,11 @@ body.reduce-motion .pb-ico, body.reduce-motion .bell-btn.ring .svg { animation: 
 .pw-dot.crit { background: #ff5a5a; box-shadow: 0 0 0 3px rgba(255,90,90,.2); }
 .pw-group .s-row { min-height: 56px; padding: 11px 14px; }
 .s-row.dim { opacity: .45; }
+/* Senha de configuração ainda não criada (0.20.0): linha em destaque no topo do Sistema */
+.s-row.hot { background: rgba(232,170,60,.09); box-shadow: inset 3px 0 0 #e8aa3c; }
+.s-row.hot .s-ico { color: #f1c46f; }
+.cfgpw-warn { color: #f1c46f; font-weight: 700; }
+.s-text code { font-size: .95em; padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,.08); }
 /* limite de carga: notebook sem suporte (esmaecido, mas o "Verificar de novo" continua legível) */
 .pw-unsupported .s-ico, .pw-unsupported .s-text { opacity: .5; }
 .pw-charge-note { display: block; margin-top: 4px; font-size: 11.5px; color: #ffd27a; opacity: .9 !important; }

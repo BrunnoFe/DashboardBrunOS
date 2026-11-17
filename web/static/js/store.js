@@ -238,6 +238,8 @@ function actionsHTML(a) {
     a.noGui || stopped ? '' : `<button class="pill-btn primary" data-st="open">${svg('external')}Abrir</button>`,
     a.update ? `<button class="pill-btn ${a.noGui || stopped ? 'primary' : ''}" data-st="updates">${svg('arrowUp')}Atualizar</button>` : '',
     self ? '' : `<button class="pill-btn" data-st="${stopped ? 'start' : 'stop'}" ${dis}>${svg('power')}${stopped ? 'Iniciar' : 'Parar'}</button>`,
+    self || !canForms() || a.local ? '' : `<button class="pill-btn" data-st="reconfig" ${dis}>${svg('edit')}Instalação</button>`,
+    self || !canForms() ? '' : `<button class="pill-btn" data-st="settings" ${dis}>${svg('sliders')}Ajustes</button>`,
     `<button class="pill-btn" data-st="info">${svg('info')}Detalhes e logs</button>`,
     self ? '' : `<button class="pill-btn danger" data-st="uninstall" ${dis}>${svg('trash')}Desinstalar</button>`,
   ].join('');
@@ -255,7 +257,7 @@ function drawDetail() {
   const old = S.script.have > 0 && S.script.have < S.script.want;
   const st = storeOf(a.store);
   const note = (a.installed && old ? `<p class="st-note">${svg('info')}Para parar, iniciar e desinstalar por aqui, o script do servidor precisa ser atualizado: abra as atualizações, ao lado do sino.</p>`
-    : !a.installed && !a.local ? `<p class="st-note">${svg('info')}A instalação é feita na tela do Runtipi, que abre ${S.panelFrame === 'no' ? 'em nova aba' : 'numa janela'}. Quando terminar, o app aparece aqui como instalado.</p>` : '')
+    : !a.installed && !a.local ? `<p class="st-note">${svg('info')}${canForms() ? 'Instalar abre as perguntas do app aqui mesmo; o Runtipi instala e o BrunOS acompanha até o app ligar.' : `A instalação é feita na tela do Runtipi, que abre ${S.panelFrame === 'no' ? 'em nova aba' : 'numa janela'}. Quando terminar, o app aparece aqui como instalado.`}</p>` : '')
     + (st?.badge ? `<p class="st-note via">${svg('shield')}Convertido automaticamente da loja ${esc(st.name || st.slug)} pelo Garimpo do BrunOS. Receitas que dão poder demais sobre o servidor ficam de fora; se este app não funcionar, a receita original pode precisar de ajuste.</p>` : '');
   const fields = d?.fields?.length ? `<div class="card st-side"><h4>A instalação pergunta</h4>${d.fields.map((f) => `<div class="st-field"><b>${esc(f.label)}${f.required ? ' <i>obrigatório</i>' : ''}</b>${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="st-dwrap">
@@ -332,11 +334,29 @@ async function runAction(k) {
   else if (k === 'open') S.ctx.openApp(a.urn);
   else if (k === 'info') S.ctx.appDetails(a.urn);
   else if (k === 'install') install(a);
+  else if (k === 'reconfig') reconfig(a);
+  else if (k === 'settings') appSettings(a);
   else if (k === 'start' || k === 'stop') startStop(a, k);
   else if (k === 'uninstall') uninstall(a);
 }
 
+// 0.20.0: com o script do servidor 14, instalar, editar a instalação e os Ajustes acontecem aqui mesmo
+// (storeforms.js, carregado só agora); com script antigo, instalar abre a tela do Runtipi como antes.
+const canForms = () => (S?.script?.have || 0) >= 14;
+function formsCtx(a) {
+  return {
+    runtipi: () => installInRuntipi(a),
+    openTerminal: S.ctx.openTerminal,
+    done: async () => { try { if (S) { apply(await api.store.get()); draw(); } await S?.ctx.reloadApps(); } catch { /* a Loja confere de novo ao voltar */ } },
+  };
+}
 function install(a) {
+  if (!canForms()) { installInRuntipi(a); return; }
+  import('./storeforms.js').then((m) => m.installDialog(a, formsCtx(a))).catch(() => installInRuntipi(a));
+}
+function reconfig(a) { import('./storeforms.js').then((m) => m.installDialog(a, formsCtx(a), { edit: true })); }
+function appSettings(a) { import('./storeforms.js').then((m) => m.settingsDialog(a, formsCtx(a))); }
+function installInRuntipi(a) {
   const url = `${S.ctx.runtipiBase()}/app-store/${encodeURIComponent(a.store)}/${encodeURIComponent(a.id)}`;
   S.ctx.openPanel(url, `Instalar ${a.name}`, S.panelFrame);
   // enquanto a instalação acontece no Runtipi, confere de tempos em tempos se o app já apareceu

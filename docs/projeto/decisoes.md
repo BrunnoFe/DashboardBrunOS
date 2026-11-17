@@ -324,3 +324,28 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     ficou de fora por não ter licença; a Umbrel, para depois, conferindo a licença. Alternativa
     recusada: uma loja única com cartões "virtuais" por origem no BrunOS (o Runtipi mostraria tudo como
     uma loja só e não daria para adicionar só uma origem).
+61. **Instalar, editar a instalação e Ajustes dentro do BrunOS** (0.20.0, combinado em 17/11/2026; revê
+    a decisão 59 b). (a) Instalar e editar vão pela **API do Runtipi**, chamada pelo script do servidor
+    com a chave do `runtipi-cli` (JWT HS256, `sub: "cli"`, 5 min): no Runtipi 4.12+ a chave fica dentro
+    do container (lida com `docker exec`), antes era o `JWT_SECRET` do `.env`. A chave e o token nunca
+    saem do servidor nem aparecem na linha de comando. O Runtipi continua dono do app (banco,
+    atualização, backup); gravar arquivos não bastaria, porque o estado fica no banco dele. Se o script
+    do servidor for antigo, instalar volta a abrir a tela do Runtipi. (b) O BrunOS confere o formulário
+    antes de mandar (obrigatórias, tipos, opções, mínimo/máximo, porta, domínio); as perguntas "random"
+    o Runtipi gera, e nenhuma senha volta para o navegador (editar sem digitar mantém a guardada).
+    Instalar não pede a Senha de configuração (não apaga nada; P17). (c) **Ajustes** = o arquivo
+    `user-config/<loja>/<app>/docker-compose.yml` que o Runtipi junta ao compose em todo início e que
+    sobrevive às atualizações. O Runtipi não confere nada nele, então o BrunOS confere: pastas novas só
+    de `/mnt`, `/home` e da mídia do Runtipi; nada de privileged, rede do servidor, socket do Docker,
+    poderes do Linux ou aparelhos além da placa de vídeo. Gravar pede a Senha de configuração, guarda
+    as 5 últimas cópias do arquivo anterior e oferece reiniciar o app. (d) Para respeitar os ajustes já
+    feitos à mão no Runtipi (pedido do Bruno: "Tome sempre cuidado com os ajustes que já fiz"), o BrunOS
+    edita a árvore do YAML com `gopkg.in/yaml.v3` (P15 b): só o que a tela mostra muda; comentários,
+    ordem e o resto do arquivo ficam. O que já estava escrito à mão, mesmo perigoso, continua (é do
+    Bruno), mas os Ajustes não podem acrescentar nada parecido. A biblioteca é a segunda dependência
+    (vendorizada e conferida no CI); só gasta processador quando os Ajustes de um app abrem ou salvam.
+    (e) Listas prontas com o recomendado marcado: discos e pastas (com as subpastas sugeridas pelo
+    Arquivos), memória e núcleos em degraus, placa de vídeo, variáveis comuns. Alternativa recusada:
+    texto livre sem conferência (P15 a ficava sem ler os ajustes feitos à mão).
+    (f) Senha de configuração (pedido do Bruno): linha em Configurações → Sistema com "Criar agora", que
+    abre o Terminal com o comando digitado (criar continua só no servidor, com sudo).

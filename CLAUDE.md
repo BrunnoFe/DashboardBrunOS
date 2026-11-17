@@ -44,9 +44,9 @@ limpeza de 12/11/2026.
 
 ## Regras de engenharia (não quebre sem combinar)
 
-1. **Leveza**: backend em **Go 1.24 só com a biblioteca padrão**. A única dependência externa é
-   `golang.org/x/crypto` (+ `x/sys`), **vendorizada** em `vendor/` e conferida no CI contra o
-   sum.golang.org. Não adicione dependências sem necessidade forte; se adicionar, vendorize e inclua na
+1. **Leveza**: backend em **Go 1.24 só com a biblioteca padrão**. As dependências externas são
+   `golang.org/x/crypto` (+ `x/sys`) e, desde a 0.20.0, `gopkg.in/yaml.v3` (só para os Ajustes dos
+   apps, decisão 61), **vendorizadas** em `vendor/` e conferidas no CI contra o sum.golang.org. Não adicione dependências sem necessidade forte; se adicionar, vendorize e inclua na
    checagem do CI (`.github/workflows/docker.yml`).
 2. **Frontend sem build**: HTML/CSS/JS puros com ES modules em `web/static/`, embutidos no binário com
    `go:embed`. Bibliotecas de terceiros ficam em `web/static/vendor/` (xterm.js e CodeMirror 6, este

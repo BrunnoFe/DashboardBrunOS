@@ -150,6 +150,20 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   veredito anterior. Quem chama é o `checkApps` (vigia de apps, a cada minuto, até 4 checagens por volta,
   mesmo com o monitor desligado). `GET /api/apps` devolve `frame` por app. A CSP do BrunOS libera
   `frame-src 'self' http: https:` (o BrunOS continua com `frame-ancestors 'self'`).
+- **Instalar, editar e Ajustes** (0.20.0, decisão 61): `install.go` + `internal/appcfg`. Rotas:
+  `GET /api/store/form?urn=` (perguntas do app com tipo, `env`, padrão, opções, mín./máx.; pastas
+  prontas; se instalado, as respostas atuais sem senhas: `current.secrets` só diz quais estão
+  guardadas), `POST /api/store/install` e `/api/store/reconfig` (`{urn, values, port, exposed, domain,
+  exposedLocal, openPort}`; o BrunOS confere e manda pelo script: `instalar-app`/`reconfigurar-app`, que
+  chamam a API do Runtipi), `GET /api/store/status?urn=` (`installing`, `running`, `stopped`, ou `gone`
+  quando a instalação falhou), `GET/POST /api/store/settings` (Ajustes: `ajustes-ler` → `appcfg.Parse`;
+  salvar = `appcfg.Apply` sobre o arquivo atual → `ajustes-gravar` com a Senha de configuração na
+  primeira linha → `reiniciar-app` se pedido). `appcfg` edita a árvore do YAML (`gopkg.in/yaml.v3`):
+  pastas, `deploy.resources.limits` (ou `mem_limit`/`cpus` se já estavam), `/dev/dri`, variáveis; o
+  resto fica, e `Risks` impede que os Ajustes acrescentem algo perigoso. `POST /api/store/app` ganhou
+  `action: "restart"`. A linha da Senha de configuração (Configurações → Sistema) lê
+  `GET /api/disks/format` (`passwordAt` = data da senha, script 14); `watchConfigPassword` avisa no sino
+  uma vez (chave `senha-config-falta`, resolvida pela própria consulta).
 - **Loja** (0.18.0, decisão 59): `internal/runtipi/catalog.go` + `store.go`. `Catalog()` lê
   `repos/<loja>/apps/<app>/config.json` de todas as lojas baixadas (nome, descrição curta, categorias,
   versão, autor, site, datas em ms → s, arquiteturas), o endereço da loja em `repos/<loja>/.git/config`
@@ -370,6 +384,8 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   https→http), dock com apps abertos não fixados depois de um segundo divisor. Preferências: `openIn`
   (`tab`|`same`|`brunos`), `winStyle`, `dockWithMax` (`visible`|`auto`|`above`), `winLimitPc`,
   `winLimitMobile`; por app `forceTab`. Demonstração: `demoUrl` → `assets/demo-app.html`.
+- `js/storeforms.js` (0.20.0, decisão 61): formulário de instalação, editar a instalação e Ajustes;
+  importado pelo `store.js` só quando a pessoa clica em Instalar, Instalação ou Ajustes
 - `js/store.js` + `css/store.css` (0.18.0, decisão 59): janela Loja, carregados só quando ela abre
   (import dinâmico e `<link>` criado na hora). `storeWindow(ctx, {originEl, urn})` → opções do
   `windows.open` (id `sys:store`); `showStoreApp(urn)`; `md(texto)` (Markdown mínimo: títulos, listas,

@@ -223,6 +223,19 @@ chave da OpenAI: o conversor agora troca segredo fixo (variável de SECRET/TOKEN
 longo) por um campo `random` do Runtipi, gerado em cada instalação, e recusa o app que ainda tiver algo
 com cara de chave; o `confere.py` também procura.
 
+## 0.20.0 (17/11): instalar e Ajustes dentro do BrunOS (etapa 13, decisão 61)
+Instalar na própria Loja: formulário com as perguntas do app (listas prontas de discos e pastas, o
+recomendado já marcado, porta, endereço local, domínio), conferido pelo BrunOS e mandado ao Runtipi pela
+API dele, com a chave do `runtipi-cli`, que não sai do servidor (script 14); o BrunOS acompanha até o app
+ligar. Cada app instalado ganhou **Instalação** (mudar as respostas, senhas guardadas ficam) e **Ajustes**
+(pastas do servidor, memória, núcleos, placa de vídeo, variáveis) no `user-config` do Runtipi, editado
+com `gopkg.in/yaml.v3` para não mexer no que foi escrito à mão; salvar pede a Senha de configuração e
+guarda cópias. Configurações → Sistema ganhou a linha da Senha de configuração, com "Criar agora" que abre
+o Terminal com o comando pronto, e um aviso no sino enquanto ela não existe. Lições: o Runtipi 4.12 trocou
+a chave do CLI (agora dentro do container, lida com `docker exec`); a chave e o token não podem ir na
+linha de comando (outros usuários veem os processos); o arquivo de ajustes do Runtipi não tem nenhuma
+conferência, por isso o BrunOS confere.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

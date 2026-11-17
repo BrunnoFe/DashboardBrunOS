@@ -1622,8 +1622,37 @@ function dockPicker(anchor, onChange) {
   const esc_ = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc_, true); });
 }
+// Senha de configuração (0.20.0, pedido do Bruno): o que o servidor diz dela, lido ao abrir as
+// Configurações. Criar e trocar continuam só no Terminal do servidor com sudo (quem entrar no BrunOS não
+// consegue criar uma); a linha só leva até lá, com o comando já digitado.
+const CFG_PW_CMD = 'sudo brunos-host senha-config';
+let cfgPw = null; // null = conferindo; {has, at, lockedUntil, err}
+async function loadCfgPw() {
+  try {
+    const i = await api.disks.formatInfo();
+    cfgPw = { has: !!i.hasPassword, at: i.passwordAt || 0, lockedUntil: i.lockedUntil || 0, err: i.hasPassword ? '' : i.err || '' };
+  } catch (err) { cfgPw = { err: err.message || 'o servidor não respondeu' }; }
+  refreshSettings();
+}
+function cfgPwRow() {
+  const base = { group: 'Sistema', cat: 'system', icon: 'key', title: 'Senha de configuração' };
+  const term = S.terminal !== false;
+  const go = (label, primary) => (term ? `<button class="pill-btn ${primary ? 'primary' : ''}" data-act="cfgpw-term">${svg('terminal')}${label}</button>`
+    : `<button class="pill-btn" data-act="cfgpw-copy">${svg('copy')}Copiar comando</button>`);
+  if (!cfgPw) return { ...base, desc: 'Conferindo no servidor…', ctrl: '' };
+  if (cfgPw.err && !cfgPw.has) return { ...base, desc: `Não deu para conferir no servidor: ${esc(cfgPw.err)}`, ctrl: `<button class="pill-btn" data-act="cfgpw-check">${svg('refresh')}Conferir</button>` };
+  if (!cfgPw.has) {
+    return { ...base, hot: true,
+      desc: `<b class="cfgpw-warn">Ainda não criada.</b> Uma segunda senha, só para as ações sensíveis do servidor (formatar discos e desinstalar apps). Ela é criada uma vez, no Terminal do servidor, para que ninguém que entre no BrunOS consiga criar uma. ${term ? 'O botão abre o Terminal com o comando já digitado: aperte Enter, digite a senha do seu usuário do servidor (pedida pelo sudo) e escolha a nova senha duas vezes.' : `Rode no terminal do servidor: <code>${CFG_PW_CMD}</code>`}`,
+      ctrl: `${go('Criar agora', true)}<button class="pill-btn" data-act="cfgpw-check">Já criei</button>` };
+  }
+  const when = cfgPw.at ? `Criada em ${new Date(cfgPw.at * 1000).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Criada';
+  const lock = cfgPw.lockedUntil > Date.now() / 1000 ? ` · <b class="cfgpw-warn">bloqueada até ${new Date(cfgPw.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</b> por senhas erradas` : '';
+  return { ...base, desc: `${when}${lock}. Pedida para formatar discos e desinstalar apps. Para trocar, o Terminal pede a senha atual.`, ctrl: go('Trocar', false) };
+}
 function settingsRows() {
   const st = set();
+  const pw = cfgPwRow(); // sem senha ainda: aparece em destaque no topo do Sistema; criada: junto do Terminal
   const range = (key, min, max, unit = '') => `<input type="range" min="${min}" max="${max}" value="${st[key]}" data-range="${key}" data-unit="${unit}" style="--p:${((st[key] - min) / (max - min)) * 100}%" aria-label="${key}"><span class="range-val">${st[key]}${unit}</span>`;
   const sw = (key, label) => `<button class="switch ${st[key] ? 'on' : ''}" data-toggle="${key}" role="switch" aria-checked="${!!st[key]}" aria-label="${label || key}"></button>`;
   const wps = [...BUILTIN_WALLPAPERS.map((id) => `builtin:${id}`), ...S.wallpapers.map((w) => `upload:${w.name}`), ...(S.localWallpaper ? ['local'] : [])];
@@ -1670,12 +1699,14 @@ function settingsRows() {
       ctrl: `<div class="seg">${[['senha', 'Com senha'], ['visual', 'Só visual']].map(([k, l]) => `<button class="${(st.lockMode || 'senha') === k ? 'on' : ''}" data-lockmode="${k}">${l}</button>`).join('')}</div><button class="pill-btn" data-act="lock-now">${svg('lock')}Bloquear agora</button>` },
     { group: 'Conta', cat: 'account', icon: 'clock', title: 'Bloquear sozinho', desc: 'Depois de quanto tempo sem mexer o mouse nem digitar', ctrl: `<select class="text-input sm" data-select="lockIdleMin" aria-label="Bloquear sozinho">${[[5, '5 minutos'], [15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [0, 'Nunca']].map(([v, l]) => `<option value="${v}" ${(st.lockIdleMin ?? 15) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` },
     { group: 'Conta', cat: 'account', icon: 'logout', title: 'Sair', desc: 'Encerra esta sessão neste navegador', ctrl: `<button class="pill-btn" data-act="logout">Sair</button>` },
+    ...(pw.hot ? [pw] : []),
     { group: 'Sistema', cat: 'system', icon: 'power', title: 'Energia e desligamento seguro', desc: S.snapshot?.battery ? 'Desliga o servidor com segurança quando a bateria acabar e registra as quedas de energia' : 'Registra as quedas de energia e desliga o servidor com segurança (precisa de bateria)', ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'power' },
     { group: 'Sistema', cat: 'system', icon: 'info', title: 'Informações do dispositivo', desc: `${esc(info.os || 'Linux')} · ${esc(info.cpuModel || '')}`, ctrl: `<span class="chev">${svg('chevR')}</span>`, act: 'device' },
     { group: 'Sistema', cat: 'system', icon: 'box', title: 'Runtipi', desc: S.tipi.found ? `${S.apps.length} apps instalados · domínio local ${esc(S.tipi.localDomain || '—')}` : 'Pasta do Runtipi não encontrada (monte em /runtipi)', ctrl: `<button class="pill-btn" data-act="open-runtipi">Abrir ${svg('external')}</button>` },
     { group: 'Sistema', cat: 'system', icon: 'layers', title: 'Docker', desc: S.docker ? (S.dockerActions ? 'Conectado · reiniciar apps permitido' : 'Conectado em modo leitura (status e uso dos apps)') : 'Sem acesso ao Docker: status e uso por app ficam desligados', ctrl: `<span class="v1-note ${S.docker ? 'ok' : 'off'}">${S.docker ? 'ativo' : 'desligado'}</span>` },
     { group: 'Sistema', cat: 'system', icon: 'terminal', title: 'Terminal', desc: S.terminal === false ? 'Desligado no docker-compose (BRUNOS_TERMINAL=false)' : 'Terminal no servidor por SSH, com abas, comandos salvos e a Chave do Terminal (trancada pela sua senha do BrunOS)', ctrl: S.terminal === false ? '' : `<button class="pill-btn" data-act="terminal">${svg('terminal')}Abrir terminal</button>` },
     ...(S.terminal === false ? [] : [{ group: 'Sistema', cat: 'system', icon: 'clock', title: 'Encerrar aba do Terminal sem ninguém olhando', desc: 'Aba minimizada ou janela fechada. Se algo ainda estiver rodando nela (ex.: apt), ela espera o comando terminar', ctrl: `<select class="text-input sm" data-select="termIdleMin" aria-label="Encerrar aba sem uso">${[[3, '3 minutos'], [5, '5 minutos'], [10, '10 minutos'], [15, '15 minutos'], [20, '20 minutos'], [30, '30 minutos'], [0, 'Nunca']].map(([v, l]) => `<option value="${v}" ${(st.termIdleMin ?? 15) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` }]),
+    ...(pw.hot ? [] : [pw]),
     (() => {
       const o = S.updates?.os;
       const desc = !o ? 'Conferido pelo script do servidor' : o.err ? esc(o.err)
@@ -1735,6 +1766,7 @@ function renderSettings(body) {
   drawSettingsRows(body);
   bindStats(body);
   wireSettings(body);
+  loadCfgPw(); // a cada vez que as Configurações abrem (depois de criar no Terminal, já aparece criada)
 }
 function drawSettingsRows(body) {
   const q = settingsQuery.trim().toLowerCase();
@@ -1744,7 +1776,7 @@ function drawSettingsRows(body) {
   const groups = {};
   rows.forEach((r) => (groups[r.group] ||= []).push(r));
   $('.s-groups', body).innerHTML = rows.length ? Object.entries(groups).map(([g, rs]) => `<div class="s-group-title">${g}</div><div class="s-group">${rs.map((r) => `
-    <div class="s-row ${r.act ? 'clickable' : ''}" ${r.act ? `data-act="${r.act}"` : ''}>
+    <div class="s-row ${r.act ? 'clickable' : ''} ${r.hot ? 'hot' : ''}" ${r.act ? `data-act="${r.act}"` : ''}>
       <span class="s-ico">${svg(r.icon)}</span>
       <span class="s-text"><b>${r.title}</b><small>${r.desc}</small></span>
       <span class="s-ctrl">${r.ctrl}</span>
@@ -1805,6 +1837,11 @@ function wireSettings(body) {
       else if (a === 'add-link') linkDialog();
       else if (a === 'open-runtipi') SYS.runtipi.run();
       else if (a === 'terminal') openTerminal();
+      else if (a === 'cfgpw-term') { closeSheet(); setTimeout(() => openTerminal({ typeCmd: CFG_PW_CMD }), 230); toast('Comando digitado no Terminal', 'Confira e aperte Enter. Depois, abra as Configurações de novo para ver a senha criada.'); }
+      else if (a === 'cfgpw-copy') {
+        try { await navigator.clipboard.writeText(CFG_PW_CMD); toast('Comando copiado', 'Cole no terminal do servidor.'); }
+        catch { toast('Não deu para copiar', CFG_PW_CMD); }
+      } else if (a === 'cfgpw-check') { cfgPw = null; redraw(); loadCfgPw(); }
       else if (a === 'lock-now') { closeSheet(); setTimeout(lockNow, 200); }
       else if (a === 'updates') { closeSheet(); setTimeout(showUpdates, 230); }
       else if (a === 'os-list') osUpdatesDialog();

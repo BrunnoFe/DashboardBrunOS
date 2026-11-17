@@ -242,6 +242,13 @@ const real = {
     logoUrl: (a) => (a.hasLogo ? `/api/store/logo?${q({ urn: a.urn })}` : ''),
     appAction: (urn, action, password) => call('POST', '/api/store/app', { urn, action, password }),
     stores: (action, name = '', url = '') => call('POST', '/api/store/stores', { action, name, url }),
+    // 0.20.0: instalar, editar a instalação e Ajustes dentro do BrunOS
+    form: (urn) => call('GET', `/api/store/form?${q({ urn })}`),
+    install: (b) => call('POST', '/api/store/install', b),
+    reconfig: (b) => call('POST', '/api/store/reconfig', b),
+    status: (urn) => call('GET', `/api/store/status?${q({ urn })}`),
+    settings: (urn) => call('GET', `/api/store/settings?${q({ urn })}`),
+    saveSettings: (b) => call('POST', '/api/store/settings', b),
   },
   app: {
     start: (urn) => call('POST', '/api/apps/start', { urn }),
@@ -765,7 +772,8 @@ function makeDemo() {
           j.step = t < 2 ? 'apagando' : t < 4 ? 'particionando' : 'formatando';
           if (t > 7) { Object.assign(j, { running: false, ok: true, uuid: `f0f0-${j.dev}`, ended: Math.floor(Date.now() / 1000) }); demoMnt.formatted[j.key] = { fs: j.fs, label: j.label }; }
         }
-        return wait({ hasPassword: location.hash !== '#semsenha', job: j ? { ...j } : undefined }, 300);
+        const has = location.hash !== '#semsenha';
+        return wait({ hasPassword: has, passwordAt: has ? Math.floor(Date.now() / 1000) - 5 * 86400 : undefined, job: j ? { ...j } : undefined }, 300);
       },
       format: (b) => {
         if (b.password !== 'demo1234') return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta'), { status: 403 }));
@@ -1026,7 +1034,8 @@ function makeDemo() {
         }).sort((x, y) => x.name.localeCompare(y.name, 'pt-BR'));
         return { found: true, at: now, apps: out, stores: stores.map((s) => ({ ...s, apps: out.filter((a) => a.store === s.slug).length })) };
       };
-      const state = () => ({ catalog: catalog(), script: { have: 13, want: 13 }, self: 'brunos', panelFrame: 'ok', suggested: suggested() });
+      const demoInstalling = {}, demoSettingsState = {}, demoSettingsRaw = {};
+      const state = () => ({ catalog: catalog(), script: { have: 14, want: 14 }, self: 'brunos', panelFrame: 'ok', suggested: suggested() });
       const fail = (msg, status = 400) => new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status })), 300));
       return {
         get: () => wait(state()),
@@ -1056,6 +1065,58 @@ function makeDemo() {
             stores = stores.filter((s) => s.slug !== name);
           }
           return wait({ ok: true, catalog: catalog(), suggested: suggested() }, 1400);
+        },
+        // 0.20.0: formulário de instalação, acompanhar, editar e Ajustes (tudo de mentira)
+        form: (urn) => {
+          const a = catalog().apps.find((x) => x.urn === urn);
+          if (!a) return fail('app não encontrado na loja', 404);
+          const media = a.categories.includes('media');
+          const fields = [
+            { label: 'Usuário do administrador', type: 'text', env: 'ADMIN_USER', required: true, default: 'admin' },
+            { label: 'Senha do administrador', type: 'password', env: 'ADMIN_PASS', required: true, min: 8, hint: 'Pelo menos 8 caracteres' },
+            ...(media ? [{ label: 'Pasta das mídias', type: 'text', env: 'MEDIA_PATH', required: true, hint: 'Onde ficam os filmes e as séries' }] : []),
+            { label: 'Idioma', type: 'text', env: 'LANG', options: [{ label: 'Português', value: 'pt-BR' }, { label: 'English', value: 'en' }], default: 'pt-BR' },
+            { label: 'Permitir cadastro de novos usuários', type: 'boolean', env: 'SIGNUP', default: 'false' },
+          ];
+          const inst = apps.find((x) => x.urn === urn);
+          return wait({ fields, exposable: true, port: a.port, installed: !!inst, localDomain: 'server.lan', script: 14, want: 14,
+            folders: [...demoMapped.map((n) => ({ name: n, host: `/mnt/${n}`, kind: 'disk', rootId: n.toLowerCase() })), { name: 'Pastas pessoais (/home)', host: '/home', kind: 'home', rootId: 'home' },
+              { name: 'Mídia do Runtipi (filmes, séries, músicas)', host: '${ROOT_FOLDER_HOST}/media/data', kind: 'media' }, { name: 'Downloads do Runtipi', host: '${ROOT_FOLDER_HOST}/media/downloads', kind: 'media' }],
+            current: inst ? { status: 'running', port: inst.port, exposed: false, exposedLocal: true, openPort: true, values: { ADMIN_USER: 'admin', LANG: 'pt-BR', SIGNUP: false, ...(media ? { MEDIA_PATH: '/mnt/Disco1/Filmes' } : {}) }, secrets: ['ADMIN_PASS'] } : undefined }, 300);
+        },
+        install: (b) => {
+          if (b.port && (b.port < 1024 || b.port > 65535)) return fail('a porta precisa estar entre 1024 e 65535');
+          if (b.port === 8080) return fail('a porta 8080 já é usada por outro app: escolha outra', 502);
+          const a = catalog().apps.find((x) => x.urn === b.urn);
+          demoInstalling[b.urn] = { until: Date.now() + 5000, a };
+          return wait({ ok: true }, 800);
+        },
+        status: (urn) => {
+          const j = demoInstalling[urn];
+          if (!j) return wait({ status: apps.some((x) => x.urn === urn) ? 'running' : 'gone' });
+          if (Date.now() < j.until) return wait({ status: 'installing' });
+          delete demoInstalling[urn];
+          apps.push({ urn, id: j.a.id, store: j.a.store, name: j.a.name, port: 8200, localDomain: `${j.a.id}.server.lan`, protocol: 'https', project: `${j.a.id}_${j.a.store}`, hasLogo: false, state: 'running', containers: 1, running: 1, shortDesc: j.a.shortDesc, frame: 'ok', demoUrl: `assets/demo-app.html#${encodeURIComponent(j.a.name)}` });
+          return wait({ status: 'running' });
+        },
+        reconfig: () => wait({ ok: true }, 1500),
+        settings: (urn) => {
+          const a = apps.find((x) => x.urn === urn);
+          if (!a) return fail('esse app não está instalado', 404);
+          const plex = a.id === 'plex';
+          const raw = plex ? 'services:\n  plex:\n    volumes:\n      - /mnt/Disco1/Filmes:/movies # feito à mão\n      - /mnt/Disco2/Series:/tv:ro\n    labels:\n      minha.etiqueta: "1"\n' : '';
+          return wait({ service: a.id, raw: demoSettingsRaw[urn] ?? raw,
+            state: demoSettingsState[urn] || { exists: plex, mounts: plex ? [{ host: '/mnt/Disco1/Filmes', container: '/movies', readOnly: false }, { host: '/mnt/Disco2/Series', container: '/tv', readOnly: true }] : [],
+              memoryMB: 0, cpus: 0, gpu: false, env: [], manual: plex ? ['labels'] : [], risks: [] },
+            folders: [...demoMapped.map((n) => ({ name: n, host: `/mnt/${n}`, kind: 'disk', rootId: n.toLowerCase() })), { name: 'Pastas pessoais (/home)', host: '/home', kind: 'home', rootId: 'home' },
+              { name: 'Mídia do Runtipi (filmes, séries, músicas)', host: '${ROOT_FOLDER_HOST}/media/data', kind: 'media' }, { name: 'Downloads do Runtipi', host: '${ROOT_FOLDER_HOST}/media/downloads', kind: 'media' }] }, 300);
+        },
+        saveSettings: (b) => {
+          if (!b.password) return fail('digite a Senha de configuração');
+          if (b.password === 'errada') return fail('Senha de configuração errada (tentativa 1 de 5)', 502);
+          if ((b.settings.mounts || []).some((m) => !/^(\/mnt\/|\/home\/|\$\{ROOT_FOLDER_HOST\}\/media)/.test(m.host))) return fail('a pasta não pode ser usada: escolha um disco de /mnt, uma pasta de /home ou a pasta de mídia do Runtipi');
+          demoSettingsState[b.urn] = { exists: true, manual: b.urn.startsWith('plex') ? ['labels'] : [], risks: [], ...b.settings };
+          return wait({ ok: true, state: demoSettingsState[b.urn], raw: '# (demonstração)\n', restartErr: '' }, 1200);
         },
       };
     })(),

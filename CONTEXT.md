@@ -143,6 +143,17 @@ Repositório com as receitas dos apps que o Runtipi sabe instalar. Há a oficial
 adiciona; a Loja do BrunOS mostra todas juntas.
 _Evite_: repositório (sozinho), catálogo, fonte
 
+**Ajustes** (de um app):
+Pastas do servidor dentro do app, limites de memória e núcleos, placa de vídeo e variáveis, gravados no
+arquivo de ajustes do usuário do Runtipi (`user-config`), que vale depois das atualizações do app. O que
+foi escrito à mão no Runtipi fica como está. Salvar pede a Senha de configuração.
+_Evite_: configurações do app, compose personalizado, override
+
+**Instalação** (de um app):
+As respostas dadas ao instalar (perguntas do app, porta, endereço). Dá para editar depois; o Runtipi
+reinicia o app com as respostas novas.
+_Evite_: formulário (sozinho), setup
+
 **Garimpo**:
 O conversor que transforma lojas de outros sistemas (CasaOS/ZimaOS) em Lojas do Runtipi, no repositório
 `BrunnoFe/Garimpo`, rodando no GitHub Actions. Cada loja de origem vira uma Loja do Runtipi com o nome da
