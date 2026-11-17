@@ -352,7 +352,14 @@ func TestStartAndFollow(t *testing.T) {
 	if j := waitDone(t, c); j.OK || !strings.Contains(j.Err, "outra instalação está rodando") {
 		t.Fatalf("erro: %+v", j)
 	}
-	list, _ = ev.List()
+	// o aviso sai logo depois do fim (o acompanhamento ainda está terminando): espera até 2 s por ele (no
+	// CI, sem esperar, o teste às vezes lia o aviso anterior, o de sucesso do Immich)
+	for i := 0; i < 200; i++ {
+		if list, _ = ev.List(); len(list) > 0 && list[0].Level == events.Aviso {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if list[0].Level != events.Aviso || !strings.Contains(list[0].Body, "Could not get lock") {
 		t.Fatalf("aviso de erro: %+v", list[0])
 	}
