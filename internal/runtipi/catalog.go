@@ -45,6 +45,7 @@ type CatalogApp struct {
 	Have       string   `json:"have,omitempty"`   // versão instalada
 	Update     bool     `json:"update,omitempty"` // a loja tem versão mais nova que a instalada
 	Local      bool     `json:"local,omitempty"`  // instalado, mas fora das lojas (criado à mão ou loja removida)
+	Priv       bool     `json:"priv,omitempty"`   // a receita requer privilégios (0.21.0, decisão 62)
 	dir        string
 	tipi       int
 	hidden     bool // available: false ou descontinuado
@@ -100,6 +101,7 @@ type CatalogDetail struct {
 	Description string      `json:"description"`
 	Fields      []FormField `json:"fields"`
 	Exposable   bool        `json:"exposable,omitempty"` // dá para expor num domínio
+	Privileges  []string    `json:"privileges"`          // o que a receita pede de poder sobre o servidor
 }
 
 const (
@@ -322,6 +324,7 @@ func (d *Discoverer) Catalog() Catalog {
 			a.Installed, a.Have = true, have.Version
 			t := d.installedTipi(a.Store, a.ID)
 			a.Update = t > 0 && a.tipi > t
+			a.Priv = have.Priv || a.Priv && !have.recipeOK
 		}
 		seen[a.URN] = true
 		count[a.Store]++
@@ -336,7 +339,7 @@ func (d *Discoverer) Catalog() Catalog {
 			continue
 		}
 		c.Apps = append(c.Apps, CatalogApp{URN: a.URN, ID: a.ID, Store: a.Store, Name: a.Name, ShortDesc: a.ShortDesc, Categories: cleanList(a.Categories, 8),
-			Version: a.Version, Port: a.Port, HasLogo: a.HasLogo, Installed: true, Have: a.Version, Local: true})
+			Version: a.Version, Port: a.Port, HasLogo: a.HasLogo, Installed: true, Have: a.Version, Local: true, Priv: a.Priv})
 	}
 	sort.SliceStable(c.Apps, func(i, j int) bool {
 		x, y := strings.ToLower(c.Apps[i].Name), strings.ToLower(c.Apps[j].Name)
@@ -385,6 +388,9 @@ func (d *Discoverer) scanStores() Catalog {
 				a.Name = id
 			}
 			a.HasLogo = isDir(filepath.Join(dir, "metadata")) && isFile(filepath.Join(dir, "metadata", "logo.jpg"), maxLogo)
+			if r, ok := readRecipe(dir, id); ok {
+				a.Priv = len(r.Privileges) > 0
+			}
 			st.Apps++
 			c.Apps = append(c.Apps, a)
 		}
@@ -429,7 +435,10 @@ func (d *Discoverer) CatalogDetail(urn string) (CatalogDetail, bool) {
 	if !ok {
 		return CatalogDetail{}, false
 	}
-	out := CatalogDetail{CatalogApp: a, Fields: []FormField{}}
+	out := CatalogDetail{CatalogApp: a, Fields: []FormField{}, Privileges: []string{}}
+	if r, ok := d.Recipe(urn); ok {
+		out.Privileges = r.Privileges
+	}
 	if a.dir == "" { // instalado fora das lojas: só o resumo
 		return out, true
 	}

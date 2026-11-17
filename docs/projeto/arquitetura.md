@@ -164,6 +164,21 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `action: "restart"`. A linha da Senha de configuração (Configurações → Sistema) lê
   `GET /api/disks/format` (`passwordAt` = data da senha, script 14); `watchConfigPassword` avisa no sino
   uma vez (chave `senha-config-falta`, resolvida pela própria consulta).
+- **Janela única e Requer privilégios** (0.21.0, decisão 62): `internal/appcfg/recipe.go` lê a receita do
+  app (`docker-compose.yml`, ou o `docker-compose.json` do Runtipi convertido para a mesma árvore):
+  serviço principal, imagem, variáveis, pastas, portas e `Privileges` (frases em português, a mesma régua
+  e as mesmas frases do Garimpo). `internal/runtipi/recipe.go` guarda o resultado enquanto o arquivo não
+  muda (tamanho + data) e dá `CatalogApp.Priv`, `App.Priv` (receita instalada) e `CatalogDetail.Privileges`.
+  `GET /api/store/form` ganhou `recipe`, `privileges`, `service`, `settings`/`settingsRaw`/`settingsErr`
+  (Ajustes de hoje, também de app não instalado) e, em `current`, `localSubdomain`, `enableAuth`, `guest`,
+  `maxBackups`, `userConfigEnabled`. `POST /api/store/install` e `/reconfig` aceitam `localSubdomain`,
+  `enableAuth`, `guest` (= `isVisibleOnGuestDashboard`), `maxBackups` (só editar), `settings`, `password`
+  e `acceptRisks`. Instalar app com privilégios sem `acceptRisks` → 400; com privilégios ou Ajustes que
+  mudam o arquivo, vai por `instalar-app-senha` (senha, formulário JSON numa linha, Ajustes) e uma rotina
+  solta (`undoSettingsIfFailed`) chama `ajustes-desfazer` se o app sumir do Runtipi (instalação falhou).
+  `appcfg.Settings` ganhou `image` (só a versão da imagem da receita pode mudar: `checkImage`) e `restart`.
+  Na tela: `storeforms.js` (`appDialog`), botão "Configurar"; guia `@priv` na Loja; `.app-priv` no ícone da
+  tela inicial e aviso em Detalhes do app.
 - **Loja** (0.18.0, decisão 59): `internal/runtipi/catalog.go` + `store.go`. `Catalog()` lê
   `repos/<loja>/apps/<app>/config.json` de todas as lojas baixadas (nome, descrição curta, categorias,
   versão, autor, site, datas em ms → s, arquiteturas), o endereço da loja em `repos/<loja>/.git/config`

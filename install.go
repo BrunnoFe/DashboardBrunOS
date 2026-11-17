@@ -11,6 +11,7 @@ package main
 // conferida pelo script do servidor.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"brunos/internal/appcfg"
 	"brunos/internal/events"
@@ -30,17 +32,28 @@ import (
 	"brunos/internal/runtipi"
 )
 
-var domainRe = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$`)
+var (
+	domainRe    = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$`)
+	subdomainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`) // o Runtipi aceita [a-zA-Z0-9-]{1,63}
+)
 
-// installReq é o formulário de instalação (ou de edição) que vem da tela.
+// installReq é o formulário de instalação (ou de edição) que vem da tela. Os campos com ponteiro (0.21.0)
+// podem faltar: aí, ao editar, continua o que o Runtipi já tem.
 type installReq struct {
-	URN          string         `json:"urn"`
-	Values       map[string]any `json:"values"` // env_variable → resposta (texto, número ou verdadeiro/falso)
-	Port         int            `json:"port"`   // 0 = a porta da loja
-	Exposed      bool           `json:"exposed"`
-	Domain       string         `json:"domain"`
-	ExposedLocal bool           `json:"exposedLocal"`
-	OpenPort     *bool          `json:"openPort"`
+	URN            string           `json:"urn"`
+	Values         map[string]any   `json:"values"` // env_variable → resposta (texto, número ou verdadeiro/falso)
+	Port           int              `json:"port"`   // 0 = a porta da loja
+	Exposed        bool             `json:"exposed"`
+	Domain         string           `json:"domain"`
+	ExposedLocal   bool             `json:"exposedLocal"`
+	OpenPort       *bool            `json:"openPort"`
+	LocalSubdomain *string          `json:"localSubdomain"` // nome do endereço local (https://<nome>.<domínio local>)
+	EnableAuth     *bool            `json:"enableAuth"`     // o Runtipi pede login antes de abrir o app
+	Guest          *bool            `json:"guest"`          // o app aparece no painel de visitantes do Runtipi
+	MaxBackups     *int             `json:"maxBackups"`     // só ao editar (o Runtipi ignora na instalação)
+	Settings       *appcfg.Settings `json:"settings"`       // Ajustes já na instalação
+	Password       string           `json:"password"`       // Senha de configuração (privilégios ou Ajustes)
+	AcceptRisks    bool             `json:"acceptRisks"`    // "Entendo os riscos" (app que requer privilégios)
 }
 
 // tipiApp é o que a API do Runtipi conta de um app instalado (GET /api/apps/<urn>).
@@ -57,6 +70,7 @@ type tipiApp struct {
 		EnableAuth                *bool          `json:"enableAuth"`
 		LocalSubdomain            *string        `json:"localSubdomain"`
 		MaxBackups                *int           `json:"maxBackups"`
+		UserConfigEnabled         *bool          `json:"userConfigEnabled"`
 	} `json:"app"`
 }
 
@@ -243,18 +257,38 @@ func buildBody(fields []runtipi.FormField, exposable bool, req installReq, cur *
 		body["exposedLocal"] = req.ExposedLocal
 	}
 	body["openPort"] = req.OpenPort == nil || *req.OpenPort
-	if cur != nil && cur.App != nil { // o que a tela não mostra continua como está
+	if req.LocalSubdomain != nil {
+		if sd := strings.ToLower(strings.TrimSpace(*req.LocalSubdomain)); sd != "" {
+			if !subdomainRe.MatchString(sd) {
+				return nil, errors.New("o nome do endereço local só pode ter letras, números e hífen (sem hífen nas pontas), até 63 letras")
+			}
+			body["localSubdomain"] = sd
+		}
+	}
+	if req.EnableAuth != nil {
+		body["enableAuth"] = *req.EnableAuth
+	}
+	if req.Guest != nil {
+		body["isVisibleOnGuestDashboard"] = *req.Guest
+	}
+	if req.MaxBackups != nil && cur != nil {
+		if *req.MaxBackups < 0 || *req.MaxBackups > 100 {
+			return nil, errors.New("o limite de backups vai de 0 (sem limite) a 100")
+		}
+		body["maxBackups"] = *req.MaxBackups
+	}
+	if cur != nil && cur.App != nil { // o que a tela não mandou continua como está
 		a := cur.App
-		if a.IsVisibleOnGuestDashboard != nil {
+		if _, ok := body["isVisibleOnGuestDashboard"]; !ok && a.IsVisibleOnGuestDashboard != nil {
 			body["isVisibleOnGuestDashboard"] = *a.IsVisibleOnGuestDashboard
 		}
-		if a.EnableAuth != nil {
+		if _, ok := body["enableAuth"]; !ok && a.EnableAuth != nil {
 			body["enableAuth"] = *a.EnableAuth
 		}
-		if a.LocalSubdomain != nil && *a.LocalSubdomain != "" {
+		if _, ok := body["localSubdomain"]; !ok && a.LocalSubdomain != nil && *a.LocalSubdomain != "" {
 			body["localSubdomain"] = *a.LocalSubdomain
 		}
-		if a.MaxBackups != nil {
+		if _, ok := body["maxBackups"]; !ok && a.MaxBackups != nil {
 			body["maxBackups"] = *a.MaxBackups
 		}
 		if _, ok := body["port"]; !ok && a.Port != nil {
@@ -262,6 +296,30 @@ func buildBody(fields []runtipi.FormField, exposable bool, req installReq, cur *
 		}
 	}
 	return body, nil
+}
+
+// imageRepo tira a versão de uma imagem ("ghcr.io/x/y:1.2" → "ghcr.io/x/y").
+func imageRepo(img string) string {
+	img, _, _ = strings.Cut(img, "@")
+	if i := strings.LastIndex(img, ":"); i > strings.LastIndex(img, "/") {
+		img = img[:i]
+	}
+	return img
+}
+
+// checkImage: os Ajustes só fixam a VERSÃO da imagem da receita, nunca trocam por outra imagem. A imagem
+// que já estava no arquivo (escrita à mão no Runtipi) pode continuar.
+func checkImage(set *appcfg.Settings, rec appcfg.Recipe, raw []byte, service string) error {
+	if set == nil || set.Image == "" || set.Image == rec.Image {
+		return nil
+	}
+	if st, err := appcfg.Parse(raw, service); err == nil && st.Image == set.Image {
+		return nil
+	}
+	if rec.Image == "" || imageRepo(set.Image) != imageRepo(rec.Image) {
+		return errors.New("só dá para trocar a versão da imagem do app, não a imagem")
+	}
+	return nil
 }
 
 // hostFolder é uma pasta do servidor oferecida pronta nos Ajustes e no formulário de instalação.
@@ -305,6 +363,12 @@ type formCurrent struct {
 	OpenPort     bool           `json:"openPort"`
 	Values       map[string]any `json:"values"`
 	Secrets      []string       `json:"secrets"` // perguntas de senha que já têm resposta (a tela mostra "guardada")
+	// 0.21.0
+	LocalSubdomain    string `json:"localSubdomain,omitempty"`
+	EnableAuth        bool   `json:"enableAuth"`
+	Guest             bool   `json:"guest"`
+	MaxBackups        *int   `json:"maxBackups,omitempty"`
+	UserConfigEnabled bool   `json:"userConfigEnabled"` // false = os Ajustes estão desligados no Runtipi
 }
 
 func currentOf(t tipiApp, fields []runtipi.FormField) *formCurrent {
@@ -312,7 +376,12 @@ func currentOf(t tipiApp, fields []runtipi.FormField) *formCurrent {
 		return nil
 	}
 	a := t.App
-	c := &formCurrent{Status: a.Status, Exposed: a.Exposed, ExposedLocal: a.ExposedLocal, OpenPort: a.OpenPort == nil || *a.OpenPort, Values: map[string]any{}, Secrets: []string{}}
+	c := &formCurrent{Status: a.Status, Exposed: a.Exposed, ExposedLocal: a.ExposedLocal, OpenPort: a.OpenPort == nil || *a.OpenPort, Values: map[string]any{}, Secrets: []string{},
+		EnableAuth: a.EnableAuth != nil && *a.EnableAuth, Guest: a.IsVisibleOnGuestDashboard != nil && *a.IsVisibleOnGuestDashboard,
+		MaxBackups: a.MaxBackups, UserConfigEnabled: a.UserConfigEnabled == nil || *a.UserConfigEnabled}
+	if a.LocalSubdomain != nil {
+		c.LocalSubdomain = *a.LocalSubdomain
+	}
 	if a.Port != nil {
 		c.Port = *a.Port
 	}
@@ -344,8 +413,10 @@ func (s *server) hStoreForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, info := s.tipi.Apps()
+	rec, _ := s.tipi.Recipe(urn)
 	out := map[string]any{"fields": d.Fields, "exposable": d.Exposable, "port": d.Port, "installed": d.Installed,
-		"folders": s.hostFolders(), "localDomain": info.LocalDomain, "script": s.updates.Snapshot().Script.Have, "want": hostcmd.ScriptVersion}
+		"folders": s.hostFolders(), "localDomain": info.LocalDomain, "script": s.updates.Snapshot().Script.Have, "want": hostcmd.ScriptVersion,
+		"recipe": rec, "privileges": d.Privileges, "service": d.ID}
 	if d.Installed {
 		fields, _, _ := s.tipi.FormFields(urn)
 		if t, err := s.tipiInfo(r.Context(), urn); err != nil {
@@ -354,7 +425,34 @@ func (s *server) hStoreForm(w http.ResponseWriter, r *http.Request) {
 			out["current"] = currentOf(t, fields)
 		}
 	}
+	// Ajustes de hoje (inclusive os que ficaram de uma instalação anterior: o Runtipi não apaga ao desinstalar)
+	if hostcmd.ValidApp(urn) && d.ID != selfApp {
+		if raw, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgRead+" "+urn, nil); err != nil {
+			if d.Installed {
+				out["settingsErr"] = err.Error()
+			}
+		} else if st, err := appcfg.Parse(raw, d.ID); err != nil {
+			out["settingsErr"], out["settingsRaw"] = err.Error(), string(raw)
+		} else {
+			out["settings"], out["settingsRaw"] = st, string(raw)
+		}
+	}
 	writeJSON(w, 200, out)
+}
+
+// settingsChange devolve o arquivo de Ajustes novo e se ele muda alguma coisa em relação ao de hoje.
+func settingsChange(raw []byte, service string, set *appcfg.Settings, rec appcfg.Recipe) ([]byte, bool, error) {
+	if set == nil {
+		return nil, false, nil
+	}
+	if err := checkImage(set, rec, raw, service); err != nil {
+		return nil, false, err
+	}
+	out, err := appcfg.Apply(raw, service, *set)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(raw)), nil
 }
 
 // hStoreInstall: POST /api/store/install (instalar) e /api/store/reconfig (editar as respostas e reiniciar).
@@ -408,20 +506,101 @@ func (s *server) hStoreInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(body)
 	cmd := hostcmd.CmdAppInstall
+	var in []byte = b
+	withSettings := false
 	if edit {
 		cmd = hostcmd.CmdAppReconfig
+	} else {
+		// app que requer privilégios: "Entendo os riscos" + Senha de configuração (decisão 62)
+		rec, _ := s.tipi.Recipe(req.URN)
+		priv := len(rec.Privileges) > 0
+		if priv && !req.AcceptRisks {
+			writeJSON(w, 400, map[string]string{"error": "este app requer privilégios: leia a lista e marque \"Entendo os riscos\""})
+			return
+		}
+		// Ajustes já na instalação: só gravados se mudarem algo em relação ao arquivo de hoje
+		var cfg []byte
+		if req.Settings != nil {
+			raw, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgRead+" "+req.URN, nil)
+			if err != nil {
+				writeJSON(w, 502, map[string]string{"error": err.Error(), "old": strconv.FormatBool(errors.Is(err, hostcmd.ErrOldScript))})
+				return
+			}
+			out, changed, err := settingsChange(raw, a.ID, req.Settings, rec)
+			if err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+			switch {
+			case changed && len(out) == 0:
+				// tirou tudo o que ficou de uma instalação anterior: o arquivo sai (fica uma cópia no servidor)
+				if _, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgUndo+" "+req.URN, nil); err != nil {
+					writeJSON(w, 502, map[string]string{"error": err.Error(), "old": strconv.FormatBool(errors.Is(err, hostcmd.ErrOldScript))})
+					return
+				}
+			case changed:
+				cfg, withSettings = out, true
+			}
+		}
+		if priv || withSettings {
+			if req.Password == "" || len(req.Password) > 200 || strings.ContainsAny(req.Password, "\r\n") {
+				writeJSON(w, 400, map[string]string{"error": "digite a Senha de configuração"})
+				return
+			}
+			cmd = hostcmd.CmdAppInstallPw
+			in = append(append([]byte(req.Password+"\n"), b...), '\n')
+			in = append(in, cfg...)
+		}
 	}
-	if _, err := s.storeRun(r.Context(), cmd+" "+req.URN, b); err != nil {
+	if _, err := s.storeRun(r.Context(), cmd+" "+req.URN, in); err != nil {
 		writeJSON(w, 502, map[string]string{"error": tipiError(err).Error(), "old": strconv.FormatBool(errors.Is(err, hostcmd.ErrOldScript))})
 		return
 	}
 	s.tipi.Invalidate()
+	if withSettings {
+		go s.undoSettingsIfFailed(req.URN, a.Name)
+	}
 	if edit {
 		s.events.Emit(events.Event{Kind: "store", Level: events.Info, Title: a.Name + ": instalação alterada", Body: "Respostas da instalação alteradas pela Loja do BrunOS; o app foi reiniciado."})
 	} else {
 		s.events.Emit(events.Event{Kind: "store", Level: events.Info, Title: "Instalando " + a.Name, Body: "Pedido pela Loja do BrunOS ao Runtipi."})
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// undoSettingsIfFailed acompanha uma instalação que levou Ajustes: se o Runtipi desistir (ele apaga o app
+// quando a instalação falha), o arquivo de Ajustes sai e fica uma cópia, para tentar de novo começar limpo
+// (decisão 62 e). Roda solta, mesmo que a janela seja fechada.
+func (s *server) undoSettingsIfFailed(urn, name string) {
+	until := time.Now().Add(30 * time.Minute)
+	fails := 0
+	for time.Now().Before(until) {
+		time.Sleep(5 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		t, err := s.tipiInfo(ctx, urn)
+		cancel()
+		if err != nil {
+			if fails++; fails > 10 {
+				return
+			}
+			continue
+		}
+		fails = 0
+		if t.App != nil {
+			if t.App.Status == "running" || t.App.Status == "stopped" {
+				return
+			}
+			continue
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), time.Minute)
+		_, err = s.storeRun(ctx, hostcmd.CmdAppCfgUndo+" "+urn, nil)
+		cancel()
+		if err == nil {
+			s.events.Emit(events.Event{Kind: "store", Level: events.Aviso, Title: name + ": instalação falhou",
+				Body: "O Runtipi não conseguiu instalar o app. Os Ajustes feitos na instalação foram tirados (uma cópia ficou guardada no servidor)."})
+		}
+		return
+	}
 }
 
 // hStoreStatus: GET /api/store/status?urn= — em que pé está o app no Runtipi (para acompanhar a instalação).
@@ -505,6 +684,11 @@ func (s *server) hStoreSettingsSave(w http.ResponseWriter, r *http.Request) {
 	raw, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgRead+" "+req.URN, nil)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	rec, _ := s.tipi.Recipe(req.URN)
+	if err := checkImage(&req.Settings, rec, raw, a.ID); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
 	out, err := appcfg.Apply(raw, a.ID, req.Settings)

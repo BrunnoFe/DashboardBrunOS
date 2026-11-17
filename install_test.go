@@ -150,6 +150,67 @@ func TestReconfigGuardaSenhaESegredo(t *testing.T) {
 	}
 }
 
+func TestInstallPrivilegiosEAjustes(t *testing.T) {
+	s, f := installServer(t)
+	writeFile(t, filepath.Join(testRuntipiDir, "repos/migrated/apps/alist/docker-compose.yml"),
+		"services:\n  alist:\n    image: xhofe/alist:v3.30.0\n    privileged: true\n    environment:\n      TZ: UTC\n")
+	s.tipi.Invalidate()
+	vals := map[string]any{"ALIST_USER": "admin", "ALIST_PASS": "senha-boa-123"}
+	// selo no catálogo e lista na página do app
+	if d, ok := s.tipi.CatalogDetail("alist:migrated"); !ok || !d.Priv || len(d.Privileges) != 1 {
+		t.Fatalf("detalhe: %+v", d)
+	}
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", map[string]any{"urn": "alist:migrated", "values": vals}); code != 400 || !strings.Contains(out["error"].(string), "Entendo os riscos") {
+		t.Fatalf("sem aceitar os riscos: %d %v", code, out)
+	}
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", map[string]any{"urn": "alist:migrated", "values": vals, "acceptRisks": true}); code != 400 || !strings.Contains(out["error"].(string), "Senha de configuração") {
+		t.Fatalf("sem senha: %d %v", code, out)
+	}
+	f.resp["info-app"] = `{"app":{"status":"running"}}`
+	req := map[string]any{"urn": "alist:migrated", "values": vals, "acceptRisks": true, "password": "certa-123", "localSubdomain": "Minha-Lista",
+		"enableAuth": true, "guest": false, "settings": map[string]any{"memoryMB": 1024, "env": []map[string]any{{"key": "TZ", "value": "America/Sao_Paulo"}}}}
+	code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", req)
+	if code != 200 {
+		t.Fatalf("instalar com privilégios e ajustes: %d %v", code, out)
+	}
+	in := string(f.ins["instalar-app-senha"])
+	parts := strings.SplitN(in, "\n", 3)
+	if len(parts) != 3 || parts[0] != "certa-123" || !strings.Contains(parts[2], "memory: 1G") || !strings.Contains(parts[2], "TZ: America/Sao_Paulo") {
+		t.Fatalf("entrada do script:\n%s", in)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(parts[1]), &body); err != nil || body["localSubdomain"] != "minha-lista" || body["enableAuth"] != true || body["isVisibleOnGuestDashboard"] != false {
+		t.Fatalf("formulário: %v %v", err, body)
+	}
+	if _, has := body["maxBackups"]; has {
+		t.Fatal("limite de backups não vai na instalação (o Runtipi ignora)")
+	}
+	// nome de endereço local inválido
+	req["localSubdomain"] = "-ruim"
+	if code, _ := call(t, s.hStoreInstall, "POST", "/api/store/install", req); code != 400 {
+		t.Fatal("nome de endereço local inválido deveria dar 400")
+	}
+	// trocar a imagem por outra (não só a versão) é recusado
+	req["localSubdomain"] = ""
+	req["settings"] = map[string]any{"image": "outro/app:1"}
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", req); code != 400 || !strings.Contains(out["error"].(string), "versão da imagem") {
+		t.Fatalf("imagem trocada: %d %v", code, out)
+	}
+	req["settings"] = map[string]any{"image": "xhofe/alist:v3.29.0"}
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", req); code != 200 {
+		t.Fatalf("só a versão: %d %v", code, out)
+	}
+	// app comum, Ajustes iguais aos de hoje: instala sem senha, pelo pedido de sempre
+	writeFile(t, filepath.Join(testRuntipiDir, "repos/migrated/apps/alist/docker-compose.yml"), "services:\n  alist:\n    image: xhofe/alist:v3.30.0\n")
+	f.calls = nil
+	if code, out := call(t, s.hStoreInstall, "POST", "/api/store/install", map[string]any{"urn": "alist:migrated", "values": vals, "settings": map[string]any{}}); code != 200 {
+		t.Fatalf("comum: %d %v", code, out)
+	}
+	if last := f.calls[len(f.calls)-1]; last != "instalar-app alist:migrated" {
+		t.Fatalf("pedido: %v", f.calls)
+	}
+}
+
 func TestSettingsPreservaManual(t *testing.T) {
 	s, f := installServer(t)
 	f.resp["ajustes-ler"] = "services:\n  plex:\n    volumes:\n      - /mnt/disco1/Filmes:/movies # feito à mão\n    labels:\n      x: \"1\"\n"

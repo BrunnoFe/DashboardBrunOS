@@ -108,6 +108,7 @@ function scoped() { // a aba e a loja escolhidas (antes da categoria e da busca)
 function filtered() {
   let l = scoped();
   if (S.catKey === '@fav') l = l.filter(isFav);
+  else if (S.catKey === '@priv') l = l.filter((a) => a.priv);
   else if (S.catKey) l = l.filter((a) => a.categories.includes(S.catKey));
   const q = norm(S.q);
   if (q) l = l.filter((a) => norm(`${a.name} ${a.id} ${a.shortDesc} ${a.categories.map(catLabel).join(' ')}`).includes(q));
@@ -131,12 +132,14 @@ function drawTop() {
 function drawCats() {
   const l = scoped(), count = {};
   for (const a of l) for (const c of a.categories) if (c !== 'featured') count[c] = (count[c] || 0) + 1;
-  const favs = l.filter(isFav).length;
-  if (S.catKey && S.catKey !== '@fav' && !count[S.catKey]) S.catKey = '';
-  if (S.catKey === '@fav' && !favs) S.catKey = '';
-  const item = (k, label, icon, n) => `<button class="st-cat ${S.catKey === k ? 'on' : ''}" data-cat="${esc(k)}">${svg(icon)}<span>${esc(label)}</span><i>${n}</i></button>`;
+  const favs = l.filter(isFav).length, privs = l.filter((a) => a.priv).length;
+  if (S.catKey && S.catKey[0] !== '@' && !count[S.catKey]) S.catKey = '';
+  if ((S.catKey === '@fav' && !favs) || (S.catKey === '@priv' && !privs)) S.catKey = '';
+  const item = (k, label, icon, n, cls = '') => `<button class="st-cat ${cls} ${S.catKey === k ? 'on' : ''}" data-cat="${esc(k)}">${svg(icon)}<span>${esc(label)}</span><i>${n}</i></button>`;
+  // os apps que requerem privilégios também ficam juntos numa guia própria (decisão 62), no fim da lista
   $('.st-cats', S.body).innerHTML = item('', 'Todos', 'grid', l.length) + (favs ? item('@fav', 'Favoritos', 'star', favs) : '')
-    + Object.keys(count).sort((a, b) => catLabel(a).localeCompare(catLabel(b), 'pt-BR')).map((c) => item(c, catLabel(c), CATS[c]?.[1] || 'box', count[c])).join('');
+    + Object.keys(count).sort((a, b) => catLabel(a).localeCompare(catLabel(b), 'pt-BR')).map((c) => item(c, catLabel(c), CATS[c]?.[1] || 'box', count[c])).join('')
+    + (privs ? item('@priv', 'Apps com Privilégios', 'shield', privs, 'priv') : '');
 }
 
 function logo(a, cls = '') {
@@ -155,9 +158,12 @@ function row(a) {
   const c = a.categories.find((x) => x !== 'featured');
   if (c) tags.push(`<i class="st-tag">${esc(catLabel(c))}</i>`);
   if (a.local) tags.push('<i class="st-tag">fora das lojas</i>');
+  if (a.priv) tags.unshift(privTag);
   return `<button class="st-app" data-urn="${esc(a.urn)}">${logo(a)}<span class="st-txt"><b>${esc(a.name)}</b><small>${esc(a.shortDesc || '')}</small><span class="st-tags">${tags.join('')}</span></span>${badge(a)}</button>`;
 }
-const card = (a) => `<button class="st-card" data-urn="${esc(a.urn)}">${logo(a, 'lg')}<b>${esc(a.name)}</b><small>${esc(catLabel(a.categories.find((x) => x !== 'featured') || '') || storeName(a.store))}</small>${a.installed ? `<span class="st-dot" title="Instalado">${svg('check')}</span>` : ''}</button>`;
+// selo dos apps cuja receita pede poderes sobre o servidor (decisão 62)
+const privTag = `<i class="st-tag priv" title="A receita pede poderes sobre o servidor: veja quais na página do app">${svg('shield')}Requer privilégios</i>`;
+const card = (a) => `<button class="st-card" data-urn="${esc(a.urn)}">${logo(a, 'lg')}<b>${esc(a.name)}</b><small>${esc(catLabel(a.categories.find((x) => x !== 'featured') || '') || storeName(a.store))}</small>${a.installed ? `<span class="st-dot" title="Instalado">${svg('check')}</span>` : ''}${a.priv ? `<span class="st-pdot" title="Requer privilégios">${svg('shield')}</span>` : ''}</button>`;
 const shelf = (title, list) => (list.length ? `<h3 class="st-h">${esc(title)}</h3><div class="st-shelf">${list.map(card).join('')}</div>` : '');
 
 // Um cartão por loja (e o "Todas"), como pediu o Bruno: clicar mostra só os apps daquela loja. As lojas
@@ -196,7 +202,7 @@ function drawList() {
     top = (S.store ? storeInfo(storeOf(S.store)) : storesShelf()) + shelf('Favoritos', base.filter(isFav)) + shelf('Novos na loja', fresh)
       + shelf('Atualizados recentemente', base.filter((a) => a.updated && !seen.has(a.urn)).sort((a, b) => b.updated - a.updated).slice(0, 12));
   }
-  const title = S.q ? `Resultados para “${S.q}”` : S.catKey === '@fav' ? 'Favoritos' : S.catKey ? catLabel(S.catKey) : S.tab === 'installed' ? 'Instalados' : S.tab === 'updates' ? 'Com atualização' : 'Todos os apps';
+  const title = S.q ? `Resultados para “${S.q}”` : S.catKey === '@fav' ? 'Favoritos' : S.catKey === '@priv' ? 'Apps com Privilégios' : S.catKey ? catLabel(S.catKey) : S.tab === 'installed' ? 'Instalados' : S.tab === 'updates' ? 'Com atualização' : 'Todos os apps';
   const empty = S.q ? 'Nenhum app com esse nome. Tente outra palavra ou outra categoria.' : S.tab === 'updates' ? 'Todos os apps estão em dia.' : S.tab === 'installed' ? 'Nenhum app instalado ainda.' : 'Nenhum app aqui.';
   box.innerHTML = `${top}<h3 class="st-h">${esc(title)} <small>${list.length}</small>${S.tab === 'updates' && list.length ? '<button class="pill-btn sm" data-st="updates">Abrir atualizações</button>' : ''}</h3>
     ${list.length ? '<div class="st-grid"></div><div class="st-more"></div>' : `<div class="empty-note">${esc(empty)}</div>`}`;
@@ -238,8 +244,7 @@ function actionsHTML(a) {
     a.noGui || stopped ? '' : `<button class="pill-btn primary" data-st="open">${svg('external')}Abrir</button>`,
     a.update ? `<button class="pill-btn ${a.noGui || stopped ? 'primary' : ''}" data-st="updates">${svg('arrowUp')}Atualizar</button>` : '',
     self ? '' : `<button class="pill-btn" data-st="${stopped ? 'start' : 'stop'}" ${dis}>${svg('power')}${stopped ? 'Iniciar' : 'Parar'}</button>`,
-    self || !canForms() || a.local ? '' : `<button class="pill-btn" data-st="reconfig" ${dis}>${svg('edit')}Instalação</button>`,
-    self || !canForms() ? '' : `<button class="pill-btn" data-st="settings" ${dis}>${svg('sliders')}Ajustes</button>`,
+    self || !canForms() ? '' : `<button class="pill-btn" data-st="${a.local ? 'settings' : 'reconfig'}" ${dis}>${svg('sliders')}Configurar</button>`,
     `<button class="pill-btn" data-st="info">${svg('info')}Detalhes e logs</button>`,
     self ? '' : `<button class="pill-btn danger" data-st="uninstall" ${dis}>${svg('trash')}Desinstalar</button>`,
   ].join('');
@@ -258,14 +263,16 @@ function drawDetail() {
   const st = storeOf(a.store);
   const note = (a.installed && old ? `<p class="st-note">${svg('info')}Para parar, iniciar e desinstalar por aqui, o script do servidor precisa ser atualizado: abra as atualizações, ao lado do sino.</p>`
     : !a.installed && !a.local ? `<p class="st-note">${svg('info')}${canForms() ? 'Instalar abre as perguntas do app aqui mesmo; o Runtipi instala e o BrunOS acompanha até o app ligar.' : `A instalação é feita na tela do Runtipi, que abre ${S.panelFrame === 'no' ? 'em nova aba' : 'numa janela'}. Quando terminar, o app aparece aqui como instalado.`}</p>` : '')
-    + (st?.badge ? `<p class="st-note via">${svg('shield')}Convertido automaticamente da loja ${esc(st.name || st.slug)} pelo Garimpo do BrunOS. Receitas que dão poder demais sobre o servidor ficam de fora; se este app não funcionar, a receita original pode precisar de ajuste.</p>` : '');
+    + (st?.badge ? `<p class="st-note via">${svg('shield')}Convertido automaticamente da loja ${esc(st.name || st.slug)} pelo Garimpo do BrunOS. Se este app não funcionar, a receita original pode precisar de ajuste.</p>` : '')
+    + (d?.privileges?.length ? `<div class="st-priv"><div class="st-privh">${svg('alert')}<b>Requer privilégios</b></div><p>A receita deste app pede poderes sobre o servidor que os apps comuns não têm. Com eles, um app com defeito ou malicioso pode mexer no servidor inteiro${a.installed ? '' : ', por isso instalar pede “Entendo os riscos” e a Senha de configuração'}.</p>
+      <ul>${d.privileges.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : '');
   const fields = d?.fields?.length ? `<div class="card st-side"><h4>A instalação pergunta</h4>${d.fields.map((f) => `<div class="st-field"><b>${esc(f.label)}${f.required ? ' <i>obrigatório</i>' : ''}</b>${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="st-dwrap">
     <div class="st-dbar"><button class="pill-btn sm" data-st="back">${svg('chevR', 'flip')}Loja</button>
       <button class="pill-btn sm st-fav ${fav ? 'on' : ''}" data-st="fav" aria-pressed="${fav}">${svg('star')}${fav ? 'Nos favoritos' : 'Favoritar'}</button></div>
     <div class="st-hero">${logo(a, 'xl')}
       <div class="st-htxt"><h2>${esc(a.name)}</h2><p>${esc(a.shortDesc || '')}</p>
-        <div class="st-tags">${via(a.store) ? `<i class="st-tag via">${esc(via(a.store))}</i>` : ''}${a.installed ? `<i class="st-tag ok">${svg('check')}Instalado${a.have ? ` · ${esc(a.have)}` : ''}</i>` : ''}${a.update ? `<i class="st-tag up">Nova versão: ${esc(a.version)}</i>` : ''}${a.categories.filter((c) => c !== 'featured').map((c) => `<i class="st-tag">${esc(catLabel(c))}</i>`).join('')}${a.deprecated ? '<i class="st-tag warn">Descontinuado</i>' : ''}</div></div>
+        <div class="st-tags">${a.priv ? privTag : ''}${via(a.store) ? `<i class="st-tag via">${esc(via(a.store))}</i>` : ''}${a.installed ? `<i class="st-tag ok">${svg('check')}Instalado${a.have ? ` · ${esc(a.have)}` : ''}</i>` : ''}${a.update ? `<i class="st-tag up">Nova versão: ${esc(a.version)}</i>` : ''}${a.categories.filter((c) => c !== 'featured').map((c) => `<i class="st-tag">${esc(catLabel(c))}</i>`).join('')}${a.deprecated ? '<i class="st-tag warn">Descontinuado</i>' : ''}</div></div>
       <div class="st-acts">${actionsHTML(a)}</div></div>
     ${note}
     <div class="st-cols">

@@ -349,3 +349,23 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     texto livre sem conferência (P15 a ficava sem ler os ajustes feitos à mão).
     (f) Senha de configuração (pedido do Bruno): linha em Configurações → Sistema com "Criar agora", que
     abre o Terminal com o comando digitado (criar continua só no servidor, com sudo).
+62. **Apps que requerem privilégios: avisar e deixar escolher, em vez de esconder** (etapa 14, 0.21.0 e
+    0.22.0, combinado em 17/11/2026; revê as decisões 60 d e 61 c). O Bruno quer saber quais apps foram
+    deixados de fora por segurança e poder instalá-los assumindo os riscos. (a) O BrunOS lê a receita de
+    **todo** app, de qualquer loja (`docker-compose.json` ou `.yml`), com a mesma régua do Garimpo
+    (privileged, rede/pid/ipc do servidor, socket do Docker, poderes do Linux, pastas do sistema,
+    aparelhos além da placa de vídeo), e mostra o selo **Requer privilégios** com a lista em português. A
+    loja oficial do Runtipi já tinha apps assim e o BrunOS os instalava sem aviso. (b) Instalar um desses
+    apps pede "Entendo os riscos" + Senha de configuração. (c) O Garimpo passa a publicar esses apps na
+    loja normal da origem (ideia do Bruno, em vez de um ramo separado por origem), inclusive os que usam
+    o socket do Docker; continuam de fora só as receitas que não funcionariam. Na tela do próprio Runtipi
+    eles aparecem sem selo, como já acontecia com os da loja oficial. (d) Os Ajustes continuam sem botões
+    para privilégios; a partir da 0.22.0 dá para escrevê-los no editor de texto do Avançado, com a mesma
+    confirmação, registro nos Eventos e o selo no app. (e) Instalação e Ajustes viram uma janela só, e os
+    Ajustes podem ir junto da instalação: o arquivo é gravado pelo script antes de pedir a instalação ao
+    Runtipi (ele lê o arquivo já no primeiro início) e, se a instalação falhar, o BrunOS tira o arquivo e
+    guarda uma cópia. Alternativa recusada: instalar com `skipRun`, gravar depois e ligar o app (o BrunOS
+    teria de guardar a Senha de configuração na memória durante minutos, até a instalação terminar).
+    (f) Perguntas novas nos apps convertidos: regra automática (senha com valor padrão conhecido, campo
+    marcado pelo CasaOS) + arquivo de exceções app a app no Garimpo, porque nem toda variável precisa ser
+    perguntada na instalação (pedido do Bruno).

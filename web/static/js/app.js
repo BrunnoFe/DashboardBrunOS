@@ -1065,7 +1065,8 @@ function statusDot(a) {
 function appTileHTML(a, i, extra = '') {
   const url = appUrl(a);
   return `<a class="app" role="listitem" href="${esc(url || '#')}" ${set().openIn !== 'same' ? 'target="_blank"' : ''} rel="noopener noreferrer" data-app="${esc(a.id)}" data-key="${esc(a.id)}" draggable="false" style="--i:${i}" title="${esc(a.name)}${url ? '\n' + esc(url) : ''}" ${extra}>
-    ${appIconHTML(a, 'app-icon', statusDot(a) + (a.update ? `<i class="app-upd" title="Atualização disponível: ${esc(a.update.available || '')}">${svg('arrowUp')}</i>` : ''))}<span class="app-name">${esc(a.name)}</span></a>`;
+    ${appIconHTML(a, 'app-icon', statusDot(a) + (a.update ? `<i class="app-upd" title="Atualização disponível: ${esc(a.update.available || '')}">${svg('arrowUp')}</i>` : '')
+      + (a.priv ? `<i class="app-priv" title="Requer privilégios: a receita deste app tem poderes sobre o servidor (veja na Loja)">${svg('shield')}</i>` : ''))}<span class="app-name">${esc(a.name)}</span></a>`;
 }
 function itemHTML(it, i) {
   if (it.app) return appTileHTML(it.app, i);

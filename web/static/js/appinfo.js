@@ -54,6 +54,7 @@ export function appDetails(a, ctx) {
         ${tipi ? `<button class="pill-btn" data-ai="start" hidden>${svg('power')}Ligar</button><button class="pill-btn" data-ai="stop" hidden>${svg('power')}Parar</button><button class="pill-btn" data-ai="restart" hidden>${svg('refresh')}Reiniciar</button>` : ''}
       </div>
       ${tipi && a.update ? `<div class="ai-update">${svg('arrowUp')}<span><b>Atualização disponível</b><small>versão ${esc(a.update.installed || '?')} → ${esc(a.update.available || '?')}</small></span><span class="f-spacer"></span><button class="pill-btn primary" data-ai="update">${svg('external')}Atualizar no Runtipi</button></div>` : ''}
+      ${tipi && a.priv ? `<p class="ai-note ai-priv">${svg('shield')}<span><b>Requer privilégios.</b> A receita deste app tem poderes sobre o servidor que os apps comuns não têm. A lista está na página do app, na Loja.</span></p>` : ''}
       ${tipi && !ctx.dockerActions ? '<p class="ai-note">Para ligar, parar e reiniciar por aqui, ative “Permitir reiniciar apps pelo BrunOS” nas configurações do BrunOS no Runtipi.</p>' : ''}
       ${tipi ? `<div class="ai-period">${periodSeg(range)}</div>
       <div class="ai-sec"><div class="ai-sec-h"><b>Disponibilidade</b><small data-ai-span>${PERIOD_LONG[range]}</small><span class="f-spacer"></span><span class="ai-uptime"></span></div><div class="ai-timeline"></div></div>

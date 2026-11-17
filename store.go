@@ -86,7 +86,7 @@ type storeSuggestion struct {
 
 var storeSuggestions = []storeSuggestion{
 	{"casaos", "CasaOS", "https://github.com/BrunnoFe/Garimpo/tree/casaos",
-		"Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que dão poder demais sobre o servidor ficam de fora."},
+		"Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que pedem poderes sobre o servidor aparecem com o selo Requer privilégios."},
 	{"linuxserver", "LinuxServer", "https://github.com/BrunnoFe/Garimpo/tree/linuxserver",
 		"Apps do LinuxServer.io (programas de computador no navegador, mídia, rede), convertidos para o Runtipi."},
 }

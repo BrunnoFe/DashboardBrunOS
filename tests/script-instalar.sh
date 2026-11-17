@@ -110,7 +110,7 @@ cp /tmp/curl.bom /usr/bin/curl
 # ── Ajustes ──────────────────────────────────────────────────────────────
 U=$R/user-config/migrated/plex
 pede 0 "" ajustes-ler plex:migrated
-pede 4 "não está instalado" ajustes-ler nada:migrated
+pede 0 "" ajustes-ler nada:migrated   # script 15: lê também de app não instalado (sobra de instalação antiga)
 printf 'x\nservices: {}\n' | "$H" ajustes-gravar plex:migrated >/tmp/s 2>&1; c=$?
 [ $c -eq 5 ] && grep -q "ainda não existe Senha de configuração" /tmp/s && echo "ok: gravar sem senha criada" || erro "sem senha -> $c: $(cat /tmp/s)"
 mkdir -p /etc/brunos-host
@@ -136,6 +136,31 @@ printf 'certa-12345\nservices: {}\n' | "$H" ajustes-gravar plex:migrated >/dev/n
 [ -L $U/docker-compose.yml ] && grep -q root /etc/passwd && echo "ok: atalho não é seguido ao gravar" || erro "seguiu o atalho"
 { echo certa-12345; head -c 70000 /dev/zero | tr '\0' 'a'; } | "$H" ajustes-gravar alist:casaos >/tmp/s 2>&1; c=$?
 [ $c -eq 2 ] && grep -q "grande demais" /tmp/s && echo "ok: arquivo grande recusado" || erro "grande -> $c: $(cat /tmp/s)"
+
+# ── Instalar com senha e Ajustes (script 15) ─────────────────────────────
+N=$R/user-config/casaos/novo
+rm -f /tmp/resp.cod; echo '{"requestId":"x1"}' >/tmp/resp.body; : >/tmp/curl.urls
+printf 'errada\n{"port":8200}\nservices:\n  novo:\n    mem_limit: 1G\n' | "$H" instalar-app-senha novo:casaos >/tmp/s 2>&1; c=$?
+[ $c -eq 7 ] && [ ! -e $N/docker-compose.yml ] && [ ! -s /tmp/curl.urls ] && echo "ok: instalar com senha errada não faz nada" || erro "senha errada -> $c: $(cat /tmp/s)"
+printf 'certa-12345\n{"port":8200}\nservices:\n  novo:\n    mem_limit: 1G\n' | "$H" instalar-app-senha novo:casaos >/tmp/s 2>&1; c=$?
+[ $c -eq 0 ] && grep -q "mem_limit: 1G" $N/docker-compose.yml && [ "$(cat /tmp/curl.corpo)" = '{"port":8200}' ] && tail -n 1 /tmp/curl.urls | grep -q "/novo:casaos/install$" \
+  && echo "ok: Ajustes gravados antes de instalar" || erro "instalar com ajustes -> $c: $(cat /tmp/s) $(cat /tmp/curl.corpo)"
+printf 'certa-12345\n{"port":8200}\n' | "$H" instalar-app-senha alist:casaos >/tmp/s 2>&1; c=$?
+[ $c -eq 4 ] && echo "ok: app já instalado recusado" || erro "já instalado -> $c: $(cat /tmp/s)"
+# Runtipi recusa: o arquivo anterior volta
+echo 400 >/tmp/resp.cod; echo '{"message":"APP_ERROR_PORT_ALREADY_IN_USE"}' >/tmp/resp.body
+sleep 1
+printf 'certa-12345\n{"port":8200}\nservices:\n  novo:\n    mem_limit: 4G\n' | "$H" instalar-app-senha novo:casaos >/tmp/s 2>&1; c=$?
+[ $c -eq 1 ] && grep -q PORT_ALREADY /tmp/s && grep -q "mem_limit: 1G" $N/docker-compose.yml && echo "ok: recusado pelo Runtipi, arquivo anterior volta" || erro "recusa -> $c: $(cat /tmp/s) $(cat $N/docker-compose.yml)"
+rm -rf $N; printf 'certa-12345\n{"port":8200}\nservices:\n  novo:\n    mem_limit: 4G\n' | "$H" instalar-app-senha novo:casaos >/dev/null 2>&1
+[ ! -e $N/docker-compose.yml ] && echo "ok: recusado sem arquivo anterior, nada fica" || erro "sobrou arquivo"
+rm -f /tmp/resp.cod; echo '{}' >/tmp/resp.body
+printf 'certa-12345\n{"port":8200}\n' | "$H" instalar-app-senha novo:casaos >/dev/null 2>&1 && [ ! -e $N/docker-compose.yml ] && echo "ok: só senha (privilégios), sem Ajustes" || erro "só senha"
+# desfazer: só de app não instalado
+mkdir -p $N && echo "services: {}" >$N/docker-compose.yml
+pede 0 "desfeitos" ajustes-desfazer novo:casaos
+[ ! -e $N/docker-compose.yml ] && ls $N/docker-compose.yml.brunos-*.bak >/dev/null 2>&1 && echo "ok: desfazer guarda cópia" || erro "desfazer: $(ls $N)"
+pede 4 "instalado" ajustes-desfazer alist:casaos
 exit "$falhou"
 TESTE
 

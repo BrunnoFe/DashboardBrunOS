@@ -39,7 +39,9 @@ type App struct {
 	Protocol      string   `json:"protocol"`
 	Project       string   `json:"project"` // projeto do docker compose
 	HasLogo       bool     `json:"hasLogo"`
+	Priv          bool     `json:"priv,omitempty"` // a receita instalada requer privilégios (0.21.0, decisão 62)
 	logoPath      string
+	recipeOK      bool // deu para ler a receita instalada
 }
 
 type Info struct {
@@ -196,6 +198,9 @@ func (d *Discoverer) scan() ([]App, Info) {
 		logo := filepath.Join(dir, "metadata", "logo.jpg")
 		if st, err := os.Stat(logo); err == nil && st.Mode().IsRegular() {
 			a.HasLogo, a.logoPath = true, logo
+		}
+		if r, ok := readRecipe(dir, id); ok {
+			a.Priv, a.recipeOK = len(r.Privileges) > 0, true
 		}
 		apps = append(apps, a)
 	}

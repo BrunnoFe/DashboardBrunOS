@@ -40,4 +40,9 @@ echo 'ref: refs/heads/casaos' > "$G"/.git/HEAD
 echo '{"brunos":1,"nome":"CasaOS","selo":"via CasaOS","fonte":"https://github.com/IceWhaleTech/CasaOS-AppStore","licenca":"Apache-2.0","sobre":"Apps do CasaOS."}' > "$G"/garimpo.json
 echo '{"name":"AList","id":"alist","port":5244,"short_desc":"Lista de arquivos","categories":["utilities"],"version":"v3.45","tipi_version":1,"available":true}' > "$G"/apps/alist/config.json
 echo "$JPEG" | base64 -d > "$G"/apps/alist/metadata/logo.jpg
+# Receitas (0.21.0): AList com o socket do Docker (requer privilégios), Jellyfin comum em JSON e uma
+# receita que é atalho para fora (não pode ser lida)
+printf 'services:\n  alist:\n    image: xhofe/alist:v3.45\n    volumes:\n      - ${APP_DATA_DIR}/data:/opt/alist/data\n      - /var/run/docker.sock:/var/run/docker.sock\n' > "$G"/apps/alist/docker-compose.yml
+echo '{"schemaVersion":2,"services":[{"name":"jellyfin","image":"jellyfin/jellyfin:10.9","isMain":true,"internalPort":8096,"environment":[{"key":"TZ","value":"${TZ}"}],"volumes":[{"hostPath":"${APP_DATA_DIR}/data/config","containerPath":"/config"}]}]}' > "$R"/apps/jellyfin/docker-compose.json
+ln -s "$T"/outside/secret.txt "$R"/apps/atalho/docker-compose.yml
 echo "fixture pronta em $T"

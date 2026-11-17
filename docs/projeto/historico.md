@@ -236,6 +236,32 @@ a chave do CLI (agora dentro do container, lida com `docker exec`); a chave e o 
 linha de comando (outros usuários veem os processos); o arquivo de ajustes do Runtipi não tem nenhuma
 conferência, por isso o BrunOS confere.
 
+## 0.21.0 (17/11): janela única de instalar e configurar; Requer privilégios (etapa 14, decisão 62)
+Retorno do Bruno depois de testar a 0.20.0. Instalação e Ajustes viraram **uma janela só** (botão
+"Configurar" no app instalado), com seções que abrem e fecham (O app pergunta e Acesso abertas; Pastas e
+recursos, Opcionais e Avançado fechadas, com resumo), "?" que abre a explicação embaixo (funciona no toque)
+e tela cheia com botões presos embaixo no celular. **Acesso** como no Runtipi: nome do endereço local
+(`https://[nome].server.lan`), pedir login do Runtipi, mostrar no painel de visitantes, limite de backups
+(ao editar). **Ajustes já na instalação**, preenchidos com o que a receita traz (variáveis com a setinha de
+voltar ao original, pastas da receita com cadeado e "Trocar pasta", portas), mais versão da imagem e
+política de reinício; o BrunOS grava só o que mudou. Ajustes que sobraram de uma instalação anterior
+aparecem na janela. **Requer privilégios**: o BrunOS lê a receita de todo app (YAML ou o JSON do Runtipi)
+com a régua do Garimpo; selo nos cartões, guia "Apps com Privilégios", lista na página do app, escudo no
+ícone da tela inicial e aviso em Detalhes do app; instalar pede "Entendo os riscos" + Senha de
+configuração. Script 15: `instalar-app-senha` (senha, formulário e Ajustes de uma vez; grava os Ajustes
+antes de pedir a instalação e devolve o arquivo anterior se o Runtipi recusar), `ajustes-desfazer` (o
+BrunOS tira os Ajustes se a instalação falhar depois) e `ajustes-ler` também de app não instalado.
+**Garimpo** junto: apps com privilégios entram na loja normal (privilegios.json + README), apps na rede do
+servidor sem porta publicada passam a entrar, senha fixa da receita vira pergunta obrigatória (menos as de
+serviços internos: banco, busca, MinIO...), o usuário que anda com ela e as variáveis descritas pelo
+CasaOS viram perguntas preenchidas, e o `perguntas.json` corrige app a app. Números na conversão real:
+CasaOS 107 apps (21 com privilégios, 10 com perguntas novas), LinuxServer 198 (10 com privilégios); na loja
+oficial do Runtipi, 40 de 271 apps ganham o selo (entre eles Plex, por usar a rede do servidor). Lições: a
+régua do BrunOS (Go) e a do Garimpo (Python) precisam dar o mesmo texto: conferidas lado a lado nos 305
+apps convertidos; caminho com `${VAR:-padrão}` tem ":" dentro da variável (separar com cuidado); o Runtipi
+ignora `maxBackups` na instalação (só vale pelo `update-config`) e não apaga o `user-config` ao desinstalar;
+`[hidden]` não esconde nada quando o CSS dá `display` ao elemento.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

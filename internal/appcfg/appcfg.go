@@ -46,6 +46,8 @@ type Settings struct {
 	CPUs     float64 `json:"cpus"`     // 0 = sem limite
 	GPU      bool    `json:"gpu"`      // /dev/dri (placa de vídeo, para converter vídeo)
 	Env      []Var   `json:"env"`
+	Image    string  `json:"image"`   // imagem fixada (0.21.0); "" = a da receita, que acompanha as atualizações
+	Restart  string  `json:"restart"` // política de reinício (0.21.0); "" = a da receita
 }
 
 // State é o que o arquivo tem hoje.
@@ -58,6 +60,8 @@ type State struct {
 
 var (
 	envKeyRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+	imageRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,200}(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[a-f0-9]{64})?$`)
+	restarts    = map[string]bool{"": true, "no": true, "always": true, "on-failure": true, "unless-stopped": true}
 	memRe       = regexp.MustCompile(`^(?i)\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?)(?:i?b|i)?\s*$`)
 	containerRe = regexp.MustCompile(`^/[A-Za-z0-9._/@+-]{0,200}$`)
 )
@@ -146,9 +150,28 @@ func parse(raw []byte) (*yaml.Node, *yaml.Node, error) {
 
 // ── leitura ──────────────────────────────────────────────────────────────────────────────────────
 
+// splitColon separa por ":", menos dentro de ${...} (ex.: "${PASTA:-/x}:/data" são duas partes).
+func splitColon(s string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '$' && i+1 < len(s) && s[i+1] == '{':
+			depth++
+			i++
+		case s[i] == '}' && depth > 0:
+			depth--
+		case s[i] == ':' && depth == 0:
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, s[start:])
+}
+
 // splitVolume separa "origem:destino[:modo]".
 func splitVolume(s string) (host, cont string, ro bool, ok bool) {
-	p := strings.Split(s, ":")
+	p := splitColon(s)
 	if len(p) < 2 || len(p) > 3 {
 		return "", "", false, false
 	}
@@ -226,7 +249,8 @@ func envOf(n *yaml.Node) []Var {
 }
 
 // managed são as chaves do serviço que a tela edita (o resto aparece como "feito à mão").
-var managed = map[string]bool{"volumes": true, "environment": true, "deploy": true, "mem_limit": true, "cpus": true, "devices": true}
+var managed = map[string]bool{"volumes": true, "environment": true, "deploy": true, "mem_limit": true, "cpus": true, "devices": true,
+	"image": true, "restart": true}
 
 // Parse lê o arquivo de ajustes do serviço principal do app.
 func Parse(raw []byte, service string) (State, error) {
@@ -267,6 +291,12 @@ func Parse(raw []byte, service string) (State, error) {
 		}
 	}
 	st.Env = envOf(mapGet(s, "environment"))
+	if v := mapGet(s, "image"); v != nil {
+		st.Image = v.Value
+	}
+	if v := mapGet(s, "restart"); v != nil {
+		st.Restart = v.Value
+	}
 	limits := mapGet(mapGet(mapGet(s, "deploy"), "resources"), "limits")
 	if m := mapGet(limits, "memory"); m != nil {
 		st.MemoryMB = ParseMemory(m.Value)
@@ -437,6 +467,12 @@ func Validate(s Settings) error {
 			return fmt.Errorf("o valor de %s é inválido", v.Key)
 		}
 	}
+	if s.Image != "" && !imageRe.MatchString(s.Image) {
+		return errors.New("versão da imagem inválida")
+	}
+	if !restarts[s.Restart] {
+		return errors.New("política de reinício inválida")
+	}
 	return nil
 }
 
@@ -560,6 +596,16 @@ func Apply(raw []byte, service string, s Settings) ([]byte, error) {
 	}
 	setLimit("mem_limit", "memory", mem)
 	setLimit("cpus", "cpus", cpu)
+
+	// imagem fixada e política de reinício (vazio = a da receita)
+	for _, kv := range [][2]string{{"image", s.Image}, {"restart", s.Restart}} {
+		k, v := kv[0], kv[1]
+		if v == "" {
+			mapDel(svc, k)
+		} else if o := mapGet(svc, k); o == nil || o.Value != v {
+			mapSet(svc, k, str(v))
+		}
+	}
 
 	// placa de vídeo
 	seq := newSeq()

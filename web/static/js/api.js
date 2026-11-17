@@ -376,9 +376,9 @@ function makeDemo() {
     A('plex', 'migrated', 'Plex', 32400, 'plex'), A('syncthing', 'migrated', 'Syncthing', 8384, 'syncthing'),
     A('vaultwarden', 'migrated', 'Vaultwarden', 8107, 'vaultwarden', { frame: 'no' }), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
     A('transmission', 'migrated', 'Transmission', 9091, 'transmission'), A('qbittorrent', 'migrated', 'qBittorrent', 8080, 'qbittorrent'),
-    A('speedtest-tracker', 'migrated', 'Speedtest Tracker', 8765, 'speedtest-tracker'), A('watchyourlan', 'migrated', 'WatchYourLAN', 8840, 'watchyourlan'),
+    A('speedtest-tracker', 'migrated', 'Speedtest Tracker', 8765, 'speedtest-tracker'), A('watchyourlan', 'migrated', 'WatchYourLAN', 8840, 'watchyourlan', { priv: true }),
     A('filebrowser', 'migrated', 'File Browser', 8087, 'filebrowser'), A('dashdot-lite', 'personal-store', 'Dashdot', 3001, 'dashdot'),
-    A('homarr', 'migrated', 'Homarr', 7575, 'homarr', { state: 'stopped', running: 0 }), A('tailscale', 'migrated', 'Tailscale', 0, 'tailscale', { localDomain: '' }),
+    A('homarr', 'migrated', 'Homarr', 7575, 'homarr', { state: 'stopped', running: 0 }), A('tailscale', 'migrated', 'Tailscale', 0, 'tailscale', { localDomain: '', priv: true }),
   ];
 
   // Árvore de arquivos simulada
@@ -1013,7 +1013,7 @@ function makeDemo() {
         linuxserver: { name: 'LinuxServer', badge: 'via LinuxServer', origin: 'https://github.com/WisdomSky/LinuxServer-AppStore', license: 'GPL-3.0', about: 'Apps da LinuxServer-AppStore (imagens do LinuxServer.io no formato do CasaOS), convertidos para o formato do Runtipi.' },
       };
       const SUG = [
-        { slug: 'casaos', name: 'CasaOS', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', about: 'Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que dão poder demais sobre o servidor ficam de fora.' },
+        { slug: 'casaos', name: 'CasaOS', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', about: 'Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que pedem poderes sobre o servidor aparecem com o selo Requer privilégios.' },
         { slug: 'linuxserver', name: 'LinuxServer', url: 'https://github.com/BrunnoFe/Garimpo/tree/linuxserver', about: 'Apps do LinuxServer.io (programas de computador no navegador, mídia, rede), convertidos para o Runtipi.' },
       ];
       let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'personal-store', url: 'https://github.com/usuario/minha-loja' },
@@ -1023,19 +1023,33 @@ function makeDemo() {
           C('jdownloader2', 'JDownloader 2', 'Gerenciador de downloads', ['media'], 'v26.02', 5, 2), C('siyuan-note', 'SiYuan', 'Notas e base de conhecimento', ['utilities'], 'v3.3', 5, 5),
           C('gopeed', 'Gopeed', 'Downloads rápidos de vários protocolos', ['utilities'], 'v1.7', 5, 1), C('snapdrop', 'Snapdrop', 'Mande arquivos entre aparelhos da casa', ['utilities'], 'latest', 5, 5)].map((a) => ({ ...a, store: 'casaos' })),
         ...[C('webtop', 'Webtop', 'Um Linux com área de trabalho no navegador', ['utilities'], 'ubuntu-kde', 5, 5), C('firefox', 'Firefox', 'Navegador rodando no servidor', ['utilities'], '1.4.0', 5, 3),
-          C('kometa', 'Kometa', 'Coleções e capas automáticas para o Plex', ['media'], 'v2.2', 5, 5)].map((a) => ({ ...a, store: 'linuxserver' }))];
+          C('kometa', 'Kometa', 'Coleções e capas automáticas para o Plex', ['media'], 'v2.2', 5, 5)].map((a) => ({ ...a, store: 'linuxserver' })),
+        { ...C('portainer', 'Portainer', 'Gerencia os containers do Docker pelo navegador', ['development'], '2.21', 5, 5), store: 'casaos' }];
+      // 0.21.0 (decisão 62): apps cuja receita requer privilégios, com a lista que a página do app mostra
+      const PRIV = {
+        'home-assistant': ['Controle total do servidor (privileged)', 'Usa a rede do servidor direto, sem isolamento (network_mode: host)', 'Mexe na pasta /run/dbus do servidor'],
+        tailscale: ['Usa a rede do servidor direto, sem isolamento (network_mode: host)', 'Poderes de administrador do Linux (NET_ADMIN, SYS_MODULE)', 'Acesso ao aparelho /dev/net/tun do servidor'],
+        watchyourlan: ['Usa a rede do servidor direto, sem isolamento (network_mode: host)'],
+        portainer: ['Controla o Docker do servidor (socket do Docker): equivale a controle total'],
+        webtop: ['Poderes de administrador do Linux (SYS_ADMIN)', 'Desliga uma proteção do Docker (seccomp:unconfined)'],
+      };
+      // receita de mentira para a janela de instalação (variáveis e pastas que o app já traz)
+      const RECIPE = (a) => ({ main: a.id, image: `exemplo/${a.id}:${a.version}`, services: 1, restart: 'unless-stopped', privileges: PRIV[a.id] || [],
+        env: [{ key: 'TZ', value: '${TZ}' }, { key: 'PUID', value: '1000' }, { key: 'PGID', value: '1000' }, ...(a.categories.includes('media') ? [{ key: 'TRANSCODE', value: 'auto' }] : [])],
+        mounts: [{ host: '${APP_DATA_DIR}/data/config', container: '/config', readOnly: false }, ...(a.categories.includes('media') ? [{ host: '${ROOT_FOLDER_HOST}/media/data', container: '/media', readOnly: false }] : [])],
+        ports: a.categories.includes('media') ? ['7359:7359/udp'] : [] });
       const suggested = () => SUG.filter((s) => !stores.some((x) => x.slug === s.slug || x.url === s.url));
       const catalog = () => {
         const all = [...list.map((a) => ({ ...a, store: 'migrated' })), ...extra].filter((a) => stores.some((s) => s.slug === a.store));
         const out = all.map((a) => {
           const urn = `${a.id}:${a.store}`, inst = apps.find((x) => x.urn === urn);
           return { ...a, urn, port: inst?.port || 8000 + (a.id.length * 37) % 900, author: a.name, source: `https://github.com/exemplo/${a.id}`, website: `https://exemplo.org/${a.id}`, archs: ['amd64', 'arm64'],
-            hasLogo: false, demoIcon: ICONS[a.id] || (apps.some((x) => x.id === a.id) ? a.id : ''), installed: !!inst, have: inst ? HAVE[urn] || a.version : undefined, update: !!inst && !!HAVE[urn] };
+            hasLogo: false, demoIcon: ICONS[a.id] || (apps.some((x) => x.id === a.id) ? a.id : ''), installed: !!inst, have: inst ? HAVE[urn] || a.version : undefined, update: !!inst && !!HAVE[urn], priv: !!PRIV[a.id] };
         }).sort((x, y) => x.name.localeCompare(y.name, 'pt-BR'));
         return { found: true, at: now, apps: out, stores: stores.map((s) => ({ ...s, apps: out.filter((a) => a.store === s.slug).length })) };
       };
       const demoInstalling = {}, demoSettingsState = {}, demoSettingsRaw = {};
-      const state = () => ({ catalog: catalog(), script: { have: 14, want: 14 }, self: 'brunos', panelFrame: 'ok', suggested: suggested() });
+      const state = () => ({ catalog: catalog(), script: { have: 15, want: 15 }, self: 'brunos', panelFrame: 'ok', suggested: suggested() });
       const fail = (msg, status = 400) => new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status })), 300));
       return {
         get: () => wait(state()),
@@ -1043,7 +1057,8 @@ function makeDemo() {
           const a = catalog().apps.find((x) => x.urn === urn);
           if (!a) return fail('app não encontrado na loja', 404);
           return wait({ ...a, description: `# ${a.name}\n\n${a.shortDesc}. Este texto é de **demonstração**: no servidor aparece a descrição que vem da loja.\n\n## O que ele faz\n\n- Roda no seu servidor, com os dados em casa\n- Atualiza pelo BrunOS, com backup antes\n- Abre numa janela, sem sair do painel\n\nMais em [exemplo.org](https://exemplo.org/${a.id}).`,
-            fields: a.categories.includes('media') ? [{ label: 'Pasta das mídias', hint: 'Onde ficam os filmes e as séries', required: true }] : a.categories.includes('security') ? [{ label: 'Senha do administrador', required: true }, { label: 'Endereço de e-mail' }] : [] });
+            fields: a.categories.includes('media') ? [{ label: 'Pasta das mídias', hint: 'Onde ficam os filmes e as séries', required: true }] : a.categories.includes('security') ? [{ label: 'Senha do administrador', required: true }, { label: 'Endereço de e-mail' }] : [],
+            privileges: PRIV[a.id] || [] });
         },
         logoUrl: (a) => (a.demoIcon ? `assets/icons/${a.demoIcon}.webp` : ''),
         appAction: (urn, action, password) => {
@@ -1079,14 +1094,25 @@ function makeDemo() {
             { label: 'Permitir cadastro de novos usuários', type: 'boolean', env: 'SIGNUP', default: 'false' },
           ];
           const inst = apps.find((x) => x.urn === urn);
-          return wait({ fields, exposable: true, port: a.port, installed: !!inst, localDomain: 'server.lan', script: 14, want: 14,
+          // Ajustes de hoje: os do Plex feitos à mão; os de outro app, só se já foram salvos na demonstração
+          const plex = a.id === 'plex';
+          const settings = demoSettingsState[urn] || { exists: plex, mounts: plex ? [{ host: '/mnt/Disco1/Filmes', container: '/movies', readOnly: false }, { host: '/mnt/Disco2/Series', container: '/tv', readOnly: true }] : [],
+            memoryMB: 0, cpus: 0, gpu: false, env: plex ? [{ key: 'TZ', value: 'America/Sao_Paulo' }] : [], image: '', restart: '', manual: plex ? ['labels'] : [], risks: [] };
+          const raw = demoSettingsRaw[urn] ?? (plex ? 'services:\n  plex:\n    environment:\n      TZ: America/Sao_Paulo\n    volumes:\n      - /mnt/Disco1/Filmes:/movies # feito à mão\n      - /mnt/Disco2/Series:/tv:ro\n    labels:\n      minha.etiqueta: "1"\n' : '');
+          return wait({ fields, exposable: true, port: a.port, installed: !!inst, localDomain: 'server.lan', script: 15, want: 15, recipe: RECIPE(a), privileges: PRIV[a.id] || [], service: a.id,
+            settings, settingsRaw: raw,
             folders: [...demoMapped.map((n) => ({ name: n, host: `/mnt/${n}`, kind: 'disk', rootId: n.toLowerCase() })), { name: 'Pastas pessoais (/home)', host: '/home', kind: 'home', rootId: 'home' },
               { name: 'Mídia do Runtipi (filmes, séries, músicas)', host: '${ROOT_FOLDER_HOST}/media/data', kind: 'media' }, { name: 'Downloads do Runtipi', host: '${ROOT_FOLDER_HOST}/media/downloads', kind: 'media' }],
-            current: inst ? { status: 'running', port: inst.port, exposed: false, exposedLocal: true, openPort: true, values: { ADMIN_USER: 'admin', LANG: 'pt-BR', SIGNUP: false, ...(media ? { MEDIA_PATH: '/mnt/Disco1/Filmes' } : {}) }, secrets: ['ADMIN_PASS'] } : undefined }, 300);
+            current: inst ? { status: 'running', port: inst.port, exposed: false, exposedLocal: true, openPort: true, localSubdomain: inst.id, enableAuth: false, guest: false, userConfigEnabled: true,
+              values: { ADMIN_USER: 'admin', LANG: 'pt-BR', SIGNUP: false, ...(media ? { MEDIA_PATH: '/mnt/Disco1/Filmes' } : {}) }, secrets: ['ADMIN_PASS'] } : undefined }, 300);
         },
         install: (b) => {
           if (b.port && (b.port < 1024 || b.port > 65535)) return fail('a porta precisa estar entre 1024 e 65535');
           if (b.port === 8080) return fail('a porta 8080 já é usada por outro app: escolha outra', 502);
+          const id = b.urn.split(':')[0];
+          if (PRIV[id] && !b.acceptRisks) return fail('este app requer privilégios: leia a lista e marque "Entendo os riscos"');
+          if (b.localSubdomain && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(b.localSubdomain)) return fail('o nome do endereço local só pode ter letras, números e hífen (sem hífen nas pontas), até 63 letras');
+          if (b.password === 'errada') return fail('Senha de configuração errada (tentativa 1 de 5)', 502);
           const a = catalog().apps.find((x) => x.urn === b.urn);
           demoInstalling[b.urn] = { until: Date.now() + 5000, a };
           return wait({ ok: true }, 800);
@@ -1116,6 +1142,7 @@ function makeDemo() {
           if (b.password === 'errada') return fail('Senha de configuração errada (tentativa 1 de 5)', 502);
           if ((b.settings.mounts || []).some((m) => !/^(\/mnt\/|\/home\/|\$\{ROOT_FOLDER_HOST\}\/media)/.test(m.host))) return fail('a pasta não pode ser usada: escolha um disco de /mnt, uma pasta de /home ou a pasta de mídia do Runtipi');
           demoSettingsState[b.urn] = { exists: true, manual: b.urn.startsWith('plex') ? ['labels'] : [], risks: [], ...b.settings };
+          demoSettingsRaw[b.urn] = '# (demonstração)\n';
           return wait({ ok: true, state: demoSettingsState[b.urn], raw: '# (demonstração)\n', restartErr: '' }, 1200);
         },
       };

@@ -135,8 +135,17 @@ _Evite_: app bloqueado, app incompatível
 
 **Loja**:
 Janela do BrunOS que mostra os apps de todas as Lojas do Runtipi (categorias, busca, página do app) e
-gerencia os instalados. Instalar acontece na tela do Runtipi, que a Loja abre.
+gerencia os instalados. Instala, edita a Instalação e os Ajustes; a tela do Runtipi fica como alternativa.
 _Evite_: app store, loja de apps (era o nome do atalho antigo para a página do Runtipi), marketplace
+
+**Requer privilégios** (selo de um app):
+Aviso num app cuja receita pede poderes sobre o servidor que o BrunOS não dá aos apps comuns
+(privileged, rede do servidor, socket do Docker, poderes de administrador do Linux, pastas do sistema,
+aparelhos além da placa de vídeo). Vale para apps de qualquer Loja do Runtipi. A página do app diz quais
+privilégios são; instalar só depois de você aceitar os riscos. Os apps com o selo ficam juntos na guia
+**Apps com Privilégios** da Loja, sem sair de "Todas" e das categorias. Depois de instalado, o aviso
+continua em todo lugar onde o app aparece (Loja, tela inicial, monitor de apps).
+_Evite_: app bloqueado (é outra coisa: Só em aba), app arriscado, app recusado, poderes especiais
 
 **Loja do Runtipi**:
 Repositório com as receitas dos apps que o Runtipi sabe instalar. Há a oficial e as que o Bruno
@@ -144,14 +153,16 @@ adiciona; a Loja do BrunOS mostra todas juntas.
 _Evite_: repositório (sozinho), catálogo, fonte
 
 **Ajustes** (de um app):
-Pastas do servidor dentro do app, limites de memória e núcleos, placa de vídeo e variáveis, gravados no
-arquivo de ajustes do usuário do Runtipi (`user-config`), que vale depois das atualizações do app. O que
-foi escrito à mão no Runtipi fica como está. Salvar pede a Senha de configuração.
-_Evite_: configurações do app, compose personalizado, override
+Pastas do servidor dentro do app, limites de memória e núcleos, placa de vídeo, variáveis, versão da imagem
+e política de reinício, gravados no arquivo de ajustes do usuário do Runtipi (`user-config`), que vale
+depois das atualizações do app. A janela mostra o que a receita já traz e grava só o que mudou. O que foi
+escrito à mão no Runtipi fica como está. Mudar Ajustes pede a Senha de configuração, também na instalação.
+_Evite_: configurações do app, compose personalizado, override, ajustes de docker compose
 
 **Instalação** (de um app):
-As respostas dadas ao instalar (perguntas do app, porta, endereço). Dá para editar depois; o Runtipi
-reinicia o app com as respostas novas.
+As respostas dadas ao instalar (perguntas do app, porta, endereço local com o nome escolhido, login do
+Runtipi, painel de visitantes, domínio). Dá para editar depois; o Runtipi reinicia o app com as respostas
+novas. Instalação e Ajustes ficam na mesma janela: Instalar (app novo) ou Configurar (app instalado).
 _Evite_: formulário (sozinho), setup
 
 **Garimpo**:

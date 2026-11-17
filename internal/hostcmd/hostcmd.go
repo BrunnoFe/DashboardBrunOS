@@ -69,8 +69,11 @@ const (
 	// com o comando "senha-config" (o antigo "senha-formatar" continua funcionando), 0.19.0;
 	// 14 = "discos-estado" diz a data em que a Senha de configuração foi criada; instalar, editar a
 	// instalação e reiniciar pela API do Runtipi ("info-app", "instalar-app", "reconfigurar-app",
-	// "reiniciar-app") e os Ajustes ("ajustes-ler", "ajustes-gravar", com a Senha de configuração), 0.20.0).
-	ScriptVersion = 14
+	// "reiniciar-app") e os Ajustes ("ajustes-ler", "ajustes-gravar", com a Senha de configuração), 0.20.0;
+	// 15 = "instalar-app-senha" (instalar com a Senha de configuração e os Ajustes juntos),
+	// "ajustes-desfazer" (tira os Ajustes de uma instalação que falhou) e "ajustes-ler" também de app que
+	// não está instalado (o Runtipi não apaga os Ajustes ao desinstalar), 0.21.0.
+	ScriptVersion = 15
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -263,6 +266,9 @@ const (
 	CmdAppRestart  = "reiniciar-app"    // "reiniciar-app <app>:<loja>"
 	CmdAppCfgRead  = "ajustes-ler"      // "ajustes-ler <app>:<loja>": user-config/<loja>/<app>/docker-compose.yml
 	CmdAppCfgWrite = "ajustes-gravar"   // "ajustes-gravar <app>:<loja>" + Senha de configuração e o arquivo novo
+	// 0.21.0 (script 15)
+	CmdAppInstallPw = "instalar-app-senha" // + Senha de configuração, formulário (JSON numa linha) e os Ajustes
+	CmdAppCfgUndo   = "ajustes-desfazer"   // tira os Ajustes de um app que não ficou instalado (fica uma cópia)
 )
 
 var (
@@ -283,7 +289,8 @@ func StoreActAllowed(cmd string) bool {
 	f := strings.Fields(cmd)
 	switch {
 	case len(f) == 2 && (f[0] == CmdAppStart || f[0] == CmdAppStop || f[0] == CmdAppUninstall || f[0] == CmdAppInfo ||
-		f[0] == CmdAppInstall || f[0] == CmdAppReconfig || f[0] == CmdAppRestart || f[0] == CmdAppCfgRead || f[0] == CmdAppCfgWrite):
+		f[0] == CmdAppInstall || f[0] == CmdAppReconfig || f[0] == CmdAppRestart || f[0] == CmdAppCfgRead || f[0] == CmdAppCfgWrite ||
+		f[0] == CmdAppInstallPw || f[0] == CmdAppCfgUndo):
 		return ValidApp(f[1])
 	case len(f) == 2 && f[0] == CmdStoreRemove:
 		return ValidStoreName(f[1])
@@ -316,7 +323,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 14: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 15: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -327,6 +334,7 @@ const HostScript = `#!/bin/sh
 # adicionar-loja <nome> <https://...> | remover-loja <nome> | info-app <app>:<loja> |
 # instalar-app <app>:<loja> | reconfigurar-app <app>:<loja> | reiniciar-app <app>:<loja> |
 # ajustes-ler <app>:<loja> | ajustes-gravar <app>:<loja> (Senha de configuração + arquivo pela entrada padrão) |
+# instalar-app-senha <app>:<loja> (Senha de configuração + formulário + Ajustes) | ajustes-desfazer <app>:<loja> |
 # atualizar-script <assinatura> | versao. Recusa todo o resto.
 # Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-config | esquecer-senha-config (os nomes
 # antigos senha-formatar | esquecer-senha-formatar continuam valendo).
@@ -340,7 +348,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=14
+VERSAO=15
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -430,7 +438,7 @@ case "$acao" in
     [ $# -eq 3 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido"
     case "$modo" in sim|nao) ;; *) falha "pedido inválido" ;; esac ;;
-  tamanho-backup|iniciar-app|parar-app|desinstalar-app|info-app|instalar-app|reconfigurar-app|reiniciar-app|ajustes-ler|ajustes-gravar)
+  tamanho-backup|iniciar-app|parar-app|desinstalar-app|info-app|instalar-app|reconfigurar-app|reiniciar-app|ajustes-ler|ajustes-gravar|instalar-app-senha|ajustes-desfazer)
     [ $# -eq 2 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido" ;;
   adicionar-loja)
@@ -1006,19 +1014,73 @@ case "$acao" in
   reiniciar-app)
     api_runtipi POST "/app-lifecycle/$valor/restart" </dev/null
     exit 0 ;;
+  instalar-app-senha)
+    # instalar com a Senha de configuração (app que requer privilégios, ou com Ajustes já na instalação).
+    # Entrada padrão: 1ª linha = senha (conferida aqui), 2ª = o formulário (JSON numa linha), o resto = o
+    # arquivo de Ajustes (vazio = sem Ajustes). Os Ajustes entram ANTES de pedir a instalação, porque o
+    # Runtipi já liga o app com eles; se o Runtipi recusar o pedido, o arquivo anterior volta.
+    d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+    confere_senha instalar
+    id=${valor%%:*}
+    loja=${valor#*:}
+    [ ! -d "$d/apps/$loja/$id" ] || falha "este app já está instalado" 4
+    IFS= read -r form || form=""
+    [ -n "$form" ] && [ ${#form} -le 65536 ] || falha "formulário inválido" 2
+    dir="$d/user-config/$loja/$id"
+    arq="$dir/docker-compose.yml"
+    if [ -L "$d/user-config" ] || [ -L "$d/user-config/$loja" ] || [ -L "$dir" ] || [ -L "$arq" ]; then falha "o arquivo de ajustes é um atalho: não mexo nele" 3; fi
+    umask 022
+    t=$(mktemp)
+    head -c 65537 >"$t"
+    [ "$(wc -c <"$t")" -le 65536 ] || { rm -f "$t"; falha "arquivo de ajustes grande demais" 2; }
+    antes=""
+    if [ -s "$t" ]; then
+      install -d -m 755 "$dir"
+      if [ -f "$arq" ]; then
+        antes="$dir/docker-compose.yml.brunos-$(date +%Y%m%d-%H%M%S).bak"
+        cp -p "$arq" "$antes"
+      fi
+      install -m 644 "$t" "$arq.novo"
+      chown --reference="$d/apps" "$arq.novo" 2>/dev/null || true
+      mv -f "$arq.novo" "$arq"
+    fi
+    if ! printf '%s' "$form" | api_runtipi POST "/app-lifecycle/$valor/install"; then
+      if [ -s "$t" ]; then
+        if [ -n "$antes" ]; then cp -p "$antes" "$arq"; else rm -f "$arq"; fi
+      fi
+      rm -f "$t"
+      exit 1
+    fi
+    rm -f "$t"
+    exit 0 ;;
+  ajustes-desfazer)
+    # a instalação falhou depois de gravar os Ajustes (o Runtipi apaga o app): o arquivo sai e fica uma
+    # cópia. Só para app que NÃO está instalado, então não mexe em nada que esteja rodando (sem senha).
+    d=$(pasta_runtipi) || falha "não achei a pasta do Runtipi" 3
+    id=${valor%%:*}
+    loja=${valor#*:}
+    [ ! -d "$d/apps/$loja/$id" ] || falha "o app está instalado: nada a desfazer" 4
+    dir="$d/user-config/$loja/$id"
+    arq="$dir/docker-compose.yml"
+    if [ -L "$dir" ] || [ -L "$arq" ]; then falha "o arquivo de ajustes é um atalho: não mexo nele" 3; fi
+    if [ -f "$arq" ]; then mv -f "$arq" "$dir/docker-compose.yml.brunos-$(date +%Y%m%d-%H%M%S).bak"; fi
+    echo "ajustes desfeitos"
+    exit 0 ;;
   ajustes-ler|ajustes-gravar)
     # Ajustes do app: user-config/<loja>/<app>/docker-compose.yml, que o Runtipi junta ao compose do app
     d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
     id=${valor%%:*}
     loja=${valor#*:}
-    [ -d "$d/apps/$loja/$id" ] || falha "esse app não está instalado" 4
     dir="$d/user-config/$loja/$id"
     arq="$dir/docker-compose.yml"
     if [ -L "$dir" ] || [ -L "$arq" ]; then falha "o arquivo de ajustes é um atalho: não mexo nele" 3; fi
     if [ "$acao" = ajustes-ler ]; then
+      # também de app que não está instalado: o Runtipi não apaga os Ajustes ao desinstalar, e eles voltam
+      # a valer se o app for instalado de novo
       if [ -f "$arq" ]; then head -c 65537 "$arq"; fi
       exit 0
     fi
+    [ -d "$d/apps/$loja/$id" ] || falha "esse app não está instalado" 4
     # gravar: primeira linha = Senha de configuração (conferida aqui), o resto = o arquivo novo
     confere_senha ajustes
     umask 022
