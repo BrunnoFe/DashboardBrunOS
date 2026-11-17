@@ -234,7 +234,16 @@ func TestHostScriptRefuses(t *testing.T) {
 		"montar abcd disco x", "montar zzzz disco", "desmontar", "desmontar ../etc", "desmontar a b", "desmontar disco/../x",
 		"rotulo abcd", "rotulo abcd nome;reboot", "rotulo abcd nome-comprido-demais-xx", "formatar", "formatar sda S1 ext4",
 		"formatar sda1 S1 ext4 X", "formatar sda S1 fat32 X", "formatar sda S;1 ext4 X", "formatar sda S1 exfat NOMEMUITOLONGO",
-		"formatar-executar sda S1 ext4 X", "discos-estado x", "senha-formatar", "esquecer-senha-formatar"} {
+		"formatar-executar sda S1 ext4 X", "discos-estado x", "senha-formatar", "esquecer-senha-formatar",
+		// script 12 (janela Loja)
+		"iniciar-app", "iniciar-app immich", "iniciar-app immich:migrated x", "iniciar-app ../x:y", "iniciar-app Immich:migrated",
+		"parar-app immich:migrated;reboot", "parar-app $(id):x", "desinstalar-app", "desinstalar-app a:b:c", "desinstalar-app -x:y",
+		"adicionar-loja", "adicionar-loja minha", "adicionar-loja minha http://github.com/a/b", "adicionar-loja Minha https://github.com/a/b",
+		"adicionar-loja -x https://github.com/a/b", "adicionar-loja minha https://github.com/a/b x", "adicionar-loja minha https://github.com",
+		"adicionar-loja minha https://github.com/", "adicionar-loja minha https://u:p@github.com/a/b", "adicionar-loja minha https://github.com:22/a/b",
+		"adicionar-loja minha https://github.com/a/../b", "adicionar-loja minha https://github.com/a/b?x=1", "adicionar-loja minha https://github.com/a//b",
+		"adicionar-loja minha https://github.com/a/b;reboot", "adicionar-loja minha file:///etc", "adicionar-loja minha https://-x/a",
+		"adicionar-loja minha https://github.com/a/b/", "remover-loja", "remover-loja a b", "remover-loja ../x", "remover-loja -x", "remover-loja Loja"} {
 		if out, code := run(bad); code != 2 {
 			t.Errorf("pedido %q deveria ser recusado com código 2, veio %d: %s", bad, code, out)
 		}
@@ -245,7 +254,9 @@ func TestHostScriptRefuses(t *testing.T) {
 		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas",
 		"discos-detalhe", "estado sdb", "erros nvme0n1", "velocidade sdab", "ejetar sdc", "smart-teste sda sat curto", "smart-teste nvme0n1 auto longo",
 		"montar 1a2b-3C4D Disco_4", "desmontar Disco4", "rotulo 1a2b fotos", "formatar sdb SN-123_A.b:c ext4 Fotos", "formatar nvme0n1 X btrfs b",
-		"discos-estado"} {
+		"discos-estado",
+		"iniciar-app immich:migrated", "parar-app nextcloud_mini:brunnofe-store", "desinstalar-app immich:migrated",
+		"adicionar-loja minha-loja https://github.com/usuario/minha-loja", "adicionar-loja loja2 https://git.exemplo.org/a/b.git", "remover-loja minha-loja"} {
 		if out, code := run(ok); code == 2 || strings.Contains(out, "inválido") {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
@@ -254,7 +265,7 @@ func TestHostScriptRefuses(t *testing.T) {
 	if out, _ := run("senha-formatar"); !strings.Contains(out, "Terminal do servidor") {
 		t.Errorf("senha-formatar pelo SSH: %s", out)
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 11") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 12") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
@@ -314,6 +325,23 @@ func TestReadAllowed(t *testing.T) {
 	} {
 		if got := DiskActAllowed(cmd); got != want {
 			t.Errorf("DiskActAllowed(%q) = %v, queria %v", cmd, got, want)
+		}
+	}
+	// janela Loja (script 12)
+	for cmd, want := range map[string]bool{
+		"iniciar-app immich:migrated": true, "parar-app immich:migrated": true, "desinstalar-app nextcloud_mini:brunnofe-store": true,
+		"adicionar-loja minha-loja https://github.com/usuario/minha-loja": true, "adicionar-loja l https://git.exemplo.org/a/b.git": true,
+		"remover-loja minha-loja": true,
+		"iniciar-app":             false, "iniciar-app immich": false, "iniciar-app immich:migrated x": false, "parar-app Immich:x": false,
+		"desinstalar-app ../x:y": false, "adicionar-loja minha": false, "adicionar-loja Minha https://github.com/a/b": false,
+		"adicionar-loja minha http://github.com/a/b": false, "adicionar-loja minha https://u:p@github.com/a/b": false,
+		"adicionar-loja minha https://github.com/a/../b": false, "adicionar-loja minha https://github.com/a/b?x": false,
+		"adicionar-loja minha https://github.com": false, "adicionar-loja minha https://github.com/a/b/": false,
+		"adicionar-loja minha https://github.com:22/a/b": false, "adicionar-loja -x https://github.com/a/b": false,
+		"remover-loja": false, "remover-loja ../x": false, "remover-loja a b": false, "atualizar-lojas": false, "desligar": false, "": false,
+	} {
+		if got := StoreActAllowed(cmd); got != want {
+			t.Errorf("StoreActAllowed(%q) = %v, queria %v", cmd, got, want)
 		}
 	}
 	for cmd, want := range map[string]bool{

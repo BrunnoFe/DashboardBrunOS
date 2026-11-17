@@ -12,8 +12,14 @@
 - URL de um app: domínio local `https://<app>.<localDomain>` quando exposto localmente, senão
   `http://<servidor>:<porta>` (preferência `urlMode`).
 - Status: containers do projeto compose `<app>_<loja>` (todos rodando = verde; alguns = amarelo; nenhum = cinza).
-- Painel do Runtipi: `http://<servidor>[:porta]`; loja: `<painel>/app-store` (ícone "Loja de apps" no
-  dock; endereço configurável em Configurações → Apps → Endereço do Runtipi).
+- Painel do Runtipi: `http://<servidor>[:porta]` (endereço configurável em Configurações → Apps →
+  Endereço do Runtipi). Página de um app instalado: `<painel>/apps/<loja>/<app>`; tela de instalar:
+  `<painel>/app-store/<loja>/<app>` (a Loja do BrunOS abre essa tela).
+- Lojas (Runtipi 4): cada loja é um repositório baixado em `repos/<loja>/` (`apps/<app>/config.json`,
+  `docker-compose.json` ou `docker-compose.yml` com `x-runtipi`, `metadata/logo.jpg` e
+  `metadata/description.md`). A loja oficial fica na pasta `migrated`. O `runtipi-cli` lista, adiciona,
+  remove e atualiza lojas, e inicia, para, atualiza e desinstala apps; **não instala** (a instalação tem
+  formulário e só existe no painel). A janela Loja do BrunOS lê `repos/` (decisão 59).
 
 ## O app na loja (`runtipi-app/brunos/` → `RuntipiAppStore/apps/brunos/`)
 

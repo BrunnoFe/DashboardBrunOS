@@ -33,6 +33,7 @@ const DEFAULTS = {
   appUpdateNotify: true, // 0.11.0: aviso no sino de versão nova de app
   // 0.17.0: Janelas de app (openIn 'brunos'), Estilo das janelas, dock com app maximizado, limite de apps abertos
   winStyle: 'float', dockWithMax: 'auto', winLimitPc: 8, winLimitMobile: 5,
+  storeFavs: [], // 0.18.0: apps favoritos da Loja (urn)
 };
 // Endereço do painel do Runtipi: o que o usuário configurou ou http://<servidor>[:porta].
 function runtipiBase() {
@@ -1360,13 +1361,50 @@ async function restartApp(a) {
   catch (e) { toastError(e, 'Não foi possível reiniciar'); }
 }
 
+/* ── Loja (0.18.0): primeira janela do sistema no gerenciador de janelas ─── */
+const STORE_WIN = 'sys:store', PANEL_WIN = 'sys:runtipi';
+const STORE_TILE = 'linear-gradient(160deg,#5fd0ff 0%,#3a7bff 48%,#5b3df0 100%)';
+// Abre a tela do Runtipi pedida pela Loja (instalar um app): em Janela de app quando dá, senão em nova aba.
+function openRuntipiPanel(url, title, frame) {
+  const blocked = frame === 'no' || (location.protocol === 'https:' && /^http:/i.test(url));
+  if (set().openIn !== 'brunos' || blocked) { window.open(url, '_blank', 'noopener'); return; }
+  if (wins.has(PANEL_WIN)) wins.close(PANEL_WIN, false); // outra página do Runtipi estava aberta
+  wins.open(appWindow({ id: PANEL_WIN, name: title }, url, { iconHTML: '<span class="win-app-ico" style="--tile:#fff"><img src="assets/icons/tipi.webp" alt=""></span>', originEl: $('[data-sys="runtipi"]') }));
+}
+const storeCtx = {
+  iconHTML: `<span class="win-app-ico" style="--tile:${STORE_TILE}">${svg('bag')}</span>`,
+  runtipiBase: () => runtipiBase(),
+  installed: (urn) => S.apps.find((a) => a.urn === urn),
+  openApp: (urn) => openApp(allApps().find((a) => a.urn === urn)),
+  appDetails: (urn) => openAppDetails(allApps().find((a) => a.urn === urn)),
+  showUpdates: () => showUpdates(),
+  reloadApps: () => loadApps(),
+  openPanel: openRuntipiPanel,
+  get openTerminal() { return S.terminal === false ? null : (o) => openTerminal(o); }, // criar a Senha de formatação (digita, não executa)
+  favs: () => set().storeFavs || [],
+  setFavs: (list) => { set().storeFavs = list; save(); },
+};
+// Abre a Loja (ou traz de volta); urn = já na página de um app.
+function openStore({ originEl, urn } = {}) {
+  if (currentSheet) closeSheet();
+  if (wins.has(STORE_WIN)) {
+    wins.dockClick(STORE_WIN);
+    if (urn) import('./store.js').then((m) => m.showStoreApp(urn));
+    return;
+  }
+  import('./store.js').then((m) => wins.open(m.storeWindow(storeCtx, { originEl: originEl || $('[data-sys="store"]'), urn })))
+    .catch((e) => toastError(e, 'Não deu para abrir a Loja'));
+}
+
 /* ── Dock (ampliação igual à do Umbrel: 50 → 80 px em ±150 px) ─── */
 const SYS = {
   files: { label: 'Arquivos', glyph: 'folder', tile: 'linear-gradient(160deg,#ffb199 0%,#ff6a88 45%,#c04fd0 100%)', run: (el) => openSheet('files', el) },
   // janela Discos (0.15.0): fixa, logo depois de Arquivos
   disks: { label: 'Discos', glyph: 'disks', tile: 'linear-gradient(160deg,#9fe3d0 0%,#3fb1a8 45%,#2a6f8f 100%)', run: (el) => openSheet('disks', el) },
-  runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => openUrl(runtipiBase()) },
-  store: { label: 'Loja de apps', glyph: 'bag', tile: 'linear-gradient(160deg,#5fd0ff 0%,#3a7bff 48%,#5b3df0 100%)', run: () => openUrl(`${runtipiBase()}/app-store`) },
+  // com a tela de instalar do Runtipi aberta em janela (pela Loja), o ícone traz essa janela de volta
+  runtipi: { label: 'Runtipi', icon: 'tipi', tile: '#ffffff', badge: () => 0, run: () => (wins.has(PANEL_WIN) ? wins.dockClick(PANEL_WIN) : openUrl(runtipiBase())) },
+  // Loja (0.18.0): janela do BrunOS com os apps das lojas do Runtipi (antes abria a página do Runtipi)
+  store: { label: 'Loja', glyph: 'bag', tile: STORE_TILE, run: (el) => openStore({ originEl: el }) },
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
   widgets: { label: 'Widgets', glyph: 'grid', tile: 'linear-gradient(160deg,#ffd36e 0%,#ff9f43 50%,#f0643c 100%)', run: (el) => openSheet('widgets', el) },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
@@ -1456,7 +1494,8 @@ function positionTip() {
 })();
 const markDockOpen = () => {
   const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0; // o pontinho do Terminal = há Abas abertas
-  $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.app ? wins.has(el.dataset.app) : el.dataset.sys === 'terminal' ? tabs > 0 : !!el.dataset.sys && el.dataset.sys === currentSheet));
+  $$('.dock-item').forEach((el) => el.classList.toggle('open', el.dataset.app ? wins.has(el.dataset.app) : el.dataset.sys === 'terminal' ? tabs > 0
+    : !!el.dataset.sys && (el.dataset.sys === currentSheet || wins.has(`sys:${el.dataset.sys}`)))); // Loja e tela do Runtipi são janelas
 };
 
 /* ── Sheets ────────────────────────────────────────────────────── */
@@ -1613,7 +1652,7 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Dock com app maximizado', desc: 'Sempre visível: a dock fica por cima do app. Esconde sozinha: some e volta quando o mouse chega na beirada de baixo (no celular, toque na beirada). App acima da dock: o app para onde a dock começa',
       ctrl: `<div class="seg">${[['visible', 'Sempre visível'], ['auto', 'Esconde sozinha'], ['above', 'App acima da dock']].map(([k, l]) => `<button class="${(st.dockWithMax || 'auto') === k ? 'on' : ''}" data-dockmax="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
-    { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelos ícones Runtipi e Loja de apps do dock. Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
+    { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelo ícone Runtipi do dock e pela Loja (tela de instalar). Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
     { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor para IP:porta', desc: `Vazio = o mesmo endereço que você usou para abrir o BrunOS (${esc(location.hostname || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
     { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor, na ordem em que você marca', ctrl: dockPickerBtn() },
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
@@ -2077,6 +2116,7 @@ function commandPalette() {
   const actions = [
     { icon: 'folder', label: 'Abrir Arquivos', run: () => openSheet('files', $('[data-sys="files"]')) },
     { icon: 'disks', label: 'Abrir Discos (saúde, partições, desempenho)', run: () => openDisks() },
+    { icon: 'bag', label: 'Abrir Loja (instalar e gerenciar apps)', run: () => openStore() },
     { icon: 'sliders', label: 'Abrir Configurações', run: () => openSheet('settings', $('[data-sys="settings"]')) },
     { icon: 'grid', label: 'Abrir Widgets (criar e editar)', run: () => openWidgets() },
     { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },

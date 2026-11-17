@@ -150,6 +150,22 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   veredito anterior. Quem chama é o `checkApps` (vigia de apps, a cada minuto, até 4 checagens por volta,
   mesmo com o monitor desligado). `GET /api/apps` devolve `frame` por app. A CSP do BrunOS libera
   `frame-src 'self' http: https:` (o BrunOS continua com `frame-ancestors 'self'`).
+- **Loja** (0.18.0, decisão 59): `internal/runtipi/catalog.go` + `store.go`. `Catalog()` lê
+  `repos/<loja>/apps/<app>/config.json` de todas as lojas baixadas (nome, descrição curta, categorias,
+  versão, autor, site, datas em ms → s, arquiteturas), o endereço da loja em `repos/<loja>/.git/config`
+  (sem usuário e senha) e marca o instalado (`installed`, `have`, `update` pelo `tipi_version`); app
+  instalado fora das lojas entra com `local`. A leitura das lojas vale 2 min e o "instalado" 20 s;
+  `Invalidate()` zera os dois. Nada de seguir symlink dentro de `repos/` (`Lstat`), tamanhos limitados
+  (config 256 KiB, descrição 64 KiB, logo 2 MiB), `available: false` e `deprecated` só aparecem se
+  instalados. `CatalogDetail(urn)` traz o `description.md` e os campos do formulário (menos os `random`).
+  Rotas: `GET /api/store` (`{catalog, script: {have, want}, self, panelFrame}`; `panelFrame` é o
+  veredito do `framecheck` para o painel do Runtipi), `GET /api/store/app?urn=`,
+  `GET /api/store/logo?urn=`, `POST /api/store/app {urn, action: start|stop|uninstall, password}` (`password` = Senha de
+  formatação, só no `uninstall`: vai pela entrada padrão do script, que confere; o BrunOS não grava) e
+  `POST /api/store/stores {action: add|remove|refresh, name, url}`. As ações vão pelo script do servidor
+  (`hostcmd.StoreActAllowed`, um pedido por vez, até 5 min) e devolvem o catálogo novo; `refresh` é o
+  mesmo "Conferir apps" das atualizações. O próprio BrunOS (`brunos`) não pode ser parado nem
+  desinstalado por ali; loja com app instalado não pode ser removida.
 - **`internal/disks`** (0.15.0, decisão 56): a janela Discos. `discos-detalhe` (lsblk JSON + fstab só com
   identificador e pasta + `/dev/disk/by-id`) a cada 10 min e quando a lista do `/proc/diskstats` muda.
   Junta SMART, temperatura (SMART ou drivetemp), `hist` (nome no `diskhist`), `root` (raiz do Arquivos) e
@@ -350,6 +366,17 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   https→http), dock com apps abertos não fixados depois de um segundo divisor. Preferências: `openIn`
   (`tab`|`same`|`brunos`), `winStyle`, `dockWithMax` (`visible`|`auto`|`above`), `winLimitPc`,
   `winLimitMobile`; por app `forceTab`. Demonstração: `demoUrl` → `assets/demo-app.html`.
+- `js/store.js` + `css/store.css` (0.18.0, decisão 59): janela Loja, carregados só quando ela abre
+  (import dinâmico e `<link>` criado na hora). `storeWindow(ctx, {originEl, urn})` → opções do
+  `windows.open` (id `sys:store`); `showStoreApp(urn)`; `md(texto)` (Markdown mínimo: títulos, listas,
+  negrito, código e links http(s); descarta HTML e imagens). Abas Descobrir / Instalados / Atualizações,
+  filtro por loja, categorias (nomes em pt-BR), busca sem acento, prateleiras (Favoritos, Novos na loja,
+  Atualizados recentemente) e lista desenhada de 90 em 90 (`IntersectionObserver`). A página do app fica
+  por cima da lista (a rolagem da lista é mantida). O arranjo usa container query (`st`, 720 px): janela
+  estreita e celular são o mesmo desenho. No `app.js`: `openStore`, `storeCtx`, `openRuntipiPanel` (tela
+  de instalar do Runtipi em Janela de app `sys:runtipi`, ou nova aba se o painel recusar, se o BrunOS
+  estiver em https com painel em http ou se "Abrir apps em" não for "No BrunOS"). Janelas `sys:<nome>`
+  minimizam para o ícone `data-sys="<nome>"` da dock. Preferência: `storeFavs` (lista de urn).
 - `js/files.js`: janela Arquivos; exporta `mountFiles`, `navigate`, `mapDisksDialog(ctx, onDone)`.
 - `js/battery.js`: `batteryWidgetHTML`, `paintBattery(root, battery)`, `batteryDialog`.
 - `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.

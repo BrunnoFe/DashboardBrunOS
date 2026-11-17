@@ -133,6 +133,16 @@ App que não aceita ser mostrado dentro de outra página; sempre abre em nova ab
 em: No BrunOS".
 _Evite_: app bloqueado, app incompatível
 
+**Loja**:
+Janela do BrunOS que mostra os apps de todas as Lojas do Runtipi (categorias, busca, página do app) e
+gerencia os instalados. Instalar acontece na tela do Runtipi, que a Loja abre.
+_Evite_: app store, loja de apps (era o nome do atalho antigo para a página do Runtipi), marketplace
+
+**Loja do Runtipi**:
+Repositório com as receitas dos apps que o Runtipi sabe instalar. Há a oficial e as que o Bruno
+adiciona; a Loja do BrunOS mostra todas juntas.
+_Evite_: repositório (sozinho), catálogo, fonte
+
 ## Dados
 
 **Fonte**:
@@ -190,8 +200,8 @@ Apagar um Disco inteiro e deixá-lo com uma única partição vazia (ext4, Btrfs
 _Evite_: limpar, zerar, inicializar
 
 **Senha de formatação**:
-Senha própria, criada uma vez pelo Terminal com sudo, que o servidor confere antes de Formatar;
-diferente da senha do BrunOS.
+Senha própria, criada uma vez pelo Terminal com sudo, que o servidor confere antes das ações que apagam
+dados: Formatar um disco e desinstalar um app pela Loja. Diferente da senha do BrunOS.
 _Evite_: senha de admin, senha do sudo, PIN
 
 ## Energia

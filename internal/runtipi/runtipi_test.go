@@ -33,3 +33,99 @@ func TestCheckUpdates(t *testing.T) {
 		t.Fatal("sem pasta do Runtipi: lista vazia")
 	}
 }
+
+// Janela Loja (0.18.0): catálogo das lojas baixadas, com o instalado marcado, sem seguir atalhos.
+func TestCatalog(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repos/migrated")
+	write(t, filepath.Join(repo, ".git/config"), "[remote \"origin\"]\n\turl = https://usuario:segredo@github.com/exemplo/loja.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n")
+	write(t, filepath.Join(repo, "apps/plex/config.json"), `{"name":"Plex","short_desc":"Filmes","categories":["Media"],"version":"1.42.1","tipi_version":12,"port":32400,
+		"author":"plex","source":"https://github.com/plexinc/pms-docker","website":"javascript:alert(1)","available":true,"created_at":1700000000000,"updated_at":1750000000000,
+		"supported_architectures":["amd64","arm64"],"form_fields":[{"type":"text","label":"Token","hint":"do site","required":true,"env_variable":"X"},{"type":"random","label":"Segredo","env_variable":"Y"}]}`)
+	write(t, filepath.Join(repo, "apps/plex/metadata/logo.jpg"), "jpeg")
+	write(t, filepath.Join(repo, "apps/plex/metadata/description.md"), "# Plex\nFilmes e séries.")
+	write(t, filepath.Join(repo, "apps/novo/config.json"), `{"name":"Novo","version":"2","tipi_version":1,"available":true}`)
+	write(t, filepath.Join(repo, "apps/oculto/config.json"), `{"name":"Oculto","version":"1","tipi_version":1,"available":false}`)
+	write(t, filepath.Join(repo, "apps/velho/config.json"), `{"name":"Velho","version":"1","tipi_version":1,"available":true,"deprecated":true}`)
+	write(t, filepath.Join(repo, "apps/quebrado/config.json"), `{nao é json`)
+	write(t, filepath.Join(repo, "apps/Maiusculo/config.json"), `{"name":"X","available":true}`)
+	write(t, filepath.Join(dir, "apps/migrated/plex/config.json"), `{"name":"Plex","version":"1.41.0","tipi_version":10}`)
+	write(t, filepath.Join(dir, "apps/_user/meuapp/config.json"), `{"name":"Meu app","version":"1","tipi_version":1}`)
+	// loja maliciosa: logo, descrição e a própria pasta do app como atalhos para fora
+	secret := filepath.Join(dir, "segredo.txt")
+	write(t, secret, "senha do servidor")
+	write(t, filepath.Join(repo, "apps/atalho/config.json"), `{"name":"Atalho","version":"1","tipi_version":1,"available":true}`)
+	links := os.MkdirAll(filepath.Join(repo, "apps/atalho/metadata"), 0o755) == nil &&
+		os.Symlink(secret, filepath.Join(repo, "apps/atalho/metadata/logo.jpg")) == nil &&
+		os.Symlink(secret, filepath.Join(repo, "apps/atalho/metadata/description.md")) == nil &&
+		os.Symlink(filepath.Join(repo, "apps/plex"), filepath.Join(repo, "apps/copia")) == nil
+
+	d := New(dir)
+	c := d.Catalog()
+	if !c.Found || len(c.Stores) != 1 || c.Stores[0].Slug != "migrated" || c.Stores[0].URL != "https://github.com/exemplo/loja" {
+		t.Fatalf("lojas: %+v", c.Stores)
+	}
+	by := map[string]CatalogApp{}
+	for _, a := range c.Apps {
+		by[a.URN] = a
+	}
+	for _, gone := range []string{"oculto:migrated", "velho:migrated", "quebrado:migrated", "Maiusculo:migrated", "copia:migrated"} {
+		if _, ok := by[gone]; ok {
+			t.Errorf("%s não deveria aparecer no catálogo", gone)
+		}
+	}
+	p := by["plex:migrated"]
+	if !p.Installed || !p.Update || p.Have != "1.41.0" || p.Version != "1.42.1" || !p.HasLogo || p.Created != 1700000000 || p.Website != "" ||
+		p.Source == "" || len(p.Categories) != 1 || p.Categories[0] != "media" || len(p.Archs) != 2 {
+		t.Fatalf("plex: %+v", p)
+	}
+	if n := by["novo:migrated"]; n.Installed || n.Update || n.HasLogo || n.Name != "Novo" {
+		t.Fatalf("novo: %+v", n)
+	}
+	if u := by["meuapp:_user"]; !u.Installed || !u.Local {
+		t.Fatalf("instalado fora das lojas: %+v", u)
+	}
+	det, ok := d.CatalogDetail("plex:migrated")
+	if !ok || det.Description != "# Plex\nFilmes e séries." || len(det.Fields) != 1 || det.Fields[0].Label != "Token" || !det.Fields[0].Required {
+		t.Fatalf("detalhe: %+v", det)
+	}
+	if lp, ok := d.CatalogLogo("plex:migrated"); !ok || lp != filepath.Join(repo, "apps/plex/metadata/logo.jpg") {
+		t.Fatalf("logo: %q %v", lp, ok)
+	}
+	for _, bad := range []string{"", "nada:migrated", "../x:migrated", "plex:../migrated", "oculto:migrated"} {
+		if _, ok := d.CatalogDetail(bad); ok {
+			t.Errorf("CatalogDetail(%q) deveria falhar", bad)
+		}
+		if _, ok := d.CatalogLogo(bad); ok {
+			t.Errorf("CatalogLogo(%q) deveria falhar", bad)
+		}
+	}
+	if links { // onde dá para criar atalhos (Linux, CI)
+		a, ok := by["atalho:migrated"]
+		if !ok || a.HasLogo {
+			t.Fatalf("logo que é atalho não conta: %+v", a)
+		}
+		if det, _ := d.CatalogDetail("atalho:migrated"); det.Description != "" {
+			t.Fatalf("a descrição seguiu o atalho: %q", det.Description)
+		}
+		if _, ok := d.CatalogLogo("atalho:migrated"); ok {
+			t.Fatal("o logo seguiu o atalho")
+		}
+	}
+	// desinstalou e a loja ganhou um app: depois do Invalidate o catálogo muda na hora
+	os.RemoveAll(filepath.Join(dir, "apps/migrated/plex"))
+	write(t, filepath.Join(repo, "apps/chegou/config.json"), `{"name":"Chegou","version":"1","tipi_version":1,"available":true}`)
+	if x, _ := d.catalogApp("plex:migrated"); !x.Installed {
+		t.Fatal("antes do Invalidate vale o que estava guardado")
+	}
+	d.Invalidate()
+	if x, _ := d.catalogApp("plex:migrated"); x.Installed || x.Update {
+		t.Fatal("depois do Invalidate o app não está mais instalado")
+	}
+	if _, ok := d.catalogApp("chegou:migrated"); !ok || d.Catalog().Stores[0].Apps != 4 {
+		t.Fatalf("depois do Invalidate o app novo aparece: %+v", d.Catalog().Stores)
+	}
+	if c := New("").Catalog(); c.Found || len(c.Apps) != 0 || c.Apps == nil || c.Stores == nil {
+		t.Fatalf("sem pasta do Runtipi: %+v", c)
+	}
+}

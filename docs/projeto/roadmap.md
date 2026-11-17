@@ -21,6 +21,7 @@ celular.
 | 0.15.1 | Teste do disco: andamento a cada 30 s e progressivo, resultado que não some, estimativa real, disco "só no fim"; dados genéricos |
 | 0.16.0 | Montar, desmontar, rótulo e Formatar com Senha de formatação; trava de container no ejetar (decisões 54 e 57) |
 | 0.17.0 | Janelas de app: apps dentro do BrunOS, Flutuante/Folha, dock com apps abertos, Só em aba automático (decisão 58) |
+| 0.18.0 | Janela Loja: catálogo das lojas do Runtipi, instalar pela tela do Runtipi, parar/iniciar/desinstalar (com a Senha de formatação), gerenciar lojas (decisão 59) |
 
 ## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026: entregue
 
@@ -42,7 +43,20 @@ Plano detalhado em `plano-etapa12.md`; termos em `CONTEXT.md` (seção Janelas);
 | Versão | O que | Status |
 |---|---|---|
 | 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado; aguardando teste no servidor com apps reais |
-| 0.18.0 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas | depois do teste da 0.17.0; detalhes a combinar |
+| depois da etapa 13 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas (era a 0.18.0; a Loja passou na frente e já usa o gerenciador de Janelas) | depois do teste da 0.17.0; detalhes a combinar |
+
+## Etapa 13 (0.18.0 → 0.19.0), combinada em 16/11/2026: Loja
+
+Porquê na decisão 59; termos em `CONTEXT.md` (Loja, Loja de apps do Runtipi).
+
+| Versão | O que | Status |
+|---|---|---|
+| 0.18.0 | Janela Loja: apps de todas as lojas do Runtipi com categorias, busca, favoritos, página do app; instalar pela tela do Runtipi; parar, iniciar, desinstalar; adicionar, remover e atualizar lojas | feito, lançado em 17/11; aguardando teste no servidor (antes de desinstalar, criar a Senha de formatação) |
+| 0.19.0 | Conversor de lojas: ferramenta no GitHub Actions que lê a loja do CasaOS/ZimaOS, converte para o formato do Runtipi e publica numa loja separada chamada **Garimpo** (repositório no GitHub do Bruno), com selo de origem nos apps ("via CasaOS") e recusa de receitas perigosas (`privileged`, socket do Docker, rede do host). Umbrel depois, só os apps simples e depois de conferir a licença | a fazer (nome e selo escolhidos em 17/11) |
+
+Para conferir no primeiro teste da 0.18.0 no servidor: (1) o endereço da tela de instalar do Runtipi
+(`<painel>/app-store/<loja>/<app>`); (2) se o painel do Runtipi aceita abrir em Janela de app; (3) o que o
+`runtipi-cli` responde ao desinstalar e ao remover uma loja com apps instalados.
 
 ## Em aberto
 

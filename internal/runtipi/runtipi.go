@@ -55,6 +55,9 @@ type Discoverer struct {
 	apps []App
 	info Info
 	at   time.Time
+	// catálogo das lojas (catalog.go)
+	cat   *Catalog
+	catAt time.Time
 }
 
 func New(dir string) *Discoverer { return &Discoverer{dir: dir} }

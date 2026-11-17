@@ -308,7 +308,9 @@ function toward(r, t) {
   return `translate(${dx}px, ${dy}px) scale(${Math.max(t.width / r.width, 0.02)}, ${Math.max(t.height / r.height, 0.02)})`;
 }
 function dockTarget(w) {
-  const it = document.querySelector(`.dock-item[data-app="${CSS.escape(w.id)}"]`) || $('#dock');
+  // janelas do sistema ("sys:store") minimizam para o ícone delas na dock (data-sys="store")
+  const sys = w.id.startsWith('sys:') ? document.querySelector(`.dock-item[data-sys="${CSS.escape(w.id.slice(4))}"]`) : null;
+  const it = sys || document.querySelector(`.dock-item[data-app="${CSS.escape(w.id)}"]`) || $('#dock');
   return it?.getBoundingClientRect();
 }
 function animateOpen(w, originEl) {

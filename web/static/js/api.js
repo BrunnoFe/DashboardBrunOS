@@ -235,6 +235,14 @@ const real = {
   usage: () => call('GET', '/api/usage'),
   restart: (urn) => call('POST', '/api/apps/restart', { urn }),
   logoUrl: (urn) => `/api/apps/logo?${q({ urn })}`,
+  // janela Loja (0.18.0): catálogo das lojas do Runtipi e gerenciamento pelo script do servidor
+  store: {
+    get: () => call('GET', '/api/store'),
+    app: (urn) => call('GET', `/api/store/app?${q({ urn })}`),
+    logoUrl: (a) => (a.hasLogo ? `/api/store/logo?${q({ urn: a.urn })}` : ''),
+    appAction: (urn, action, password) => call('POST', '/api/store/app', { urn, action, password }),
+    stores: (action, name = '', url = '') => call('POST', '/api/store/stores', { action, name, url }),
+  },
   app: {
     start: (urn) => call('POST', '/api/apps/start', { urn }),
     stop: (urn) => call('POST', '/api/apps/stop', { urn }),
@@ -964,6 +972,77 @@ function makeDemo() {
       };
     })(),
     logoUrl: () => '',
+    // Loja na demonstração: um catálogo inventado, com os apps da tela inicial como instalados
+    store: (() => {
+      const dayMs = 86400000, t0 = Date.now();
+      const C = (id, name, shortDesc, categories, version, ageDays, updDays, extra = {}) => ({ id, name, shortDesc, categories, version, created: Math.floor((t0 - ageDays * dayMs) / 1000), updated: Math.floor((t0 - updDays * dayMs) / 1000), ...extra });
+      const list = [
+        C('immich', 'Immich', 'Fotos e vídeos com backup do celular', ['photography', 'media'], 'v2.2.0', 700, 2), C('nextcloud-mini', 'Nextcloud', 'Arquivos, agenda e contatos na sua nuvem', ['data'], '30.0.2', 900, 9),
+        C('plex', 'Plex', 'Filmes, séries e música em qualquer tela', ['media'], '1.42.1', 950, 1), C('syncthing', 'Syncthing', 'Sincronização de pastas entre aparelhos', ['utilities', 'data'], '1.29', 880, 20),
+        C('vaultwarden', 'Vaultwarden', 'Cofre de senhas compatível com Bitwarden', ['security'], '1.33', 860, 30), C('adguard', 'AdGuard Home', 'Bloqueia anúncios e rastreadores na rede toda', ['network', 'security'], '0.107', 870, 14),
+        C('transmission', 'Transmission', 'Cliente de torrents leve', ['utilities'], '4.0.6', 940, 60), C('qbittorrent', 'qBittorrent', 'Cliente de torrents com busca integrada', ['utilities'], '5.0.2', 930, 12),
+        C('speedtest-tracker', 'Speedtest Tracker', 'Mede e guarda a velocidade da internet', ['network'], '1.2', 400, 25), C('watchyourlan', 'WatchYourLAN', 'Avisa quando um aparelho novo entra na rede', ['network', 'security'], '2.0', 420, 80),
+        C('filebrowser', 'File Browser', 'Gerenciador de arquivos pelo navegador', ['utilities'], '2.31', 800, 44), C('homarr', 'Homarr', 'Painel inicial para os seus apps', ['utilities'], '1.4', 600, 7),
+        C('tailscale', 'Tailscale', 'Acesse o servidor de qualquer lugar por VPN', ['network'], '1.76', 500, 5, { noGui: true }),
+        C('jellyfin', 'Jellyfin', 'Servidor de mídia livre: filmes, séries e música', ['media'], '10.10.3', 920, 3), C('home-assistant', 'Home Assistant', 'Automação da casa, tudo local', ['automation'], '2026.11', 910, 1),
+        C('pihole', 'Pi-hole', 'Bloqueio de anúncios pela rede', ['network', 'security'], '2026.07', 905, 18), C('uptime-kuma', 'Uptime Kuma', 'Monitor de sites e serviços com avisos', ['utilities', 'network'], '2.0.1', 780, 6),
+        C('paperless-ngx', 'Paperless-ngx', 'Digitalize e encontre seus documentos', ['data', 'utilities'], '2.14', 640, 11), C('audiobookshelf', 'Audiobookshelf', 'Audiolivros e podcasts', ['media', 'books'], '2.19', 560, 4),
+        C('calibre-web', 'Calibre-Web', 'Sua biblioteca de e-books no navegador', ['books', 'media'], '0.6.24', 700, 90), C('navidrome', 'Navidrome', 'Sua coleção de música por streaming', ['music', 'media'], '0.54', 650, 22),
+        C('gitea', 'Gitea', 'Repositórios Git leves', ['development'], '1.23', 890, 8), C('code-server', 'Code Server', 'VS Code no navegador', ['development'], '4.96', 850, 3),
+        C('n8n', 'n8n', 'Automação de tarefas ligando serviços', ['automation', 'development'], '1.72', 480, 2), C('grafana', 'Grafana', 'Gráficos e painéis de métricas', ['utilities', 'development'], '11.4', 760, 16),
+        C('actual-budget', 'Actual Budget', 'Orçamento pessoal por envelopes', ['finance'], '25.1', 380, 13), C('firefly-iii', 'Firefly III', 'Controle financeiro pessoal', ['finance'], '6.1', 720, 35),
+        C('mealie', 'Mealie', 'Receitas e planejamento de refeições', ['utilities'], '2.4', 520, 28), C('open-webui', 'Open WebUI', 'Converse com modelos de IA locais', ['ai'], '0.5.4', 210, 1),
+        C('ollama', 'Ollama', 'Rode modelos de IA no seu servidor', ['ai'], '0.5.7', 240, 2, { noGui: true }), C('freshrss', 'FreshRSS', 'Leitor de notícias por RSS', ['social', 'utilities'], '1.25', 690, 50),
+        C('linkwarden', 'Linkwarden', 'Guarde e organize links', ['utilities'], '2.9', 150, 6), C('stirling-pdf', 'Stirling PDF', 'Junta, divide e converte PDFs', ['utilities'], '0.36', 300, 4),
+        C('minecraft', 'Minecraft Server', 'Servidor de Minecraft para os amigos', ['gaming'], '1.21.4', 830, 40, { noGui: true }), C('karakeep', 'Karakeep', 'Favoritos e notas com busca', ['utilities', 'ai'], '0.21', 20, 3),
+        C('beszel', 'Beszel', 'Monitor leve de servidores', ['utilities'], '0.9', 12, 2), C('glance', 'Glance', 'Painel de notícias e feeds', ['utilities'], '0.7', 30, 9),
+      ];
+      const ICONS = { adguard: 'adguard-home', 'nextcloud-mini': 'nextcloud', 'dashdot-lite': 'dashdot' };
+      const HAVE = { 'plex:migrated': '1.41.2', 'immich:migrated': 'v2.1.0' };
+      let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'personal-store', url: 'https://github.com/usuario/minha-loja' }];
+      const extra = [{ ...C('dashdot-lite', 'Dashdot', 'Resumo do servidor em uma tela', ['utilities'], '6.0', 300, 70), store: 'personal-store' }, { ...C('brunos', 'BrunOS', 'Este painel', ['utilities'], '0.18.0', 60, 1), store: 'personal-store' }];
+      const catalog = () => {
+        const all = [...list.map((a) => ({ ...a, store: 'migrated' })), ...extra].filter((a) => stores.some((s) => s.slug === a.store));
+        const out = all.map((a) => {
+          const urn = `${a.id}:${a.store}`, inst = apps.find((x) => x.urn === urn);
+          return { ...a, urn, port: inst?.port || 8000 + (a.id.length * 37) % 900, author: a.name, source: `https://github.com/exemplo/${a.id}`, website: `https://exemplo.org/${a.id}`, archs: ['amd64', 'arm64'],
+            hasLogo: false, demoIcon: ICONS[a.id] || (apps.some((x) => x.id === a.id) ? a.id : ''), installed: !!inst, have: inst ? HAVE[urn] || a.version : undefined, update: !!inst && !!HAVE[urn] };
+        }).sort((x, y) => x.name.localeCompare(y.name, 'pt-BR'));
+        return { found: true, at: now, apps: out, stores: stores.map((s) => ({ ...s, apps: out.filter((a) => a.store === s.slug).length })) };
+      };
+      const state = () => ({ catalog: catalog(), script: { have: 12, want: 12 }, self: 'brunos', panelFrame: 'ok' });
+      const fail = (msg, status = 400) => new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status })), 300));
+      return {
+        get: () => wait(state()),
+        app: (urn) => {
+          const a = catalog().apps.find((x) => x.urn === urn);
+          if (!a) return fail('app não encontrado na loja', 404);
+          return wait({ ...a, description: `# ${a.name}\n\n${a.shortDesc}. Este texto é de **demonstração**: no servidor aparece a descrição que vem da loja.\n\n## O que ele faz\n\n- Roda no seu servidor, com os dados em casa\n- Atualiza pelo BrunOS, com backup antes\n- Abre numa janela, sem sair do painel\n\nMais em [exemplo.org](https://exemplo.org/${a.id}).`,
+            fields: a.categories.includes('media') ? [{ label: 'Pasta das mídias', hint: 'Onde ficam os filmes e as séries', required: true }] : a.categories.includes('security') ? [{ label: 'Senha do administrador', required: true }, { label: 'Endereço de e-mail' }] : [] });
+        },
+        logoUrl: (a) => (a.demoIcon ? `assets/icons/${a.demoIcon}.webp` : ''),
+        appAction: (urn, action, password) => {
+          const i = apps.findIndex((x) => x.urn === urn);
+          if (i < 0) return fail('esse app não está instalado', 404);
+          if (action === 'uninstall' && password === 'errada') return fail('Senha de formatação errada (tentativa 1 de 5)', 502);
+          if (action === 'uninstall') apps.splice(i, 1);
+          else Object.assign(apps[i], action === 'stop' ? { state: 'stopped', running: 0 } : { state: 'running', running: 1 });
+          return wait({ ok: true, catalog: catalog() }, 1600);
+        },
+        stores: (action, name = '', url = '') => {
+          if (action === 'add') {
+            if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return fail('nome inválido: use só letras minúsculas, números e traço (ex.: minha-loja)');
+            if (!/^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._-]+)+$/.test(url)) return fail('endereço inválido: use o endereço https do repositório (ex.: https://github.com/usuario/loja)');
+            if (stores.some((s) => s.slug === name)) return fail(`essa loja já está adicionada (${name})`, 409);
+            stores.push({ slug: name, url });
+          } else if (action === 'remove') {
+            if (catalog().apps.some((a) => a.installed && a.store === name)) return fail('essa loja tem apps instalados: desinstale antes de remover a loja', 409);
+            stores = stores.filter((s) => s.slug !== name);
+          }
+          return wait({ ok: true, catalog: catalog() }, 1400);
+        },
+      };
+    })(),
     files: {
       roots: () => wait(demoRoots()),
       disks: () => wait(rootsMeta.filter(([id]) => id !== 'home').map(([id, name, t, u]) => ({ id, name, mounted: t > 0, mapped: demoMapped.includes(name), total: t * GB, free: (t - u) * GB }))),

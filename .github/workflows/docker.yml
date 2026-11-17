@@ -53,6 +53,8 @@ jobs:
         run: bash tests/script-discos.sh
       - name: Montar, desmontar e Formatar no script do servidor (senha, trava, travas do disco)
         run: bash tests/script-formatar.sh
+      - name: Pedidos da janela Loja no script do servidor (iniciar, parar, desinstalar, lojas)
+        run: bash tests/script-loja.sh
 
   publish:
     name: publica a imagem

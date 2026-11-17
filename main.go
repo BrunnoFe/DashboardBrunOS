@@ -130,6 +130,9 @@ type server struct {
 	disks     *disks.Monitor // janela Discos (0.15.0)
 	updates   *updates.Checker
 	settingMu sync.Mutex
+	// janela Loja (0.18.0): um pedido por vez ao runtipi-cli; storeHost troca o servidor nos testes
+	storeMu   sync.Mutex
+	storeHost func(ctx context.Context, cmd string, in []byte) ([]byte, error)
 
 	ctMu    sync.Mutex
 	ctCache []dockerc.Container
@@ -381,6 +384,12 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/apps/history", a(s.hAppHistory))
 	mux.HandleFunc("GET /api/apps/logs", a(s.hAppLogs))
 	mux.HandleFunc("GET /api/apps/logs/stream", a(s.hAppLogsStream))
+	// janela Loja (0.18.0): catálogo das lojas do Runtipi e gerenciamento pelo script do servidor
+	mux.HandleFunc("GET /api/store", a(s.hStore))
+	mux.HandleFunc("GET /api/store/app", a(s.hStoreApp))
+	mux.HandleFunc("GET /api/store/logo", a(s.hStoreLogo))
+	mux.HandleFunc("POST /api/store/app", a(s.hStoreAppAction))
+	mux.HandleFunc("POST /api/store/stores", a(s.hStoreStores))
 
 	s.files.Register(mux, a)
 	s.events.Register(mux, a)

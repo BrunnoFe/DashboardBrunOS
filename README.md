@@ -135,6 +135,8 @@ A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previs
 
 ## Apps
 
+A *Loja* (ícone da sacola no dock) mostra os apps de todas as lojas do Runtipi com categorias, busca, favoritos e a página de cada app, sem usar internet: ela lê o que o Runtipi já baixou. *Instalar* abre a tela de instalação do Runtipi; parar, iniciar e desinstalar apps e adicionar, remover e atualizar lojas são feitos pelo próprio BrunOS, com o servidor preparado em *Configurações → Sistema → Energia*. Desinstalar apaga os dados do app e por isso pede a Senha de formatação, a mesma de formatar discos.
+
 Clique com o botão direito num ícone → *Detalhes, logs e uso* para ver a disponibilidade e o consumo de CPU e memória nas últimas 24 h, os logs de cada container (inclusive ao vivo) e ligar, parar ou reiniciar o app (com *Permitir reiniciar apps* ligado no formulário do Runtipi). Ligar e parar pelo BrunOS não muda o estado no Runtipi. *Desinstalar* abre a página do app no painel do Runtipi. A cada minuto o BrunOS confere se cada app responde e avisa no sino quando algum cai (dá para desligar em *Configurações → Apps*). Arraste um app sobre outro para criar uma pasta; com muitos apps, a tela inicial vira páginas. Para a temperatura dos HDs, o módulo `drivetemp` do Linux precisa estar carregado; a própria janela mostra os comandos.
 
 Em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.

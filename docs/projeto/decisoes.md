@@ -282,3 +282,24 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     barra. O peso fica no navegador (cada app aberto é uma página), não no servidor; por isso há um
     limite configurável de apps abertos. Alternativas recusadas: marcar à mão (o Bruno descobriria pela
     tela branca) e tentar sempre (experiência feia nos apps que recusam).
+59. **Loja: vitrine do BrunOS, instalação e gerência com o Runtipi** (0.18.0, combinado em 16/11/2026).
+    O Bruno queria uma loja bonita dentro do BrunOS e mais apps do que a loja oficial do Runtipi tem.
+    (a) O catálogo sai do disco: o Runtipi já baixa todas as lojas para `repos/<loja>/apps/`, dentro da
+    pasta que o BrunOS monta só para leitura; a Loja não usa internet nem permissão nova, e o código dela
+    só carrega quando a janela abre. (b) Instalar continua na tela do Runtipi (aberta em Janela de app ou
+    nova aba): o `runtipi-cli` não tem comando de instalar, porque a instalação tem formulário.
+    Alternativas recusadas: o BrunOS instalar containers por conta própria (quebra a regra do container
+    sem privilégios e o Runtipi não saberia dos apps: sem atualização nem backup) e preencher o formulário
+    chamando a API interna do Runtipi (não documentada, quebra a cada versão dele). (c) Parar, iniciar,
+    desinstalar e adicionar/remover lojas vão pelo script do servidor, que chama o `runtipi-cli` (o
+    Runtipi fica sabendo, ao contrário do ligar/parar pelo Docker). Desinstalar apaga os dados do app,
+    então pede a Senha de formatação (pedido do Bruno em 17/11/2026: uma credencial só para as ações
+    sensíveis do servidor, separada da senha do BrunOS), conferida pelo servidor como no Formatar, com a
+    mesma trava; o próprio BrunOS não pode ser parado nem desinstalado por ali. (d) As lojas são
+    repositórios de terceiros: o catálogo não segue atalhos (symlink) dentro delas, a descrição passa por
+    um Markdown mínimo que descarta HTML e imagens de fora, e o endereço de loja nova só pode ser https
+    sem usuário, senha ou porta. (e) Mais apps vêm por lojas extras do Runtipi; apps de outros sistemas
+    (CasaOS/ZimaOS, Umbrel) entram por um conversor que roda fora do servidor e publica uma loja no
+    formato do Runtipi (próxima versão), não por instalação paralela. (f) A Loja é a primeira janela do
+    sistema no gerenciador de Janelas, e o desenho dela segue a largura da janela (container query), não
+    a da tela: janela estreita e celular usam o mesmo arranjo.

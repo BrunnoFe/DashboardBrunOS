@@ -192,6 +192,19 @@ antes. Voltar minimiza; F5 com app aberto pergunta; Sair fecha os apps; Bloqueio
 visual: o encaixe precisa guardar o tamanho de antes do arraste; no celular, o toque na faixa da dock
 precisa cancelar o clique que cairia no app (ele roubava o foco e escondia a dock).
 
+## 0.18.0 (17/11): janela Loja (etapa 13, decisão 59)
+O ícone da sacola abre a Loja do BrunOS: os apps de todas as lojas do Runtipi, lidos do disco (`repos/`),
+com abas Descobrir / Instalados / Atualizações, categorias em português, busca, filtro por loja,
+favoritos, prateleiras "Novos na loja" e "Atualizados recentemente" e a página de cada app (descrição,
+versão, o que a instalação pergunta). Instalar abre a tela do Runtipi em Janela de app ou nova aba (o
+`runtipi-cli` não instala). Parar, iniciar e desinstalar pelo Runtipi e adicionar, remover e atualizar
+lojas pelo script do servidor (versão 12). Desinstalar pede a Senha de formatação, conferida pelo
+servidor com a mesma trava de 5 erros; sem a senha criada, a Loja mostra como criar. A Loja é a primeira
+janela do sistema no gerenciador de Janelas e o desenho segue a largura da janela (container query), então
+janela estreita e celular usam o mesmo arranjo. Lições: as lojas são de terceiros, então nada de seguir
+symlink nem de mostrar HTML delas; mudar o `location.hash` minimiza a janela da frente (o "voltar"); o
+`/tmp` do WSL some quando ele reinicia.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

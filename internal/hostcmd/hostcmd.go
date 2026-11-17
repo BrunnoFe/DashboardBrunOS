@@ -63,8 +63,10 @@ const (
 	// primeira linha do registro, 0.12.2; 9 = "atualizar-lojas" (runtipi-cli appstore update), 0.12.3;
 	// 10 = janela Discos: "discos-detalhe", "estado", "erros", "smart-teste", "velocidade", "ejetar" e o
 	// "smart" com o andamento e o registro dos testes, 0.15.0; 11 = "montar", "desmontar", "rotulo",
-	// "formatar" com a Senha de formatação, "discos-estado" e a trava de container no "ejetar", 0.16.0).
-	ScriptVersion = 11
+	// "formatar" com a Senha de formatação, "discos-estado" e a trava de container no "ejetar", 0.16.0;
+	// 12 = janela Loja: "iniciar-app", "parar-app", "desinstalar-app", "adicionar-loja" e "remover-loja",
+	// todos pelo runtipi-cli, 0.18.0).
+	ScriptVersion = 12
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -243,6 +245,42 @@ func ActAllowed(cmd string) bool {
 	return false
 }
 
+// Script 12 (0.18.0): janela Loja. Tudo pelo runtipi-cli, que é quem o Runtipi usa (ele fica sabendo).
+const (
+	CmdAppStart     = "iniciar-app"     // "iniciar-app <app>:<loja>": runtipi-cli app start
+	CmdAppStop      = "parar-app"       // "parar-app <app>:<loja>": runtipi-cli app stop
+	CmdAppUninstall = "desinstalar-app" // "desinstalar-app <app>:<loja>": runtipi-cli app uninstall
+	CmdStoreAdd     = "adicionar-loja"  // "adicionar-loja <nome> <endereço https>": runtipi-cli appstore add
+	CmdStoreRemove  = "remover-loja"    // "remover-loja <nome>": runtipi-cli appstore remove
+)
+
+var (
+	storeNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	storeURLRe  = regexp.MustCompile(`^https://[A-Za-z0-9][A-Za-z0-9.-]*(/[A-Za-z0-9._-]+)+$`)
+)
+
+// ValidStoreName diz se o nome serve para uma loja do Runtipi (minúsculas, números e traço).
+func ValidStoreName(s string) bool { return storeNameRe.MatchString(s) }
+
+// ValidStoreURL aceita só endereço https de um repositório, sem usuário, senha, porta, "?" nem "..".
+func ValidStoreURL(s string) bool {
+	return len(s) <= 200 && storeURLRe.MatchString(s) && !strings.Contains(s, "..")
+}
+
+// StoreActAllowed confere um pedido da janela Loja inteiro (o script confere de novo).
+func StoreActAllowed(cmd string) bool {
+	f := strings.Fields(cmd)
+	switch {
+	case len(f) == 2 && (f[0] == CmdAppStart || f[0] == CmdAppStop || f[0] == CmdAppUninstall):
+		return ValidApp(f[1])
+	case len(f) == 2 && f[0] == CmdStoreRemove:
+		return ValidStoreName(f[1])
+	case len(f) == 3 && f[0] == CmdStoreAdd:
+		return ValidStoreName(f[1]) && ValidStoreURL(f[2])
+	}
+	return false
+}
+
 var sigRe = regexp.MustCompile(`^[A-Za-z0-9+/=]+$`)
 
 // UpdateScriptCmd monta o pedido "atualizar-script <assinatura>" (vazio se não houver assinatura válida).
@@ -266,25 +304,28 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 11: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 12: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
 # discos-detalhe | estado <disco> | erros <disco> | smart-teste <disco> <sat|auto> <curto|longo> |
 # velocidade <disco> | ejetar <disco> | montar <uuid> <pasta> | desmontar <pasta> |
 # rotulo <uuid> <rotulo> | formatar <disco> <serie> <ext4|btrfs|exfat|ntfs> <rotulo> | discos-estado |
+# iniciar-app <app>:<loja> | parar-app <app>:<loja> | desinstalar-app <app>:<loja> |
+# adicionar-loja <nome> <https://...> | remover-loja <nome> |
 # atualizar-script <assinatura> | versao. Recusa todo o resto.
 # Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-formatar | esquecer-senha-formatar.
-# Formatar só com a Senha de formatação (pela entrada padrão), conferida AQUI, com trava depois de 5
-# erros, e só depois de conferir de novo o disco: número de série, nada montado em lugar nenhum (nem
-# dentro de containers), não é o disco do sistema, não é RAID/LVM/ZFS e não está no /etc/fstab.
+# Formatar e desinstalar app só com a Senha de formatação (pela entrada padrão), conferida AQUI, com trava
+# depois de 5 erros. Formatar, além disso, só depois de conferir de novo o disco: número de série, nada
+# montado em lugar nenhum (nem dentro de containers), não é o disco do sistema, não é RAID/LVM/ZFS e não
+# está no /etc/fstab.
 # As atualizações rodam soltas pelo systemd-run (seguem mesmo se o BrunOS reiniciar), registradas em
 # /var/log/brunos-atualizar.log. O script só se troca por outro assinado pela chave de publicação do
 # BrunOS (abaixo) e de versão maior. Instalado pelos comandos de Configurações -> Energia do BrunOS.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=11
+VERSAO=12
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -315,6 +356,17 @@ uuid_ok() { so_com "$1" "A-Fa-f0-9-" 36; }
 pasta_ok() { so_com "$1" "A-Za-z0-9_-" 32; }
 rotulo_ok() { so_com "$1" "A-Za-z0-9_-" 16; }
 serie_ok() { so_com "$1" "A-Za-z0-9_.:-" 64; }
+# nome de loja do Runtipi: minúsculas, números e traço (nunca começando com traço)
+loja_ok() {
+  case "$1" in -*) return 1 ;; esac
+  so_com "$1" "a-z0-9-" 32
+}
+# endereço de loja: só https://servidor/caminho, sem usuário, senha, porta, "?" nem ".."
+url_ok() {
+  case "$1" in https://[A-Za-z0-9]*/?*) ;; *) return 1 ;; esac
+  case "${1#https://}" in *:*|*//*|*..*|*/) return 1 ;; esac
+  so_com "$1" "A-Za-z0-9._/:-" 200
+}
 if [ $# -lt 1 ] || [ $# -gt 5 ]; then falha "pedido inválido"; fi
 acao=$1
 valor=${2:-}
@@ -363,9 +415,16 @@ case "$acao" in
     [ $# -eq 3 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido"
     case "$modo" in sim|nao) ;; *) falha "pedido inválido" ;; esac ;;
-  tamanho-backup)
+  tamanho-backup|iniciar-app|parar-app|desinstalar-app)
     [ $# -eq 2 ] || falha "pedido inválido"
     app_ok "$valor" || falha "app inválido" ;;
+  adicionar-loja)
+    [ $# -eq 3 ] || falha "pedido inválido"
+    loja_ok "$valor" || falha "nome de loja inválido (use letras minúsculas, números e -)"
+    url_ok "$modo" || falha "endereço de loja inválido (use https://...)" ;;
+  remover-loja)
+    [ $# -eq 2 ] || falha "pedido inválido"
+    loja_ok "$valor" || falha "nome de loja inválido" ;;
   atualizar-script)
     # a assinatura vem no pedido (base64, uma palavra só); o script novo vem pela entrada padrão
     [ $# -eq 2 ] || falha "pedido inválido"
@@ -459,6 +518,32 @@ le_senha() { # pede uma senha no Terminal sem mostrar o que é digitado
   stty echo 2>/dev/null || true
   echo >&2
   printf '%s' "$s"
+}
+# Confere a Senha de formatação, que protege as ações que apagam dados (formatar um disco, desinstalar um
+# app). Ela vem pela entrada padrão (uma linha), nunca na linha de comando. Os erros contam juntos para
+# todas essas ações: 5 erros = tudo bloqueado por 1 hora. Uso: confere_senha <formatar|desinstalar>
+confere_senha() {
+  [ -f "$SENHA" ] || falha "ainda não existe Senha de formatação: crie no Terminal do servidor com sudo brunos-host senha-formatar" 5
+  command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
+  agora=$(date +%s)
+  n=0; ate=0
+  if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; fi
+  case "$n$ate" in *[!0-9]*|"") n=0; ate=0 ;; esac
+  if [ "$ate" -gt "$agora" ]; then
+    falha "$1 está bloqueado até $(date -d "@$ate" +%H:%M) por causa de senhas erradas" 6
+  fi
+  IFS= read -r senha || senha=""
+  if ! printf '%s' "$senha" | python3 -c "$PY_CONFERE" "$SENHA"; then
+    n=$((n + 1))
+    if [ "$n" -ge 5 ]; then
+      echo "0 $((agora + 3600))" >"$TRAVA"
+      falha "Senha de formatação errada 5 vezes: $1 ficou bloqueado por 1 hora" 6
+    fi
+    echo "$n 0" >"$TRAVA"
+    falha "Senha de formatação errada (tentativa $n de 5)" 7
+  fi
+  rm -f "$TRAVA"
+  senha=""
 }
 # tudo o que precisa ser verdade antes de apagar um disco (conferido de novo logo antes de apagar)
 checa_formatar() { # <disco> <série> <fs>
@@ -697,31 +782,10 @@ case "$acao" in
     chmod 600 "$SENHA.novo"
     mv -f "$SENHA.novo" "$SENHA"
     rm -f "$TRAVA"
-    echo "Senha de formatação criada. Ela é pedida pelo BrunOS sempre que você for formatar um disco."
+    echo "Senha de formatação criada. Ela é pedida pelo BrunOS sempre que você for formatar um disco ou desinstalar um app."
     exit 0 ;;
   formatar)
-    [ -f "$SENHA" ] || falha "ainda não existe Senha de formatação: crie no Terminal do servidor com sudo brunos-host senha-formatar" 5
-    command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
-    agora=$(date +%s)
-    n=0; ate=0
-    if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; fi
-    case "$n$ate" in *[!0-9]*|"") n=0; ate=0 ;; esac
-    if [ "$ate" -gt "$agora" ]; then
-      falha "formatar está bloqueado até $(date -d "@$ate" +%H:%M) por causa de senhas erradas" 6
-    fi
-    # a senha vem pela entrada padrão (uma linha), nunca na linha de comando
-    IFS= read -r senha || senha=""
-    if ! printf '%s' "$senha" | python3 -c "$PY_CONFERE" "$SENHA"; then
-      n=$((n + 1))
-      if [ "$n" -ge 5 ]; then
-        echo "0 $((agora + 3600))" >"$TRAVA"
-        falha "Senha de formatação errada 5 vezes: formatar ficou bloqueado por 1 hora" 6
-      fi
-      echo "$n 0" >"$TRAVA"
-      falha "Senha de formatação errada (tentativa $n de 5)" 7
-    fi
-    rm -f "$TRAVA"
-    senha=""
+    confere_senha formatar
     checa_formatar "$valor" "$modo" "$extra"
     command -v systemd-run >/dev/null 2>&1 || falha "este servidor não tem systemd-run" 3
     if systemctl is-active --quiet brunos-discos; then falha "já tem uma formatação rodando" 4; fi
@@ -822,6 +886,25 @@ case "$acao" in
       exit 1
     fi
     echo "lojas atualizadas"
+    exit 0 ;;
+  iniciar-app|parar-app|desinstalar-app|adicionar-loja|remover-loja)
+    # janela Loja: os mesmos comandos do painel do Runtipi, pelo runtipi-cli (o Runtipi fica sabendo)
+    d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
+    # desinstalar apaga os dados do app: só com a Senha de formatação (pela entrada padrão), conferida aqui
+    if [ "$acao" = desinstalar-app ]; then confere_senha desinstalar; fi
+    cd "$d"
+    case "$acao" in
+      iniciar-app) set -- app start "$valor" ;;
+      parar-app) set -- app stop "$valor" ;;
+      desinstalar-app) set -- app uninstall "$valor" ;;
+      adicionar-loja) set -- appstore add "$valor" "$modo" ;;
+      remover-loja) set -- appstore remove "$valor" ;;
+    esac
+    if ! r=$(timeout 280 ./runtipi-cli "$@" 2>&1); then
+      echo "$r" | tail -n 3 >&2
+      exit 1
+    fi
+    echo "feito"
     exit 0 ;;
   tamanho-backup)
     d=$(pasta_runtipi) || falha "não achei a pasta do Runtipi" 3
