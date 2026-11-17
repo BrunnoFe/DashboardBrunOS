@@ -165,6 +165,10 @@ body.reduce-motion .status-dot.down { animation: none; }
 .ai-note { font-size: 12px !important; opacity: .6 !important; margin: -4px 0 0 !important; }
 .ai-note.ai-priv { display: flex; gap: 8px; align-items: flex-start; opacity: 1 !important; margin: 0 !important; padding: 9px 12px; border-radius: 12px; background: rgba(229,72,77,.12); color: #ffb3b5; line-height: 1.45; }
 .ai-note.ai-priv .svg { flex: none; margin-top: 2px; }
+/* de quando são os logs e se o app está caindo sozinho (0.21.1) */
+.ai-loginfo { font-size: 12px !important; opacity: .7 !important; margin: 0 0 8px !important; line-height: 1.45; }
+.ai-loginfo.warn { opacity: 1 !important; color: #ffc27a; }
+.ai-sec-h .pill-btn.on[data-ai="prev"] { background: var(--brand-soft); color: var(--brand-lightest); }
 .ai-sec { border-radius: 14px; background: rgba(255,255,255,.04); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .ai-sec-h { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
 .ai-sec-h small { opacity: .5; }

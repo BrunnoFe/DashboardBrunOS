@@ -179,6 +179,13 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `appcfg.Settings` ganhou `image` (só a versão da imagem da receita pode mudar: `checkImage`) e `restart`.
   Na tela: `storeforms.js` (`appDialog`), botão "Configurar"; guia `@priv` na Loja; `.app-priv` no ícone da
   tela inicial e aviso em Detalhes do app.
+- **App ocupado e logs de antes** (0.21.1): `logsnap.go`. `tipiBusy` pergunta ao Runtipi (`info-app`) o
+  estado do app; instalando, atualizando etc. → `POST /api/store/app`, `/reconfig` e `/settings` devolvem
+  409 com `busy`. Antes de ligar, parar, reiniciar ou reconfigurar pelo Runtipi (que recria o container),
+  `snapshotLogs` guarda as últimas 300 linhas (até 96 KB) de cada container do app, na memória, uma cópia
+  por app: `GET /api/apps/logs/prev?urn=`. `GET /api/apps/containers` ganhou `created`. Na Loja, a
+  página do app consulta `GET /api/store/status` e troca os botões por um aviso enquanto o Runtipi
+  trabalha; `storeErr` traduz o erro da fila interna do Runtipi (porta 5672).
 - **Loja** (0.18.0, decisão 59): `internal/runtipi/catalog.go` + `store.go`. `Catalog()` lê
   `repos/<loja>/apps/<app>/config.json` de todas as lojas baixadas (nome, descrição curta, categorias,
   versão, autor, site, datas em ms → s, arquiteturas), o endereço da loja em `repos/<loja>/.git/config`

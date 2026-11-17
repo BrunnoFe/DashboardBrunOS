@@ -211,6 +211,43 @@ func TestInstallPrivilegiosEAjustes(t *testing.T) {
 	}
 }
 
+// 0.21.1: enquanto o Runtipi instala, ligar/parar/reconfigurar/Ajustes esperam (recriar o container no meio
+// da instalação estragou o banco de um app); o erro da fila do Runtipi sai em português.
+func TestOcupadoEnquantoInstala(t *testing.T) {
+	s, f := installServer(t)
+	f.resp["info-app"] = `{"app":{"status":"installing","config":{}}}`
+	for _, c := range []struct {
+		h    http.HandlerFunc
+		path string
+		body map[string]any
+	}{
+		{s.hStoreAppAction, "/api/store/app", map[string]any{"urn": "plex:migrated", "action": "start"}},
+		{s.hStoreAppAction, "/api/store/app", map[string]any{"urn": "plex:migrated", "action": "stop"}},
+		{s.hStoreSettingsSave, "/api/store/settings", map[string]any{"urn": "plex:migrated", "settings": map[string]any{}, "password": "x"}},
+	} {
+		f.calls = nil
+		code, out := call(t, c.h, "POST", c.path, c.body)
+		if code != 409 || out["busy"] != "installing" || !strings.Contains(out["error"].(string), "instalando") {
+			t.Fatalf("%s %v: %d %v", c.path, c.body, code, out)
+		}
+		for _, cmd := range f.calls {
+			if !strings.HasPrefix(cmd, "info-app") {
+				t.Fatalf("pediu %q com o app instalando", cmd)
+			}
+		}
+	}
+	// terminou de instalar: liga normalmente
+	f.resp["info-app"] = `{"app":{"status":"stopped"}}`
+	if code, out := call(t, s.hStoreAppAction, "POST", "/api/store/app", map[string]any{"urn": "plex:migrated", "action": "start"}); code != 200 {
+		t.Fatalf("ligar depois de instalar: %d %v", code, out)
+	}
+	// fila interna do Runtipi fora do ar
+	f.fail["iniciar-app"] = errors.New("Error: dial tcp 127.0.0.1:5672: connect: connection refused")
+	if code, out := call(t, s.hStoreAppAction, "POST", "/api/store/app", map[string]any{"urn": "plex:migrated", "action": "start"}); code != 502 || !strings.Contains(out["error"].(string), "fila interna") {
+		t.Fatalf("erro da fila: %d %v", code, out)
+	}
+}
+
 func TestSettingsPreservaManual(t *testing.T) {
 	s, f := installServer(t)
 	f.resp["ajustes-ler"] = "services:\n  plex:\n    volumes:\n      - /mnt/disco1/Filmes:/movies # feito à mão\n    labels:\n      x: \"1\"\n"

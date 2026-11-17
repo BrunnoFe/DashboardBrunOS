@@ -61,7 +61,8 @@ export function appDetails(a, ctx) {
       <div class="ai-sec"><div class="ai-sec-h"><b>Uso</b><small data-ai-span>${PERIOD_LONG[range]}</small><span class="ai-chart-meta"></span><span class="f-spacer"></span>
         <div class="seg"><button class="on" data-metric="cpu">CPU</button><button data-metric="mem">Memória</button></div></div><div class="ai-chart-box"></div></div>
       <div class="ai-sec ai-logs-sec"><div class="ai-sec-h"><b>Logs</b><span class="ai-ct"></span><span class="f-spacer"></span>
-        <button class="pill-btn sm" data-ai="follow">${svg('activity')}Ao vivo</button><button class="pill-btn sm" data-ai="reload">${svg('refresh')}</button><button class="pill-btn sm" data-ai="copy">${svg('copy')}</button></div>
+        <button class="pill-btn sm" data-ai="prev" hidden title="Logs guardados antes de o Runtipi recriar o app">${svg('clock')}Logs de antes</button><button class="pill-btn sm" data-ai="follow">${svg('activity')}Ao vivo</button><button class="pill-btn sm" data-ai="reload">${svg('refresh')}</button><button class="pill-btn sm" data-ai="copy">${svg('copy')}</button></div>
+        <p class="ai-loginfo" hidden></p>
         <pre class="ai-logs">Carregando…</pre></div>` : `<p class="ai-note">${esc(ctx.appUrl(a) || 'Sem endereço')}</p>`}
     </div>`, { cls: 'ai-dialog', width: 820, onClose: () => stopFollow?.() });
 
@@ -86,8 +87,36 @@ export function appDetails(a, ctx) {
     if (logBox.textContent.length > 600_000) logBox.textContent = logBox.textContent.slice(-400_000);
     if (stick) logBox.scrollTop = logBox.scrollHeight;
   };
+  // 0.21.1: de quando são os logs (o container recriado começa com logs novos), se o app está caindo sozinho
+  // e a cópia dos "logs de antes", guardada pelo BrunOS antes de pedir ao Runtipi para recriar o app
+  let prev = null, showingPrev = false;
+  const hhmm = (t) => new Date(t * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const paintLogInfo = () => {
+    const info = $('.ai-loginfo', d.el), c = containers.find((x) => x.id === cid);
+    const bits = [];
+    if (showingPrev && prev) bits.push(`Cópia feita em ${hhmm(prev.at)}, antes de ${esc(prev.reason || 'recriar o app')}. Estes são os logs do container que existia antes.`);
+    else if (c?.created) bits.push(`Logs desde ${hhmm(c.created)}, quando este container foi criado (ao recriar o app, os logs recomeçam)${prev ? '. O de antes está em “Logs de antes”' : ''}.`);
+    if (!showingPrev && /^restarting/i.test(c?.status || '')) bits.push('<b>O app está reiniciando sozinho</b> (ele cai logo depois de ligar): o motivo costuma estar nas últimas linhas abaixo.');
+    info.innerHTML = bits.join(' ');
+    info.hidden = !bits.length;
+    info.classList.toggle('warn', !showingPrev && /^restarting/i.test(c?.status || ''));
+    const pb = $('[data-ai="prev"]', d.el);
+    pb.hidden = !prev;
+    pb.classList.toggle('on', showingPrev);
+    pb.innerHTML = `${svg('clock')}${showingPrev ? 'Logs de agora' : 'Logs de antes'}`;
+  };
+  const showPrev = () => {
+    stopFollow?.(); stopFollow = null; $('[data-ai="follow"]', d.el).classList.remove('on');
+    const c = containers.find((x) => x.id === cid);
+    const s = prev.containers.find((x) => x.service === c?.service) || prev.containers[0];
+    logBox.textContent = '';
+    const lines = (s?.text || '').split('\n').filter(Boolean);
+    if (lines.length) appendLines(lines); else logBox.textContent = 'A cópia não tem linhas de log.';
+    logBox.scrollTop = logBox.scrollHeight;
+  };
   const loadLogs = async () => {
     stopFollow?.(); stopFollow = null; $('[data-ai="follow"]', d.el).classList.remove('on');
+    showingPrev = false; paintLogInfo();
     logBox.textContent = 'Carregando…';
     try {
       const text = await api.app.logs(a.urn, cid, 400);
@@ -125,6 +154,8 @@ export function appDetails(a, ctx) {
       drawContainers();
       if (cid) loadLogs(); else logBox.textContent = 'Nenhum container encontrado para este app.';
     } catch (e) { logBox.textContent = e.message; }
+    try { prev = await api.app.logsPrev(a.urn); } catch { prev = null; }
+    paintLogInfo();
   })();
 
   const action = async (kind) => {
@@ -159,6 +190,7 @@ export function appDetails(a, ctx) {
       else if (k === 'update') window.open(`${ctx.runtipiBase()}/apps/${encodeURIComponent(a.update.store)}/${encodeURIComponent(a.update.id)}`, '_blank', 'noopener');
       else if (k === 'start' || k === 'stop' || k === 'restart') action(k);
       else if (k === 'reload') loadLogs();
+      else if (k === 'prev') { if (showingPrev) loadLogs(); else if (prev) { showingPrev = true; paintLogInfo(); showPrev(); } }
       else if (k === 'copy') { try { await navigator.clipboard.writeText(logBox.textContent); toast('Logs copiados'); } catch { toast('Não deu para copiar'); } }
       else if (k === 'follow') {
         if (stopFollow) { stopFollow(); stopFollow = null; b.classList.remove('on'); return; }

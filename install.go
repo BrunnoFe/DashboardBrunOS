@@ -498,6 +498,15 @@ func (s *server) hStoreInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cur = &t
+		if t.App != nil {
+			switch st := t.App.Status; st {
+			case "running", "stopped", "missing", "":
+			default: // instalando, atualizando...: reconfigurar agora recriaria o app no meio do caminho
+				writeJSON(w, 409, map[string]string{"error": busyMsg(st), "busy": st})
+				return
+			}
+		}
+		s.snapshotLogs(r.Context(), req.URN, "reconfigurar")
 	}
 	body, err := buildBody(fields, exposable, req, cur)
 	if err != nil {
@@ -681,6 +690,10 @@ func (s *server) hStoreSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.storeMu.Unlock()
+	if st, busy := s.tipiBusy(r.Context(), req.URN); busy {
+		writeJSON(w, 409, map[string]string{"error": busyMsg(st), "busy": st})
+		return
+	}
 	raw, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgRead+" "+req.URN, nil)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
@@ -704,6 +717,7 @@ func (s *server) hStoreSettingsSave(w http.ResponseWriter, r *http.Request) {
 	s.events.Emit(events.Event{Kind: "store", Level: events.Info, Title: a.Name + ": ajustes alterados", Body: "Pastas, limites ou variáveis alterados pela Loja do BrunOS (cópia do arquivo anterior guardada no servidor)."})
 	restarted := ""
 	if req.Restart {
+		s.snapshotLogs(r.Context(), req.URN, "reiniciar com os Ajustes novos")
 		if _, err := s.storeRun(r.Context(), hostcmd.CmdAppRestart+" "+req.URN, nil); err != nil {
 			restarted = tipiError(err).Error()
 		}

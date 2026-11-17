@@ -262,6 +262,20 @@ apps convertidos; caminho com `${VAR:-padrão}` tem ":" dentro da variável (sep
 ignora `maxBackups` na instalação (só vale pelo `update-config`) e não apaga o `user-config` ao desinstalar;
 `[hidden]` não esconde nada quando o CSS dá `display` ao elemento.
 
+## 0.21.1 (17/11): app estragado logo na instalação
+Teste do Bruno: o AnythingLLM (via CasaOS) ficou instável logo depois de instalar (erro P3009 do Prisma em
+todo início). Rastreado pelo acesso de diagnóstico: com a imagem ainda baixando, a página do app já mostrava
+"Iniciar" (o app aparece como instalado e parado antes de terminar); pedidos de ligar recriaram o container
+três vezes em 40 s, e o Docker matou o app no meio da primeira migração do banco, que ficou marcada como
+falha. Nada a ver com privilégios. Correções: (1) enquanto o Runtipi diz que o app está instalando,
+atualizando etc., a página do app troca os botões por um aviso e o BrunOS recusa ligar, parar, reconfigurar
+e salvar Ajustes (409); (2) o erro da fila interna do Runtipi (`dial tcp 127.0.0.1:5672`) sai em
+português; (3) antes de pedir ao Runtipi para ligar, parar, reiniciar ou reconfigurar, o BrunOS guarda as
+últimas linhas dos logs de cada container (na memória, a última cópia por app) e Detalhes do app mostra
+"Logs de antes", de quando são os logs de agora e o aviso "reiniciando sozinho". Remédio para o app
+estragado: desinstalar e instalar de novo. Lição: o Runtipi recria o container a cada "ligar", e os logs do
+anterior somem junto.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

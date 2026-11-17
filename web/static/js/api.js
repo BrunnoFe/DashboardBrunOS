@@ -260,6 +260,8 @@ const real = {
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erro ${res.status}`); }
       return res.text();
     },
+    // 0.21.1: logs guardados antes de o Runtipi recriar o container (ligar, reiniciar, reconfigurar)
+    logsPrev: (urn) => call('GET', `/api/apps/logs/prev?${q({ urn })}`),
     // linhas novas dos logs (SSE); devolve a função que para de acompanhar
     follow(urn, id, onLine, onEnd) {
       const es = new EventSource(`/api/apps/logs/stream?${q({ urn, id })}`);
@@ -909,7 +911,7 @@ function makeDemo() {
         stop: () => Promise.reject(new Error('Indisponível na demonstração')),
         containers: (urn) => { const a = apps.find((x) => x.urn === urn); const id = a?.id || 'app'; return wait(urn === 'immich:migrated'
           ? [{ id: 'c1', name: 'immich-server', service: 'immich-server', state: 'running', status: 'Up 2 days', image: 'ghcr.io/immich-app/immich-server:v2' }, { id: 'c2', name: 'immich-db', service: 'immich-db', state: 'running', status: 'Up 2 days (healthy)', image: 'tensorchord/pgvecto-rs:pg16' }, { id: 'c3', name: 'immich-redis', service: 'immich-redis', state: 'running', status: 'Up 2 days', image: 'redis:7' }]
-          : [{ id: 'c1', name: `${id}_migrated-${id}-1`, service: id, state: a?.state === 'stopped' ? 'exited' : 'running', status: a?.state === 'stopped' ? 'Exited (0) 3 hours ago' : 'Up 2 days', image: `${id}:latest` }]); },
+          : [{ id: 'c1', name: `${id}_migrated-${id}-1`, service: id, state: a?.state === 'stopped' ? 'exited' : 'running', status: a?.state === 'stopped' ? 'Exited (0) 3 hours ago' : id === 'tailscale' ? 'Restarting (1) 4 seconds ago' : 'Up 2 days', image: `${id}:latest`, created: now - (id === 'tailscale' ? 300 : 2 * 86400) }]); },
         history: (urn, range = '24h') => {
           const { step, n } = DEMO_P[range] || DEMO_P['24h'], long = step > 60;
           const t0 = Math.floor(Date.now() / 1000 / step) * step, seed = urn.length, noUp = urn === 'homarr:migrated';
@@ -925,6 +927,10 @@ function makeDemo() {
           return wait({ points, step, range, health: noUp ? 'unknown' : 'up', ...(counted.length ? { uptime: +(counted.reduce((s, p) => s + p.up, 0) / counted.length * 100).toFixed(2) } : {}) }, 250);
         },
         logs: (urn) => wait(demoLines(urn.split(':')[0]).join('\n') + '\n', 200),
+        // 0.21.1: cópia dos logs feita antes de o Runtipi recriar o container (na demonstração, só a do Tailscale)
+        logsPrev: (urn) => (urn.startsWith('tailscale') ? wait({ at: now - 600, reason: 'ligar', containers: [{ name: 'tailscale_migrated-tailscale-1', service: 'tailscale', created: now - 900, status: 'Up 5 minutes',
+          text: '17/11 18:15:28  [info] tailscale iniciando…\n17/11 18:15:30  [erro] não deu para abrir /dev/net/tun\n17/11 18:15:31  [info] tentando de novo…\n' }] }, 200)
+          : Promise.reject(Object.assign(new Error('nenhuma cópia dos logs de antes'), { status: 404 }))),
         follow(urn, id, onLine) { const t = setInterval(() => onLine(`${new Date().toISOString()} [info] GET /api/status 200 ${2 + Math.floor(Math.random() * 6)}ms`), 2500); return () => clearInterval(t); },
       };
     })(),

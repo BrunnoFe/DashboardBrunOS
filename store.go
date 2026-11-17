@@ -57,6 +57,9 @@ func storeErr(err error) error {
 		msg = "o script do servidor é antigo e ainda não conhece a Loja: abra as atualizações (ao lado do sino) e atualize o script"
 	case errors.Is(err, context.DeadlineExceeded):
 		msg = "o servidor demorou demais para responder; o Runtipi pode ainda estar terminando: confira daqui a pouco"
+	case strings.Contains(msg, ":5672") || strings.Contains(strings.ToLower(msg), "amqp"):
+		// 5672 = a fila interna do Runtipi (RabbitMQ), que o runtipi-cli usa para pedir ligar/parar
+		msg = "o Runtipi está ocupado ou reiniciando (a fila interna dele não respondeu). Espere um minuto e tente de novo; se o app estava instalando, deixe terminar antes"
 	case len(msg) > 400:
 		msg = msg[len(msg)-400:]
 	}
@@ -186,6 +189,13 @@ func (s *server) hStoreAppAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.storeMu.Unlock()
+	if st, busy := s.tipiBusy(r.Context(), req.URN); busy {
+		writeJSON(w, 409, map[string]string{"error": busyMsg(st), "busy": st})
+		return
+	}
+	if req.Action != "uninstall" { // ligar, parar e reiniciar recriam o container: guarda os logs de antes
+		s.snapshotLogs(r.Context(), req.URN, map[string]string{"start": "ligar", "stop": "parar", "restart": "reiniciar"}[req.Action])
+	}
 	if err := s.storeAct(r.Context(), cmd+" "+req.URN, in); err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return

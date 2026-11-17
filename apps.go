@@ -132,6 +132,7 @@ type containerOut struct {
 	State   string `json:"state"`
 	Status  string `json:"status"`
 	Image   string `json:"image"`
+	Created int64  `json:"created"` // quando o container foi criado (os logs começam aí)
 }
 
 func (s *server) hAppContainers(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +148,7 @@ func (s *server) hAppContainers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]containerOut, 0, len(cts))
 	for _, c := range cts {
-		out = append(out, containerOut{ID: c.ID, Name: c.Name(), Service: c.Service(), State: c.State, Status: c.Status, Image: c.Image})
+		out = append(out, containerOut{ID: c.ID, Name: c.Name(), Service: c.Service(), State: c.State, Status: c.Status, Image: c.Image, Created: c.Created})
 	}
 	writeJSON(w, 200, out)
 }

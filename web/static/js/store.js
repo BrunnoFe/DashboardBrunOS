@@ -37,12 +37,12 @@ export function storeWindow(ctx, { originEl, urn } = {}) {
     tools: [{ icon: 'refresh', label: 'Atualizar as lojas (baixa a lista nova de apps)', run: () => refreshStores() }],
     mount(body) {
       S = { ctx, body, cat: null, script: {}, self: '', panelFrame: '', tab: 'discover', catKey: '', store: '', q: '', view: null, detail: null,
-        busy: '', watch: null, watchT: 0, io: null, loadedAt: 0 };
+        busy: '', watch: null, watchT: 0, io: null, loadedAt: 0, tstate: {}, tT: 0 };
       body.innerHTML = `<div class="st"><div class="st-loading"><span class="upd-spin"></span>Abrindo a Loja…</div></div>`;
       const onFocus = () => { if (S && Date.now() - S.loadedAt > 30000) reload(); };
       addEventListener('focus', onFocus);
       loadCss().then(() => S && reload(true)).then(() => { if (S && urn) openDetail(urn); });
-      return () => { removeEventListener('focus', onFocus); clearInterval(S?.watchT); S?.io?.disconnect(); S = null; };
+      return () => { removeEventListener('focus', onFocus); clearInterval(S?.watchT); clearTimeout(S?.tT); S?.io?.disconnect(); S = null; };
     },
   };
 }
@@ -226,6 +226,24 @@ async function openDetail(urn) {
   $('.st-detail', S.body).scrollTop = 0;
   try { const d = await api.store.app(urn); if (S?.view === urn) { S.detail = d; drawDetail(); } }
   catch { if (S?.view === urn) { S.detail = { description: '', fields: [] }; drawDetail(); } }
+  if (a.installed && !a.local && canForms()) checkTipi(urn);
+}
+
+// 0.21.1: enquanto o Runtipi está instalando ou atualizando o app, ligar, parar ou reconfigurar recriaria o
+// container no meio do caminho (foi o que estragou o banco de um app logo depois de instalar, 17/11/2026).
+// A página pergunta ao Runtipi em que pé ele está e troca os botões por um aviso até ele terminar.
+const TIPI_BUSY = { installing: 'instalando', updating: 'atualizando', uninstalling: 'desinstalando', starting: 'ligando', stopping: 'parando',
+  restarting: 'reiniciando', backing_up: 'fazendo backup de', restoring: 'restaurando um backup de', resetting: 'reiniciando do zero' };
+async function checkTipi(urn) {
+  let st;
+  try { st = (await api.store.status(urn)).status; } catch { return; } // script antigo ou servidor fora: fica como está
+  if (!S) return;
+  const was = TIPI_BUSY[S.tstate[urn]];
+  S.tstate[urn] = st;
+  if (S.view === urn) drawDetail();
+  clearTimeout(S.tT);
+  if (TIPI_BUSY[st]) S.tT = setTimeout(() => { if (S?.view === urn) checkTipi(urn); }, 4000);
+  else if (was) { try { apply(await api.store.get()); await S.ctx.reloadApps(); if (S) draw(); } catch { /* confere de novo ao voltar */ } }
 }
 function closeDetail() {
   S.view = null; S.detail = null;
@@ -237,6 +255,8 @@ function closeDetail() {
 // O que dá para fazer com o app agora (o estado ligado/parado vem dos apps da tela inicial).
 function actionsHTML(a) {
   if (S.busy === a.urn) return `<span class="st-busy"><span class="upd-spin"></span>${esc(S.busyText)} Pode levar um minuto.</span>`;
+  const tb = a.installed && TIPI_BUSY[S.tstate[a.urn]];
+  if (tb) return `<span class="st-busy"><span class="upd-spin"></span>O Runtipi está ${tb} este app. Os botões voltam quando ele terminar (mexer agora recriaria o app no meio do caminho).</span>`;
   const dis = S.busy ? 'disabled' : '';
   if (!a.installed) return `<button class="pill-btn primary" data-st="install" ${dis}>${svg('download')}Instalar</button>`;
   const inst = S.ctx.installed(a.urn), stopped = inst?.state === 'stopped', self = a.id === S.self;
