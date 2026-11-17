@@ -217,7 +217,11 @@ origem e licença, e as duas lojas sugeridas com um clique. A Senha de formataç
 Senha de configuração (script do servidor 13, comando `senha-config`; o antigo continua). Lições: a
 LinuxServer põe o prefixo `linuxserver-` nos nomes (sem tirar, a comparação com a loja oficial falhava);
 o serviço da página web às vezes é um nginx na frente do principal; os testes oficiais precisam de
-`bun install --ignore-scripts`; no PowerShell, comandos bash longos vão em arquivo `.sh`.
+`bun install --ignore-scripts`; no PowerShell, comandos bash longos vão em arquivo `.sh`. No primeiro
+lançamento, o GitHub barrou o ramo `casaos` porque a receita do Dify traz um `SECRET_KEY` fixo com cara de
+chave da OpenAI: o conversor agora troca segredo fixo (variável de SECRET/TOKEN/KEY/PASSWORD com valor
+longo) por um campo `random` do Runtipi, gerado em cada instalação, e recusa o app que ainda tiver algo
+com cara de chave; o `confere.py` também procura.
 
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
