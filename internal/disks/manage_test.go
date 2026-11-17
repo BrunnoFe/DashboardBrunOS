@@ -147,8 +147,8 @@ func TestFormat(t *testing.T) {
 		{"sdd", "ext4", "Novo", "x", "número de série"},
 		{"sdb", "fat32", "Novo", "x", "sistema de arquivos"},
 		{"sdb", "exfat", "NOMEMUITOLONGO", "x", "rótulo"},
-		{"sdb", "ext4", "Novo", "", "Senha de formatação"},
-		{"sdb", "ext4", "Novo", "a\nb", "Senha de formatação"},
+		{"sdb", "ext4", "Novo", "", "Senha de configuração"},
+		{"sdb", "ext4", "Novo", "a\nb", "Senha de configuração"},
 		{"sdz", "ext4", "Novo", "x", "não está na lista"},
 	} {
 		if err := m.Format(ctx, c.dev, c.fs, c.label, c.pw); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -159,7 +159,7 @@ func TestFormat(t *testing.T) {
 		t.Fatalf("recusas mandaram pedido ao servidor: %v", h.acts)
 	}
 	// senha errada (o servidor confere): erro amigável e nada fica rodando
-	h.set(func(h *mgrHost) { h.fail = errors.New("Senha de formatação errada (tentativa 1 de 5)") })
+	h.set(func(h *mgrHost) { h.fail = errors.New("Senha de configuração errada (tentativa 1 de 5)") })
 	if err := m.Format(ctx, "sdb", "ext4", "Novo", "errada"); err == nil || !strings.Contains(err.Error(), "tentativa 1") {
 		t.Fatalf("senha errada: %v", err)
 	}

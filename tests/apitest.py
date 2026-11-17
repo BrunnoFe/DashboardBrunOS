@@ -93,6 +93,9 @@ s,b,_=req('POST','/api/apps/stop',{'urn':'syncthing:migrated'},hdr=False); check
 s,b,_=req('GET','/api/store'); d=json.loads(b); cat=d['catalog']; by={a['urn']:a for a in cat['apps']}
 check('loja: catálogo', s==200 and cat['found'] and d['script']['want']>=12 and d['self']=='brunos', b[:300])
 check('loja: endereço da loja sem usuário nem senha', [x for x in cat['stores'] if x['slug']=='migrated'][0]['url']=='https://github.com/exemplo/loja' and b'segredo' not in b, cat['stores'])
+gar=[x for x in cat['stores'] if x['slug']=='casaos']
+check('loja: loja do Garimpo com nome, selo e ramo', gar and gar[0].get('name')=='CasaOS' and gar[0].get('badge')=='via CasaOS' and gar[0]['url']=='https://github.com/BrunnoFe/Garimpo/tree/casaos' and 'alist:casaos' in by, gar)
+check('loja: sugere só as lojas do Garimpo que faltam', [g['slug'] for g in d.get('suggested',[])]==['linuxserver'] and d['script']['want']>=13, d.get('suggested'))
 check('loja: instalado marcado e app por instalar', by['syncthing:migrated'].get('installed') and by['syncthing:migrated']['hasLogo'] and not by['jellyfin:migrated'].get('installed') and by['jellyfin:migrated']['created']==1700000000, by)
 check('loja: app escondido fora, instalado sem loja dentro', 'oculto:migrated' not in by and by['dashdot-lite:personal-store'].get('local'), list(by))
 check('loja: logo que é atalho não conta', 'atalho:migrated' in by and not by['atalho:migrated']['hasLogo'], by.get('atalho:migrated'))
@@ -107,7 +110,7 @@ s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'apagar'}
 s,b,_=req('POST','/api/store/app',{'urn':'jellyfin:migrated','action':'stop'}); check('loja: parar app não instalado → 404', s==404)
 s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated;reboot','action':'stop'}); check('loja: urn com comando → 404', s==404)
 s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'stop'}); check('loja: sem ligação com o servidor → erro explicado', s>=400 and json.loads(b).get('error'), b)
-s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'uninstall'}); check('loja: desinstalar sem a Senha de formatação → 400', s==400 and 'Senha de formatação' in json.loads(b)['error'], b)
+s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'uninstall'}); check('loja: desinstalar sem a Senha de configuração → 400', s==400 and 'Senha de configuração' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'uninstall','password':'a\nb'}); check('loja: senha com quebra de linha → 400', s==400, b)
 s,b,_=req('POST','/api/store/app',{'urn':'syncthing:migrated','action':'uninstall','password':'qualquer'}); check('loja: desinstalar sem ligação com o servidor → erro, app continua', s>=400 and json.loads(b).get('error'), b)
 s,b,_=req('GET','/api/apps'); check('loja: nada foi desinstalado', b'syncthing:migrated' in b)
@@ -248,7 +251,7 @@ s,b,_=req('POST','/api/updates/check?part=tudo',{}); check('conferir: parte inv�
 s,b,_=req('POST','/api/updates/check?part=apps',{}); check('conferir só os apps', s==200 and json.loads(b)['appsAt']>0, b)
 s,b,_=req('GET','/api/updates/backup-size?urn=../x'); check('tamanho do backup: app inválido → 400', s==400, b)
 s,b,_=req('GET','/api/updates/backup-size?urn=immich:migrated'); check('tamanho do backup sem conexão → erro amigável', s==502 and 'Energia' in json.loads(b)['error'], b)
-s,b,_=req('POST','/api/updates/script',{}); sc=json.loads(b).get('script',{}); check('script do servidor: versão que esta compilação traz e erro sem conexão', s==200 and sc.get('want')==12 and sc.get('have')==0 and 'Energia' in sc.get('err',''), b)
+s,b,_=req('POST','/api/updates/script',{}); sc=json.loads(b).get('script',{}); check('script do servidor: versão que esta compilação traz e erro sem conexão', s==200 and sc.get('want')==13 and sc.get('have')==0 and 'Energia' in sc.get('err',''), b)
 # 0.15.0: janela Discos (sem conexão com o servidor: lista vazia com erro amigável; ações validam antes)
 s,b,_=req('GET','/api/disks'); dk=json.loads(b); check('discos: responde lista e explica que falta a conexão com o servidor', s==200 and dk['disks']==[] and 'Energia' in dk.get('err',''), b)
 s,b,_=req('POST','/api/disks/refresh',{}); check('discos: ler de novo responde', s==200 and isinstance(json.loads(b)['disks'],list), b)

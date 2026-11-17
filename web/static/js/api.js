@@ -769,7 +769,7 @@ function makeDemo() {
       },
       format: (b) => {
         if (b.password !== 'demo1234') return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta'), { status: 403 }));
-        if (b.formatPassword !== 'formatar123') return Promise.reject(new Error('Senha de formatação errada (tentativa 1 de 5)'));
+        if (b.formatPassword !== 'formatar123') return Promise.reject(new Error('Senha de configuração errada (tentativa 1 de 5)'));
         const d = demoDiskList().find((x) => x.dev === b.dev);
         demoMnt.job = { dev: b.dev, key: d.key, name: d.model, fs: b.fs, label: b.label, started: Math.floor(Date.now() / 1000), running: true, ok: false };
         return wait({ hasPassword: true, job: { ...demoMnt.job } }, 1200);
@@ -999,8 +999,24 @@ function makeDemo() {
       ];
       const ICONS = { adguard: 'adguard-home', 'nextcloud-mini': 'nextcloud', 'dashdot-lite': 'dashdot' };
       const HAVE = { 'plex:migrated': '1.41.2', 'immich:migrated': 'v2.1.0' };
-      let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'personal-store', url: 'https://github.com/usuario/minha-loja' }];
-      const extra = [{ ...C('dashdot-lite', 'Dashdot', 'Resumo do servidor em uma tela', ['utilities'], '6.0', 300, 70), store: 'personal-store' }, { ...C('brunos', 'BrunOS', 'Este painel', ['utilities'], '0.18.0', 60, 1), store: 'personal-store' }];
+      // lojas convertidas pelo Garimpo (0.19.0): o garimpo.json de cada ramo dá o nome e o selo
+      const GARIMPO = {
+        casaos: { name: 'CasaOS', badge: 'via CasaOS', origin: 'https://github.com/IceWhaleTech/CasaOS-AppStore', license: 'Apache-2.0', about: 'Apps da loja oficial do CasaOS e do ZimaOS (IceWhale), convertidos para o formato do Runtipi.' },
+        linuxserver: { name: 'LinuxServer', badge: 'via LinuxServer', origin: 'https://github.com/WisdomSky/LinuxServer-AppStore', license: 'GPL-3.0', about: 'Apps da LinuxServer-AppStore (imagens do LinuxServer.io no formato do CasaOS), convertidos para o formato do Runtipi.' },
+      };
+      const SUG = [
+        { slug: 'casaos', name: 'CasaOS', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', about: 'Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que dão poder demais sobre o servidor ficam de fora.' },
+        { slug: 'linuxserver', name: 'LinuxServer', url: 'https://github.com/BrunnoFe/Garimpo/tree/linuxserver', about: 'Apps do LinuxServer.io (programas de computador no navegador, mídia, rede), convertidos para o Runtipi.' },
+      ];
+      let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'personal-store', url: 'https://github.com/usuario/minha-loja' },
+        { slug: 'casaos', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', ...GARIMPO.casaos }];
+      const extra = [{ ...C('dashdot-lite', 'Dashdot', 'Resumo do servidor em uma tela', ['utilities'], '6.0', 300, 70), store: 'personal-store' }, { ...C('brunos', 'BrunOS', 'Este painel', ['utilities'], '0.19.0', 60, 1), store: 'personal-store' },
+        ...[C('alist', 'AList', 'Junta várias nuvens e pastas numa lista só', ['utilities'], 'v3.45', 5, 5), C('chatgpt-next-web', 'NextChat', 'Converse com modelos de IA pela web', ['ai'], 'v2.16', 5, 5),
+          C('jdownloader2', 'JDownloader 2', 'Gerenciador de downloads', ['media'], 'v26.02', 5, 2), C('siyuan-note', 'SiYuan', 'Notas e base de conhecimento', ['utilities'], 'v3.3', 5, 5),
+          C('gopeed', 'Gopeed', 'Downloads rápidos de vários protocolos', ['utilities'], 'v1.7', 5, 1), C('snapdrop', 'Snapdrop', 'Mande arquivos entre aparelhos da casa', ['utilities'], 'latest', 5, 5)].map((a) => ({ ...a, store: 'casaos' })),
+        ...[C('webtop', 'Webtop', 'Um Linux com área de trabalho no navegador', ['utilities'], 'ubuntu-kde', 5, 5), C('firefox', 'Firefox', 'Navegador rodando no servidor', ['utilities'], '1.4.0', 5, 3),
+          C('kometa', 'Kometa', 'Coleções e capas automáticas para o Plex', ['media'], 'v2.2', 5, 5)].map((a) => ({ ...a, store: 'linuxserver' }))];
+      const suggested = () => SUG.filter((s) => !stores.some((x) => x.slug === s.slug || x.url === s.url));
       const catalog = () => {
         const all = [...list.map((a) => ({ ...a, store: 'migrated' })), ...extra].filter((a) => stores.some((s) => s.slug === a.store));
         const out = all.map((a) => {
@@ -1010,7 +1026,7 @@ function makeDemo() {
         }).sort((x, y) => x.name.localeCompare(y.name, 'pt-BR'));
         return { found: true, at: now, apps: out, stores: stores.map((s) => ({ ...s, apps: out.filter((a) => a.store === s.slug).length })) };
       };
-      const state = () => ({ catalog: catalog(), script: { have: 12, want: 12 }, self: 'brunos', panelFrame: 'ok' });
+      const state = () => ({ catalog: catalog(), script: { have: 13, want: 13 }, self: 'brunos', panelFrame: 'ok', suggested: suggested() });
       const fail = (msg, status = 400) => new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { status })), 300));
       return {
         get: () => wait(state()),
@@ -1024,7 +1040,7 @@ function makeDemo() {
         appAction: (urn, action, password) => {
           const i = apps.findIndex((x) => x.urn === urn);
           if (i < 0) return fail('esse app não está instalado', 404);
-          if (action === 'uninstall' && password === 'errada') return fail('Senha de formatação errada (tentativa 1 de 5)', 502);
+          if (action === 'uninstall' && password === 'errada') return fail('Senha de configuração errada (tentativa 1 de 5)', 502);
           if (action === 'uninstall') apps.splice(i, 1);
           else Object.assign(apps[i], action === 'stop' ? { state: 'stopped', running: 0 } : { state: 'running', running: 1 });
           return wait({ ok: true, catalog: catalog() }, 1600);
@@ -1034,12 +1050,12 @@ function makeDemo() {
             if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return fail('nome inválido: use só letras minúsculas, números e traço (ex.: minha-loja)');
             if (!/^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._-]+)+$/.test(url)) return fail('endereço inválido: use o endereço https do repositório (ex.: https://github.com/usuario/loja)');
             if (stores.some((s) => s.slug === name)) return fail(`essa loja já está adicionada (${name})`, 409);
-            stores.push({ slug: name, url });
+            stores.push({ slug: name, url, ...(SUG.some((s) => s.url === url) ? GARIMPO[name] : {}) });
           } else if (action === 'remove') {
             if (catalog().apps.some((a) => a.installed && a.store === name)) return fail('essa loja tem apps instalados: desinstale antes de remover a loja', 409);
             stores = stores.filter((s) => s.slug !== name);
           }
-          return wait({ ok: true, catalog: catalog() }, 1400);
+          return wait({ ok: true, catalog: catalog(), suggested: suggested() }, 1400);
         },
       };
     })(),

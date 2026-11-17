@@ -606,16 +606,16 @@ async function formatWizard(d) {
   dlg.el.addEventListener('click', (e) => { if (e.target.closest('[data-c="close"]')) close(); });
   if (info.job?.running) { progress(info.job); return; }
   if (!info.hasPassword) {
-    box.innerHTML = `<h2>${svg('key')}Falta a Senha de formatação</h2>
-      <p class="dlg-text">Para formatar pelo BrunOS, o servidor pede uma senha só para isso, diferente da senha do BrunOS. Ela é criada uma vez, <b>direto no servidor</b>, para que ninguém que invada o BrunOS consiga criar uma.</p>
-      <p class="dlg-text">No Terminal, rode o comando abaixo (o sudo pede a senha do seu usuário do servidor) e escolha a Senha de formatação:</p>
-      <pre class="pw-cmds">sudo brunos-host senha-formatar</pre>
+    box.innerHTML = `<h2>${svg('key')}Falta a Senha de configuração</h2>
+      <p class="dlg-text">Para formatar pelo BrunOS, o servidor pede a Senha de configuração: uma senha só para as ações sensíveis do servidor (formatar discos e desinstalar apps), diferente da senha do BrunOS. Ela é criada uma vez, <b>direto no servidor</b>, para que ninguém que invada o BrunOS consiga criar uma.</p>
+      <p class="dlg-text">No Terminal, rode o comando abaixo (o sudo pede a senha do seu usuário do servidor) e escolha a Senha de configuração:</p>
+      <pre class="pw-cmds">sudo brunos-host senha-config</pre>
       <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button>${D.ctx.openTerminal ? `<button class="pill-btn primary" data-c="term">${svg('terminal')}Abrir no Terminal</button>` : ''}</div>`;
-    $('[data-c="term"]', box)?.addEventListener('click', () => { close(); D.ctx.openTerminal({ typeCmd: 'sudo brunos-host senha-formatar' }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); });
+    $('[data-c="term"]', box)?.addEventListener('click', () => { close(); D.ctx.openTerminal({ typeCmd: 'sudo brunos-host senha-config' }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); });
     return;
   }
   if (info.lockedUntil > Date.now() / 1000) {
-    box.innerHTML = `<h2>${svg('lock')}Formatar está bloqueado</h2><p class="dlg-text">A Senha de formatação foi digitada errada 5 vezes. Por segurança, formatar volta a funcionar às ${esc(new Date(info.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}.</p>
+    box.innerHTML = `<h2>${svg('lock')}Formatar está bloqueado</h2><p class="dlg-text">A Senha de configuração foi digitada errada 5 vezes. Por segurança, formatar e desinstalar voltam a funcionar às ${esc(new Date(info.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}.</p>
       <div class="dlg-actions"><button class="pill-btn primary" data-c="close">Entendi</button></div>`;
     return;
   }
@@ -644,7 +644,7 @@ async function formatWizard(d) {
         <p>Vai virar <b>${esc(FS.find(([k]) => k === fs)[1])}</b> com o rótulo <b>${esc(label)}</b>. Não dá para desfazer.</p></div>
       <label class="fw-field">Para confirmar, digite <b>${esc(word)}</b><input class="text-input" name="word" autocomplete="off"></label>
       <label class="fw-field">Sua senha do BrunOS<input class="text-input" type="password" name="pw" autocomplete="current-password"></label>
-      <label class="fw-field">Senha de formatação<input class="text-input" type="password" name="fpw" autocomplete="off"></label>
+      <label class="fw-field">Senha de configuração<input class="text-input" type="password" name="fpw" autocomplete="off"></label>
       <p class="fw-err" data-err hidden></p>
       <div class="dlg-actions"><button class="pill-btn" data-c="back">Voltar</button><button class="pill-btn danger solid" data-c="go" disabled>${svg('trash')}Apagar e formatar</button></div>`;
     const go = $('[data-c="go"]', box), inp = (n) => $(`input[name="${n}"]`, box);

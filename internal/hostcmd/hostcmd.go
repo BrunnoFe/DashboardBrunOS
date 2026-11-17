@@ -65,8 +65,9 @@ const (
 	// "smart" com o andamento e o registro dos testes, 0.15.0; 11 = "montar", "desmontar", "rotulo",
 	// "formatar" com a Senha de formatação, "discos-estado" e a trava de container no "ejetar", 0.16.0;
 	// 12 = janela Loja: "iniciar-app", "parar-app", "desinstalar-app", "adicionar-loja" e "remover-loja",
-	// todos pelo runtipi-cli, 0.18.0).
-	ScriptVersion = 12
+	// todos pelo runtipi-cli, 0.18.0; 13 = a Senha de formatação passa a se chamar Senha de configuração,
+	// com o comando "senha-config" (o antigo "senha-formatar" continua funcionando), 0.19.0).
+	ScriptVersion = 13
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -171,8 +172,8 @@ const (
 	CmdMount      = "montar"        // "montar <uuid> <pasta>": /mnt/<pasta> + linha no fstab (marcada "# brunos")
 	CmdUnmount    = "desmontar"     // "desmontar <pasta>": recusa se algum programa usa; tira só a linha do BrunOS
 	CmdLabel      = "rotulo"        // "rotulo <uuid> <rótulo>": partição desmontada
-	CmdFormat     = "formatar"      // "formatar <disco> <série> <fs> <rótulo>" + a Senha de formatação pela entrada padrão
-	CmdDiskStatus = "discos-estado" // formatação rodando ou não, se a Senha de formatação existe, trava e o registro
+	CmdFormat     = "formatar"      // "formatar <disco> <série> <fs> <rótulo>" + a Senha de configuração pela entrada padrão
+	CmdDiskStatus = "discos-estado" // formatação rodando ou não, se a Senha de configuração existe, trava e o registro
 )
 
 // Sistemas de arquivos que o BrunOS sabe criar.
@@ -304,7 +305,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 12: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 13: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -314,8 +315,9 @@ const HostScript = `#!/bin/sh
 # iniciar-app <app>:<loja> | parar-app <app>:<loja> | desinstalar-app <app>:<loja> |
 # adicionar-loja <nome> <https://...> | remover-loja <nome> |
 # atualizar-script <assinatura> | versao. Recusa todo o resto.
-# Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-formatar | esquecer-senha-formatar.
-# Formatar e desinstalar app só com a Senha de formatação (pela entrada padrão), conferida AQUI, com trava
+# Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-config | esquecer-senha-config (os nomes
+# antigos senha-formatar | esquecer-senha-formatar continuam valendo).
+# Formatar e desinstalar app só com a Senha de configuração (pela entrada padrão), conferida AQUI, com trava
 # depois de 5 erros. Formatar, além disso, só depois de conferir de novo o disco: número de série, nada
 # montado em lugar nenhum (nem dentro de containers), não é o disco do sistema, não é RAID/LVM/ZFS e não
 # está no /etc/fstab.
@@ -325,7 +327,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=12
+VERSAO=13
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -397,10 +399,10 @@ case "$acao" in
       [ "$(id -u)" -eq 0 ] && [ -n "${INVOCATION_ID:-}" ] || falha "pedido inválido"
     fi ;;
   discos-estado) [ $# -eq 1 ] || falha "pedido inválido" ;;
-  senha-formatar|esquecer-senha-formatar)
+  senha-config|esquecer-senha-config|senha-formatar|esquecer-senha-formatar)
     [ $# -eq 1 ] || falha "pedido inválido"
     # nunca pela chave do BrunOS: quem invadisse o BrunOS cadastraria a senha dele
-    [ "$via_ssh" = 0 ] || falha "a Senha de formatação só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
+    [ "$via_ssh" = 0 ] || falha "a Senha de configuração só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
   desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
@@ -501,7 +503,7 @@ preso() {
     done
   done | sort -u | tr '\n' ' ' | sed 's/ $//'
 }
-# Senha de formatação: resumo scrypt (sal aleatório, n=2^15) pelo python3; a senha vem pela entrada padrão
+# Senha de configuração: resumo scrypt (sal aleatório, n=2^15) pelo python3; a senha vem pela entrada padrão
 PY_GERA='import hashlib,os,sys,datetime
 s=sys.stdin.buffer.read();sal=os.urandom(16)
 h=hashlib.scrypt(s,salt=sal,n=32768,r=8,p=1,maxmem=67108864,dklen=32)
@@ -519,11 +521,11 @@ le_senha() { # pede uma senha no Terminal sem mostrar o que é digitado
   echo >&2
   printf '%s' "$s"
 }
-# Confere a Senha de formatação, que protege as ações que apagam dados (formatar um disco, desinstalar um
-# app). Ela vem pela entrada padrão (uma linha), nunca na linha de comando. Os erros contam juntos para
-# todas essas ações: 5 erros = tudo bloqueado por 1 hora. Uso: confere_senha <formatar|desinstalar>
+# Confere a Senha de configuração, que protege as ações sensíveis do servidor (formatar um disco,
+# desinstalar um app). Ela vem pela entrada padrão (uma linha), nunca na linha de comando. Os erros contam
+# juntos para todas essas ações: 5 erros = tudo bloqueado por 1 hora. Uso: confere_senha <formatar|desinstalar>
 confere_senha() {
-  [ -f "$SENHA" ] || falha "ainda não existe Senha de formatação: crie no Terminal do servidor com sudo brunos-host senha-formatar" 5
+  [ -f "$SENHA" ] || falha "ainda não existe Senha de configuração: crie no Terminal do servidor com sudo brunos-host senha-config" 5
   command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
   agora=$(date +%s)
   n=0; ate=0
@@ -537,10 +539,10 @@ confere_senha() {
     n=$((n + 1))
     if [ "$n" -ge 5 ]; then
       echo "0 $((agora + 3600))" >"$TRAVA"
-      falha "Senha de formatação errada 5 vezes: $1 ficou bloqueado por 1 hora" 6
+      falha "Senha de configuração errada 5 vezes: $1 ficou bloqueado por 1 hora" 6
     fi
     echo "$n 0" >"$TRAVA"
-    falha "Senha de formatação errada (tentativa $n de 5)" 7
+    falha "Senha de configuração errada (tentativa $n de 5)" 7
   fi
   rm -f "$TRAVA"
   senha=""
@@ -760,21 +762,21 @@ case "$acao" in
     esac || falha "não deu para trocar o rótulo: $r" 1
     echo "rotulo $modo"
     exit 0 ;;
-  senha-formatar|esquecer-senha-formatar)
-    [ "${SUDO_USER:-}" != brunos-power ] || falha "a Senha de formatação só pode ser criada ou apagada no Terminal do servidor, com sudo"
-    if [ "$acao" = esquecer-senha-formatar ]; then
+  senha-config|esquecer-senha-config|senha-formatar|esquecer-senha-formatar)
+    [ "${SUDO_USER:-}" != brunos-power ] || falha "a Senha de configuração só pode ser criada ou apagada no Terminal do servidor, com sudo"
+    case "$acao" in esquecer-*)
       rm -f "$SENHA" "$TRAVA"
-      echo "Senha de formatação apagada. Formatar pelo BrunOS fica desligado até você criar outra."
-      exit 0
-    fi
-    [ -t 0 ] || falha "rode no Terminal do servidor: sudo brunos-host senha-formatar"
+      echo "Senha de configuração apagada. Formatar e desinstalar apps pelo BrunOS ficam desligados até você criar outra."
+      exit 0 ;;
+    esac
+    [ -t 0 ] || falha "rode no Terminal do servidor: sudo brunos-host senha-config"
     command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
     install -d -m 700 -o root -g root /etc/brunos-host
     if [ -f "$SENHA" ]; then
-      a=$(le_senha "Senha de formatação ATUAL: ")
+      a=$(le_senha "Senha de configuração ATUAL: ")
       printf '%s' "$a" | python3 -c "$PY_CONFERE" "$SENHA" || falha "senha atual errada" 7
     fi
-    s1=$(le_senha "Nova Senha de formatação (mínimo 8 caracteres, diferente da senha do BrunOS): ")
+    s1=$(le_senha "Nova Senha de configuração (mínimo 8 caracteres, diferente da senha do BrunOS): ")
     [ ${#s1} -ge 8 ] || falha "a senha precisa ter pelo menos 8 caracteres"
     s2=$(le_senha "Digite de novo: ")
     [ "$s1" = "$s2" ] || falha "as duas senhas não são iguais"
@@ -782,7 +784,7 @@ case "$acao" in
     chmod 600 "$SENHA.novo"
     mv -f "$SENHA.novo" "$SENHA"
     rm -f "$TRAVA"
-    echo "Senha de formatação criada. Ela é pedida pelo BrunOS sempre que você for formatar um disco ou desinstalar um app."
+    echo "Senha de configuração criada. Ela é pedida pelo BrunOS nas ações sensíveis do servidor: formatar um disco e desinstalar um app."
     exit 0 ;;
   formatar)
     confere_senha formatar
@@ -890,7 +892,7 @@ case "$acao" in
   iniciar-app|parar-app|desinstalar-app|adicionar-loja|remover-loja)
     # janela Loja: os mesmos comandos do painel do Runtipi, pelo runtipi-cli (o Runtipi fica sabendo)
     d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
-    # desinstalar apaga os dados do app: só com a Senha de formatação (pela entrada padrão), conferida aqui
+    # desinstalar apaga os dados do app: só com a Senha de configuração (pela entrada padrão), conferida aqui
     if [ "$acao" = desinstalar-app ]; then confere_senha desinstalar; fi
     cd "$d"
     case "$acao" in

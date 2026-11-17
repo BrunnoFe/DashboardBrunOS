@@ -35,6 +35,45 @@ func TestCheckUpdates(t *testing.T) {
 }
 
 // Janela Loja (0.18.0): catálogo das lojas baixadas, com o instalado marcado, sem seguir atalhos.
+// Loja convertida pelo Garimpo (0.19.0): um ramo do repositório, com garimpo.json dizendo a origem.
+func TestCatalogGarimpo(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repos/casaos")
+	write(t, filepath.Join(repo, ".git/config"), "[remote \"origin\"]\n\turl = https://github.com/exemplo/Garimpo\n")
+	write(t, filepath.Join(repo, ".git/HEAD"), "ref: refs/heads/casaos\n")
+	write(t, filepath.Join(repo, "garimpo.json"), `{"brunos":1,"nome":"CasaOS","selo":"via CasaOS","fonte":"https://github.com/IceWhaleTech/CasaOS-AppStore",
+		"licenca":"Apache-2.0","sobre":"Apps do CasaOS."}`)
+	write(t, filepath.Join(repo, "apps/meuapp/config.json"), `{"name":"Meu App","version":"1","tipi_version":1,"available":true}`)
+	// loja comum no ramo principal, com um garimpo.json malfeito (endereço que não é http)
+	outra := filepath.Join(dir, "repos/outra")
+	write(t, filepath.Join(outra, ".git/config"), "[remote \"origin\"]\n\turl = https://github.com/exemplo/outra.git\n")
+	write(t, filepath.Join(outra, ".git/HEAD"), "ref: refs/heads/main\n")
+	write(t, filepath.Join(outra, "garimpo.json"), `{"nome":"Outra","fonte":"javascript:alert(1)"}`)
+	write(t, filepath.Join(outra, "apps/x/config.json"), `{"name":"X","version":"1","tipi_version":1,"available":true}`)
+	// ramo com nome estranho não entra no endereço
+	ruim := filepath.Join(dir, "repos/ruim")
+	write(t, filepath.Join(ruim, ".git/config"), "[remote \"origin\"]\n\turl = https://github.com/exemplo/ruim\n")
+	write(t, filepath.Join(ruim, ".git/HEAD"), "ref: refs/heads/a/../b\n")
+	write(t, filepath.Join(ruim, "apps/y/config.json"), `{"name":"Y","version":"1","tipi_version":1,"available":true}`)
+
+	c := New(dir).Catalog()
+	by := map[string]CatalogStore{}
+	for _, s := range c.Stores {
+		by[s.Slug] = s
+	}
+	g := by["casaos"]
+	if g.URL != "https://github.com/exemplo/Garimpo/tree/casaos" || g.Name != "CasaOS" || g.Badge != "via CasaOS" ||
+		g.Origin != "https://github.com/IceWhaleTech/CasaOS-AppStore" || g.License != "Apache-2.0" || g.About != "Apps do CasaOS." {
+		t.Fatalf("loja do Garimpo: %+v", g)
+	}
+	if o := by["outra"]; o.URL != "https://github.com/exemplo/outra" || o.Name != "Outra" || o.Origin != "" || o.Badge != "" {
+		t.Fatalf("loja comum: %+v", o)
+	}
+	if r := by["ruim"]; r.URL != "https://github.com/exemplo/ruim" {
+		t.Fatalf("ramo estranho: %+v", r)
+	}
+}
+
 func TestCatalog(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repos/migrated")

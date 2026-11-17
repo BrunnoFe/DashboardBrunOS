@@ -111,7 +111,7 @@ type Monitor struct {
 	Present  func() []string // discos inteiros que o Linux vê agora (/proc/diskstats)
 	Events   *events.Store
 	Now      func() time.Time
-	// 0.16.0: formatar (a Senha de formatação vai pela entrada padrão), soltar a pasta no Arquivos antes de
+	// 0.16.0: formatar (a Senha de configuração vai pela entrada padrão), soltar a pasta no Arquivos antes de
 	// desmontar, mapear/desmapear a pasta depois e conferir a senha do BrunOS antes de formatar
 	ActInput  func(ctx context.Context, cmd string, in []byte) ([]byte, error)
 	Release   func(folder string)

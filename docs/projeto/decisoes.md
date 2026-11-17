@@ -303,3 +303,24 @@ Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a d
     formato do Runtipi (próxima versão), não por instalação paralela. (f) A Loja é a primeira janela do
     sistema no gerenciador de Janelas, e o desenho dela segue a largura da janela (container query), não
     a da tela: janela estreita e celular usam o mesmo arranjo.
+60. **Garimpo: lojas do CasaOS convertidas fora do servidor, um ramo por loja de origem** (0.19.0,
+    combinado em 17/11/2026). (a) O conversor mora num repositório próprio (`BrunnoFe/Garimpo`), em
+    Python com PyYAML, e roda no GitHub Actions todo dia: nada roda no servidor e o BrunOS continua só
+    com a biblioteca padrão do Go. (b) Cada loja de origem vira um **ramo** do repositório (`casaos`,
+    `linuxserver`), porque o Runtipi aceita loja no formato `.../tree/<ramo>`. Ideia do Bruno: em vez de
+    uma loja única "Garimpo", cada loja aparece com o nome da origem, num cartão próprio, além do
+    "Todas". O nome técnico é o da origem, que não muda (ele fica gravado nos caminhos dos apps
+    instalados). Um repositório só evita outro agendamento e outra chave para publicar. (c) Um
+    `garimpo.json` na raiz de cada ramo diz o nome, o selo ("via CasaOS"), a origem e a licença; o
+    catálogo do BrunOS lê esse arquivo (só textos curtos e endereço http) e mostra o selo nos apps.
+    (d) Recusa por segurança, com o motivo no README do ramo: `privileged`, socket do Docker, rede do
+    servidor, `pid`/`ipc`/`userns` do servidor, poderes de administrador do Linux (`SYS_ADMIN`,
+    `NET_ADMIN`, `ALL`...), pastas do sistema e aparelhos (só `/dev/dri`, a placa de vídeo, passa). Uma
+    segunda conferência independente (`confere.py`) relê a loja pronta, e os testes oficiais da loja do
+    Runtipi rodam sobre ela; qualquer falha impede a publicação. (e) Apps que já existem na loja
+    oficial do Runtipi ficam de fora (ela é mais bem cuidada para o Runtipi). (f) Dados do app vão para
+    a pasta do app no Runtipi (entram no backup); `/DATA/Media`, `/DATA/Downloads` e afins, para a pasta
+    de mídia do Runtipi. (g) Origens: CasaOS (Apache-2.0) e LinuxServer-AppStore (GPL-3.0); a loja Play
+    ficou de fora por não ter licença; a Umbrel, para depois, conferindo a licença. Alternativa
+    recusada: uma loja única com cartões "virtuais" por origem no BrunOS (o Runtipi mostraria tudo como
+    uma loja só e não daria para adicionar só uma origem).

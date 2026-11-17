@@ -1380,7 +1380,7 @@ const storeCtx = {
   showUpdates: () => showUpdates(),
   reloadApps: () => loadApps(),
   openPanel: openRuntipiPanel,
-  get openTerminal() { return S.terminal === false ? null : (o) => openTerminal(o); }, // criar a Senha de formatação (digita, não executa)
+  get openTerminal() { return S.terminal === false ? null : (o) => openTerminal(o); }, // criar a Senha de configuração (digita, não executa)
   favs: () => set().storeFavs || [],
   setFavs: (list) => { set().storeFavs = list; save(); },
 };
@@ -1544,7 +1544,7 @@ const disksCtx = {
   openApp: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
   openFiles: (root, path) => openSheet('files', $('[data-sys="files"]'), { root, path }),
   scriptDialog: () => import('./energy.js').then((m) => m.scriptDialog()),
-  get openTerminal() { return S.terminal === false ? null : (o) => openTerminal(o); }, // criar a Senha de formatação (digita, não executa)
+  get openTerminal() { return S.terminal === false ? null : (o) => openTerminal(o); }, // criar a Senha de configuração (digita, não executa)
   mapDisks: () => import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); })),
 };
 const openDisks = (opts = {}) => openSheet('disks', $('[data-sys="disks"]'), opts);

@@ -8,33 +8,16 @@ Como se trabalha: uma versão por etapa, e o Bruno testa no servidor antes da pr
 no container: o que precisa de root no host vai por SSH com chave restrita. Testar sempre também em tela de
 celular.
 
-## Aguardando teste no servidor
+## Testes no servidor
 
-| Versão | O que |
-|---|---|
-| 0.12.3 | Liberação gradual do Ubuntu, "Conferir" por seção, lojas do Runtipi atualizadas antes de conferir (script 9) |
-| 0.13.0 | Tela inicial nova: Disposições, Medidas, lugar e Tamanho livres, arrastar novo (decisão 48) |
-| 0.13.1 | Ícones com tamanho fixo pela Régua (decisão 52) |
-| 0.13.2 | Área útil, escala única, correções da tela inicial e submenu Organização (decisão 55) |
-| 0.14.0 | Históricos de 30 dias (tsdb) e gráficos com eixo, valor no mouse, Período e Ponta viva (decisão 53) |
-| 0.15.0 | Janela Discos: informações, SMART explicado, testes do disco, desempenho, espaço, Linha do tempo, ejetar (decisão 56) |
-| 0.15.1 | Teste do disco: andamento a cada 30 s e progressivo, resultado que não some, estimativa real, disco "só no fim"; dados genéricos |
-| 0.16.0 | Montar, desmontar, rótulo e Formatar com Senha de formatação; trava de container no ejetar (decisões 54 e 57) |
-| 0.17.0 | Janelas de app: apps dentro do BrunOS, Flutuante/Folha, dock com apps abertos, Só em aba automático (decisão 58) |
-| 0.18.0 | Janela Loja: catálogo das lojas do Runtipi, instalar pela tela do Runtipi, parar/iniciar/desinstalar (com a Senha de formatação), gerenciar lojas (decisão 59) |
+Em 17/11/2026 o Bruno avisou que testou no servidor **todas** as versões que estavam pendentes, da 0.12.3
+à 0.18.0 (inclusive formatar e desinstalar app com a senha, as Janelas de app com apps reais e a Loja). Nada
+está aguardando teste agora. Ele vai trazer um retorno com melhorias, que entra aqui com versão.
 
-## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026: entregue
+## Etapa 11 (0.13.1 → 0.16.0), combinada em 12/11/2026: entregue e testada
 
-Resumo de cada versão no `historico.md` (o plano detalhado foi apagado ao terminar a etapa); termos em
-`CONTEXT.md`; porquês nas decisões 52–57. Falta o Bruno testar no servidor as versões abaixo.
-
-| Versão | O que | Status |
-|---|---|---|
-| 0.13.1 | Ícones com tamanho fixo: Tamanho do ícone (4 degraus pela Régua) e Espaço entre os ícones | feito; testado, virou a 0.13.2 |
-| 0.13.2 | Área útil e correções da tela inicial (widgets repetidos, fileira fora do centro, apps passando do dock) | feito, aguardando teste no servidor |
-| 0.14.0 | Históricos de 30 dias (`internal/tsdb`: servidor, containers, internet, leitura/escrita dos discos, integrações) e gráficos com eixo, valor no mouse, Período e Ponta viva | feito, aguardando teste no servidor |
-| 0.15.0 | Janela Discos: informações, SMART explicado, testes, desempenho, espaço, linha do tempo, ejetar | feito; testado, ajustes na 0.15.1 (teste do disco), aguardando teste no servidor |
-| 0.16.0 | Montar, desmontar e Formatar com Senha de formatação | feito, aguardando teste no servidor (primeiro com um pendrive) |
+Resumo de cada versão no `historico.md`; termos em `CONTEXT.md`; porquês nas decisões 52–57. Todas
+testadas no servidor (17/11/2026).
 
 ## Etapa 12 (0.17.0 → 0.18.0), combinada em 13/11/2026
 
@@ -42,26 +25,33 @@ Plano detalhado em `plano-etapa12.md`; termos em `CONTEXT.md` (seção Janelas);
 
 | Versão | O que | Status |
 |---|---|---|
-| 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado; aguardando teste no servidor com apps reais |
-| depois da etapa 13 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas (era a 0.18.0; a Loja passou na frente e já usa o gerenciador de Janelas) | depois do teste da 0.17.0; detalhes a combinar |
+| 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado e testado no servidor |
+| depois da etapa 13 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas (era a 0.18.0; a Loja passou na frente e já usa o gerenciador de Janelas) | a combinar (o teste da 0.17.0 já foi feito) |
 
-## Etapa 13 (0.18.0 → 0.19.0), combinada em 16/11/2026: Loja
+## Etapa 13 (0.18.0 → 0.20.0), combinada em 16/11/2026: Loja
 
-Porquê na decisão 59; termos em `CONTEXT.md` (Loja, Loja de apps do Runtipi).
+Porquês nas decisões 59 e 60; termos em `CONTEXT.md` (Loja, Loja de apps do Runtipi, Garimpo).
 
 | Versão | O que | Status |
 |---|---|---|
-| 0.18.0 | Janela Loja: apps de todas as lojas do Runtipi com categorias, busca, favoritos, página do app; instalar pela tela do Runtipi; parar, iniciar, desinstalar; adicionar, remover e atualizar lojas | feito, lançado em 17/11; aguardando teste no servidor (antes de desinstalar, criar a Senha de formatação) |
-| 0.19.0 | Conversor de lojas: ferramenta no GitHub Actions que lê a loja do CasaOS/ZimaOS, converte para o formato do Runtipi e publica numa loja separada chamada **Garimpo** (repositório no GitHub do Bruno), com selo de origem nos apps ("via CasaOS") e recusa de receitas perigosas (`privileged`, socket do Docker, rede do host). Umbrel depois, só os apps simples e depois de conferir a licença | a fazer (nome e selo escolhidos em 17/11) |
+| 0.18.0 | Janela Loja: apps de todas as lojas do Runtipi com categorias, busca, favoritos, página do app; instalar pela tela do Runtipi; parar, iniciar, desinstalar; adicionar, remover e atualizar lojas | feito, lançado e testado no servidor (17/11) |
+| 0.19.0 | **Garimpo** (decisão 60): repositório `BrunnoFe/Garimpo` com o conversor (GitHub Actions, todo dia) e um ramo por loja de origem, cada um uma loja do Runtipi: `casaos` (loja do CasaOS/ZimaOS) e `linuxserver` (LinuxServer-AppStore). Recusa receitas perigosas, pula as que já existem na loja oficial, roda os testes oficiais da loja do Runtipi antes de publicar. No BrunOS: nome da loja de origem e selo "via CasaOS" (lido do `garimpo.json`), um cartão por loja na Loja, lojas sugeridas com um clique. Junto: a Senha de formatação passa a se chamar **Senha de configuração** (script do servidor 13, comando `senha-config`, o antigo continua valendo) | feito, lançado em 17/11 (repositório do Garimpo criado); aguardando teste no servidor |
+| 0.20.0 | Instalar e Ajustes dentro do BrunOS (combinado em 17/11/2026, revê a decisão 59 b): formulário de instalação na própria Loja (perguntas do app, porta, domínio, exposto), enviado pelo script do servidor à API do Runtipi com a chave do `runtipi-cli`, que não sai do servidor; editar as respostas depois; se a versão do Runtipi não for conhecida ou o pedido falhar, abre a tela do Runtipi como hoje. Aba Ajustes em cada app instalado (todos, inclusive os da loja oficial): pastas extras de `/mnt` e `/home` (só leitura ou leitura e escrita), limite de memória e de núcleos, variáveis extras e modo avançado de texto, gravados no `user-config` do Runtipi (sobrevive às atualizações); o BrunOS recusa `privileged`, socket do Docker, rede do host e pastas do sistema, pede a Senha de configuração e oferece reiniciar o app | a fazer, depois do teste da 0.19.0 |
 
-Para conferir no primeiro teste da 0.18.0 no servidor: (1) o endereço da tela de instalar do Runtipi
-(`<painel>/app-store/<loja>/<app>`); (2) se o painel do Runtipi aceita abrir em Janela de app; (3) o que o
-`runtipi-cli` responde ao desinstalar e ao remover uma loja com apps instalados.
+Fatos do Runtipi 4.12 levantados no código-fonte (17/11/2026) para a 0.20.0: instalar é `POST
+/api/app-lifecycle/<app>:<loja>/install` (formulário + porta, domínio, exposto; o estado fica no banco do
+Runtipi, então gravar arquivos não basta); a API aceita `Authorization: Bearer` com um JWT assinado pelo
+segredo do CLI (`/data/.secrets/cli-secret` dentro do container `runtipi`); editar respostas é `PATCH
+.../update-config` (não reinicia); ajustes do usuário em `user-config/<loja>/<app>/docker-compose.yml` e
+`app.env`, juntados pelo docker compose em todo início, sem nenhuma conferência do conteúdo (por isso o
+BrunOS confere).
 
 ## Em aberto
 
-- Depois de testar a 0.13.0 no servidor: tirar a conversão das preferências antigas de widgets (ver
-  `ideias-futuras.md`).
+- A 0.13.0 já foi testada: dá para tirar a conversão das preferências antigas de widgets (ver
+  `ideias-futuras.md`) quando o Bruno quiser.
+- Senha também para parar app e para adicionar ou remover lojas: o Bruno disse que não precisa por
+  enquanto (17/11/2026).
 - Itens do `ideias-futuras.md` que o Bruno pedir passam para cá, com versão.
 
 ## Como lançar uma versão

@@ -20,6 +20,30 @@
   `metadata/description.md`). A loja oficial fica na pasta `migrated`. O `runtipi-cli` lista, adiciona,
   remove e atualiza lojas, e inicia, para, atualiza e desinstala apps; **não instala** (a instalação tem
   formulário e só existe no painel). A janela Loja do BrunOS lê `repos/` (decisão 59).
+- Uma loja pode ser um **ramo** de um repositório: endereço `https://github.com/<usuário>/<repo>/tree/<ramo>`
+  (o Runtipi clona só aquele ramo; pasta dentro do repositório não é aceita). O nome técnico da loja é o
+  nome dado ao adicionar (`runtipi-cli appstore add <nome> <endereço>`, até 16 letras) e aparece em todos
+  os caminhos dos apps instalados, por isso não deve mudar depois.
+
+## Garimpo (lojas convertidas, 0.19.0, decisão 60)
+
+- Repositório `BrunnoFe/Garimpo`: o conversor (`garimpo/converter.py`, Python + PyYAML; Pillow e
+  `rsvg-convert` para os logos) no ramo `main`, e uma loja do Runtipi por ramo: `casaos` (loja do
+  CasaOS/ZimaOS, Apache-2.0) e `linuxserver` (LinuxServer-AppStore, GPL-3.0). Origens em `origens.json`.
+- GitHub Actions todo dia às 03:17 (Brasília), quando o código muda e pelo botão: testes do conversor →
+  converte → `confere.py` (segunda conferência de segurança) → testes oficiais da loja do Runtipi
+  (`apps/__tests__` com `bun test`) → publica no ramo só se algo mudou.
+- Formato gerado: `docker-compose.yml` com `x-runtipi` (`schema_version: 2`; serviço principal com o
+  nome do app e a versão igual à tag da imagem; `is_main`/`internal_port` no serviço da página web, que
+  pode ser um nginx na frente), `min_tipi_version` 4.7.0, porta única na loja (quem já foi publicado
+  guarda a sua), `tipi_version` sobe quando a receita muda (resumo em `.resumos/` no ramo).
+- `garimpo.json` na raiz do ramo: `nome`, `selo`, `fonte`, `licenca`, `sobre`, contagens. O BrunOS lê.
+- Primeira conversão (17/11/2026): CasaOS 86 apps (26 recusados, 71 já na oficial), LinuxServer 188
+  (12 recusados, 49 já na oficial); os dois ramos passaram nos testes oficiais (1121 e 2447 testes).
+- Pegadinhas: os nomes da LinuxServer vêm com prefixo `linuxserver-` (o conversor tira, campo
+  `tira_prefixo`); apps com vários serviços mantêm o nome do serviço principal como id (renomear quebraria
+  os outros serviços que falam com ele pelo nome); os testes oficiais pedem `bun install --ignore-scripts`
+  (o gancho de git da loja oficial falha fora de um repositório).
 
 ## O app na loja (`runtipi-app/brunos/` → `RuntipiAppStore/apps/brunos/`)
 

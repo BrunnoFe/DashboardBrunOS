@@ -103,7 +103,7 @@ func (s *server) setupDisks(dataDir, hostProc string) {
 	}
 	s.disks.Present = disks.PresentFrom(stats)
 	s.smart.Note = s.disks.Note // SMART mudou e testes entram na Linha do tempo
-	// 0.16.0: formatar (a Senha de formatação vai pela entrada padrão do script, nunca na linha de comando)
+	// 0.16.0: formatar (a Senha de configuração vai pela entrada padrão do script, nunca na linha de comando)
 	s.disks.ActInput = func(ctx context.Context, cmd string, in []byte) ([]byte, error) {
 		if !hostcmd.FormatAllowed(cmd) {
 			return nil, errors.New("pedido não permitido")

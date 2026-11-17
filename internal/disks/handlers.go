@@ -119,7 +119,7 @@ func (m *Monitor) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 		writeJSON(w, 200, m.FormatInfo(r.Context()))
 	}))
 	// formatar: a senha do BrunOS de novo (quem pegou uma sessão aberta não formata) e a Senha de
-	// formatação, que só o servidor confere
+	// configuração, que só o servidor confere
 	mux.HandleFunc("POST /api/disks/format", wrap(func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Dev, FS, Label, Password, FormatPassword string }
 		if !readBody(w, r, &b) {

@@ -15,6 +15,7 @@ import (
 	"brunos/internal/events"
 	"brunos/internal/framecheck"
 	"brunos/internal/hostcmd"
+	"brunos/internal/runtipi"
 	"brunos/internal/updates"
 )
 
@@ -24,7 +25,7 @@ const selfApp = "brunos"
 var storeAnsi = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
 // storeAct faz um pedido da janela Loja ao script do servidor (só os pedidos da Loja).
-// in vai pela entrada padrão do script: a Senha de formatação no desinstalar (nunca na linha de comando).
+// in vai pela entrada padrão do script: a Senha de configuração no desinstalar (nunca na linha de comando).
 func (s *server) storeAct(ctx context.Context, cmd string, in []byte) error {
 	if !hostcmd.StoreActAllowed(cmd) {
 		return errors.New("pedido não permitido")
@@ -54,6 +55,39 @@ func (s *server) storeAct(ctx context.Context, cmd string, in []byte) error {
 // panelKey guarda, junto dos apps, se o painel do Runtipi aceita abrir dentro do BrunOS (a tela de instalar).
 const panelKey = "@painel-runtipi"
 
+// storeSuggestion é uma loja oferecida com um clique na janela Loja (0.19.0): as lojas convertidas pelo
+// Garimpo, um ramo por loja de origem (decisão 60). O nome técnico é o da origem, que não muda.
+type storeSuggestion struct {
+	Slug  string `json:"slug"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+	About string `json:"about"`
+}
+
+var storeSuggestions = []storeSuggestion{
+	{"casaos", "CasaOS", "https://github.com/BrunnoFe/Garimpo/tree/casaos",
+		"Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que dão poder demais sobre o servidor ficam de fora."},
+	{"linuxserver", "LinuxServer", "https://github.com/BrunnoFe/Garimpo/tree/linuxserver",
+		"Apps do LinuxServer.io (programas de computador no navegador, mídia, rede), convertidos para o Runtipi."},
+}
+
+// suggestedStores devolve as lojas sugeridas que ainda não foram adicionadas.
+func suggestedStores(stores []runtipi.CatalogStore) []storeSuggestion {
+	out := []storeSuggestion{}
+	for _, sg := range storeSuggestions {
+		have := false
+		for _, st := range stores {
+			if st.Slug == sg.Slug || strings.EqualFold(st.URL, sg.URL) {
+				have = true
+			}
+		}
+		if !have {
+			out = append(out, sg)
+		}
+	}
+	return out
+}
+
 func (s *server) hStore(w http.ResponseWriter, r *http.Request) {
 	sc := s.updates.Snapshot().Script
 	frame := ""
@@ -65,8 +99,9 @@ func (s *server) hStore(w http.ResponseWriter, r *http.Request) {
 		}
 		frame = s.frames.Get(panelKey)
 	}
-	writeJSON(w, 200, map[string]any{"catalog": s.tipi.Catalog(), "script": map[string]int{"have": sc.Have, "want": hostcmd.ScriptVersion},
-		"self": selfApp, "panelFrame": frame})
+	cat := s.tipi.Catalog()
+	writeJSON(w, 200, map[string]any{"catalog": cat, "script": map[string]int{"have": sc.Have, "want": hostcmd.ScriptVersion},
+		"self": selfApp, "panelFrame": frame, "suggested": suggestedStores(cat.Stores)})
 }
 
 func (s *server) hStoreApp(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +130,7 @@ func (s *server) hStoreAppAction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URN      string `json:"urn"`
 		Action   string `json:"action"`
-		Password string `json:"password"` // Senha de formatação (só no desinstalar); o servidor é quem confere
+		Password string `json:"password"` // Senha de configuração (só no desinstalar); o servidor é quem confere
 	}
 	if err := decode(r, &req, 4<<10); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
@@ -116,12 +151,12 @@ func (s *server) hStoreAppAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "este é o próprio BrunOS: pare ou desinstale pelo painel do Runtipi"})
 		return
 	}
-	// desinstalar apaga os dados do app: pede a Senha de formatação, que o script do servidor confere
+	// desinstalar apaga os dados do app: pede a Senha de configuração, que o script do servidor confere
 	// (com trava depois de 5 erros). O BrunOS só repassa pela entrada padrão; não grava nem registra.
 	var in []byte
 	if req.Action == "uninstall" {
 		if req.Password == "" || len(req.Password) > 200 || strings.ContainsAny(req.Password, "\r\n") {
-			writeJSON(w, 400, map[string]string{"error": "digite a Senha de formatação"})
+			writeJSON(w, 400, map[string]string{"error": "digite a Senha de configuração"})
 			return
 		}
 		in = []byte(req.Password + "\n")
@@ -208,7 +243,8 @@ func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 	// baixa a lista nova das lojas (o mesmo "Conferir" dos apps) e relê o catálogo
 	_ = s.updates.CheckPart(r.Context(), updates.PartApps)
 	s.tipi.Invalidate()
-	out := map[string]any{"ok": true, "catalog": s.tipi.Catalog()}
+	cat = s.tipi.Catalog()
+	out := map[string]any{"ok": true, "catalog": cat, "suggested": suggestedStores(cat.Stores)}
 	if e := s.updates.Snapshot().StoresErr; e != "" && cmd == "" {
 		out["warn"] = e
 	}

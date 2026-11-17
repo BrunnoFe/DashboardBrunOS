@@ -50,11 +50,17 @@ type CatalogApp struct {
 	hidden     bool // available: false ou descontinuado
 }
 
-// CatalogStore é uma loja do Runtipi.
+// CatalogStore é uma loja do Runtipi. Name, Badge, Origin, License e About vêm do garimpo.json das lojas
+// convertidas pelo Garimpo (0.19.0): o nome da loja de origem ("CasaOS") e o selo dos apps ("via CasaOS").
 type CatalogStore struct {
-	Slug string `json:"slug"`
-	URL  string `json:"url,omitempty"`
-	Apps int    `json:"apps"`
+	Slug    string `json:"slug"`
+	URL     string `json:"url,omitempty"`
+	Apps    int    `json:"apps"`
+	Name    string `json:"name,omitempty"`
+	Badge   string `json:"badge,omitempty"`
+	Origin  string `json:"origin,omitempty"`
+	License string `json:"license,omitempty"`
+	About   string `json:"about,omitempty"`
 }
 
 // Catalog é o que a janela Loja recebe.
@@ -165,8 +171,55 @@ func clip(s string, n int) string {
 	return s
 }
 
-// storeURL lê o endereço da loja no .git/config dela, sem usuário nem senha.
+// storeURL lê o endereço da loja no .git/config dela, sem usuário nem senha. Loja que é um ramo do
+// repositório (o Runtipi aceita ".../tree/<ramo>") ganha o ramo no endereço, lido do .git/HEAD.
 func storeURL(repo string) string {
+	u := storeRepoURL(repo)
+	if u == "" {
+		return ""
+	}
+	if b, ok := readLimited(filepath.Join(repo, ".git", "HEAD"), 1<<10); ok {
+		ramo, achou := strings.CutPrefix(strings.TrimSpace(string(b)), "ref: refs/heads/")
+		if achou && ramo != "main" && ramo != "master" && branchOK(ramo) {
+			u += "/tree/" + ramo
+		}
+	}
+	return u
+}
+
+func branchOK(s string) bool {
+	if s == "" || len(s) > 64 || strings.Contains(s, "..") {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// garimpoInfo é o garimpo.json na raiz de uma loja convertida pelo Garimpo.
+type garimpoInfo struct {
+	Nome    string `json:"nome"`
+	Selo    string `json:"selo"`
+	Fonte   string `json:"fonte"`
+	Licenca string `json:"licenca"`
+	Sobre   string `json:"sobre"`
+}
+
+// storeInfo completa a loja com o garimpo.json dela, se existir (só textos curtos e endereço http(s)).
+func storeInfo(repo string, st *CatalogStore) {
+	b, ok := readLimited(filepath.Join(repo, "garimpo.json"), 16<<10)
+	var g garimpoInfo
+	if !ok || json.Unmarshal(b, &g) != nil {
+		return
+	}
+	st.Name, st.Badge, st.Origin = clip(g.Nome, 40), clip(g.Selo, 40), httpURL(g.Fonte)
+	st.License, st.About = clip(g.Licenca, 40), clip(g.Sobre, 300)
+}
+
+func storeRepoURL(repo string) string {
 	b, ok := readLimited(filepath.Join(repo, ".git", "config"), 64<<10)
 	if !ok || !isDir(filepath.Join(repo, ".git")) {
 		return ""
@@ -265,6 +318,7 @@ func (d *Discoverer) scanStores() Catalog {
 		}
 		c.Found = true
 		st := CatalogStore{Slug: slug, URL: storeURL(filepath.Join(repos, slug))}
+		storeInfo(filepath.Join(repos, slug), &st)
 		entries, _ := os.ReadDir(appsDir)
 		for _, e := range entries {
 			id := e.Name()

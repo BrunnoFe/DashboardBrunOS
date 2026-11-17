@@ -205,6 +205,20 @@ janela estreita e celular usam o mesmo arranjo. Lições: as lojas são de terce
 symlink nem de mostrar HTML delas; mudar o `location.hash` minimiza a janela da frente (o "voltar"); o
 `/tmp` do WSL some quando ele reinicia.
 
+## 0.19.0 (17/11): Garimpo e Senha de configuração (etapa 13, decisão 60)
+Novo repositório público `BrunnoFe/Garimpo`: um conversor que roda todo dia no GitHub Actions e transforma
+as lojas do CasaOS/ZimaOS (Apache-2.0) e a LinuxServer-AppStore (GPL-3.0) em lojas do Runtipi, uma por
+ramo (`casaos`, `linuxserver`). Recusa receitas perigosas (privileged, socket do Docker, rede do servidor,
+pastas do sistema, poderes de administrador, aparelhos além da placa de vídeo), pula o que já existe na
+loja oficial, confere tudo de novo com um programa separado e roda os testes oficiais da loja do Runtipi
+antes de publicar. Na primeira conversão: 86 apps na CasaOS e 188 na LinuxServer. Na Loja do BrunOS: um
+cartão por loja (ideia do Bruno), nome e selo da origem ("via CasaOS") lidos do `garimpo.json`, faixa com
+origem e licença, e as duas lojas sugeridas com um clique. A Senha de formatação passou a se chamar
+Senha de configuração (script do servidor 13, comando `senha-config`; o antigo continua). Lições: a
+LinuxServer põe o prefixo `linuxserver-` nos nomes (sem tirar, a comparação com a loja oficial falhava);
+o serviço da página web às vezes é um nginx na frente do principal; os testes oficiais precisam de
+`bun install --ignore-scripts`; no PowerShell, comandos bash longos vão em arquivo `.sh`.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

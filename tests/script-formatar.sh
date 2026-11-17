@@ -1,7 +1,7 @@
 #!/bin/bash
 # Testa montar, desmontar, rótulo e formatar do brunos-host (script 11) de verdade, como root, num
 # contêiner descartável. As ferramentas que mexem em disco (mount, umount, mkfs, sgdisk, wipefs...) são
-# falsas e anotam como foram chamadas; a Senha de formatação usa o python3 de verdade (scrypt).
+# falsas e anotam como foram chamadas; a Senha de configuração usa o python3 de verdade (scrypt).
 # Confere: fstab volta como estava quando o mount falha; desmontar recusa disco em uso e só tira a linha
 # do BrunOS; formatar recusa sem senha, com senha errada (trava depois de 5), série que não bate, disco do
 # sistema e disco no fstab, e só apaga depois de conferir tudo de novo; a senha nunca pela chave do BrunOS.
@@ -88,12 +88,13 @@ case "$1" in /mnt/*) grep -q " $1 " /etc/fstab || exit 1; echo "$1" >>/tmp/monta
   # ── rótulo ────────────────────────────────────────────────────
   [ "$($H rotulo 1111-aaaa Fotos2)" = "rotulo Fotos2" ] && grep -qx "/dev/sdb1 Fotos2" /tmp/e2label.args && ok "rótulo com e2label" || erro "rótulo"
 
-  # ── Senha de formatação ───────────────────────────────────────
-  recusa "formatar sem Senha de formatação" "ainda não existe Senha de formatação" sh -c "echo x | $H formatar sdb SERIE1 ext4 Novo"
-  recusa "criar a senha fora do Terminal" "rode no Terminal" sh -c "$H senha-formatar </dev/null"
-  recusa "criar a senha pelo sudo da chave do BrunOS" "Terminal do servidor" env SUDO_USER=brunos-power $H senha-formatar
+  # ── Senha de configuração ───────────────────────────────────────
+  recusa "formatar sem Senha de configuração" "ainda não existe Senha de configuração" sh -c "echo x | $H formatar sdb SERIE1 ext4 Novo"
+  recusa "criar a senha fora do Terminal" "rode no Terminal" sh -c "$H senha-config </dev/null"
+  recusa "criar a senha pelo nome antigo fora do Terminal" "rode no Terminal" sh -c "$H senha-formatar </dev/null"
+  recusa "criar a senha pelo sudo da chave do BrunOS" "Terminal do servidor" env SUDO_USER=brunos-power $H senha-config
   install -d -m 700 /etc/brunos-host
-  # mesmo formato que o "senha-formatar" grava
+  # mesmo formato que o "senha-config" grava
   printf "certa-12345" | python3 -c "import hashlib,os,sys;s=sys.stdin.buffer.read();sal=os.urandom(16);h=hashlib.scrypt(s,salt=sal,n=32768,r=8,p=1,maxmem=67108864,dklen=32);print(\"scrypt\$32768\$8\$1\$%s\$%s\$2026-11-13T10:00:00\"%(sal.hex(),h.hex()))" >/etc/brunos-host/formatar
   chmod 600 /etc/brunos-host/formatar
   recusa "senha errada" "tentativa 1 de 5" sh -c "echo errada | $H formatar sdb SERIE1 ext4 Novo"

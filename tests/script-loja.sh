@@ -40,8 +40,8 @@ EOF
   }
   pede 0 feito iniciar-app immich:migrated
   pede 0 feito parar-app immich:migrated
-  # desinstalar só com a Senha de formatação: sem senha criada, com senha errada e com a certa
-  com_senha x 5 "ainda não existe Senha de formatação" desinstalar-app nextcloud_mini:minha-loja
+  # desinstalar só com a Senha de configuração: sem senha criada, com senha errada e com a certa
+  com_senha x 5 "ainda não existe Senha de configuração" desinstalar-app nextcloud_mini:minha-loja
   mkdir -p /etc/brunos-host
   printf "certa-12345" | python3 -c "
 import hashlib,os,sys

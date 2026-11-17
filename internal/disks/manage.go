@@ -1,7 +1,7 @@
 package disks
 
 // Montar, desmontar, trocar o rótulo e Formatar (0.16.0, decisão 54). Tudo pelo script do servidor, que
-// confere de novo; Formatar só com a Senha de formatação, conferida pelo servidor (o BrunOS só repassa
+// confere de novo; Formatar só com a Senha de configuração, conferida pelo servidor (o BrunOS só repassa
 // pela entrada padrão e nunca guarda). O container do BrunOS não acompanha montagens novas (o Runtipi
 // não deixa ligar a propagação): depois de montar ou desmontar, o BrunOS precisa reiniciar para ver o
 // disco (ou soltá-lo); a interface oferece o botão.
@@ -44,7 +44,7 @@ type FormatJob struct {
 	Lines   []string `json:"lines,omitempty"`
 }
 
-// FormatState: se a Senha de formatação existe, trava por erros e a formatação em andamento.
+// FormatState: se a Senha de configuração existe, trava por erros e a formatação em andamento.
 type FormatState struct {
 	HasPassword bool       `json:"hasPassword"`
 	LockedUntil int64      `json:"lockedUntil,omitempty"`
@@ -223,7 +223,7 @@ func (m *Monitor) Format(ctx context.Context, dev, fs, label, formatPassword str
 	case !hostcmd.ValidLabel(label, fs):
 		return errors.New("rótulo inválido: use letras, números, - e _ (até 16; no exFAT, até 11)")
 	case formatPassword == "" || len(formatPassword) > 200 || strings.ContainsAny(formatPassword, "\r\n"):
-		return errors.New("digite a Senha de formatação")
+		return errors.New("digite a Senha de configuração")
 	}
 	m.fmt.mu.Lock()
 	if m.fmt.job != nil && m.fmt.job.Running {
@@ -380,7 +380,7 @@ func (m *Monitor) followFormat(key string) {
 	m.fmt.mu.Unlock()
 }
 
-// FormatInfo pergunta ao servidor se a Senha de formatação existe e devolve a formatação em andamento.
+// FormatInfo pergunta ao servidor se a Senha de configuração existe e devolve a formatação em andamento.
 func (m *Monitor) FormatInfo(ctx context.Context) FormatState {
 	var st FormatState
 	qctx, cancel := context.WithTimeout(ctx, 20*time.Second)

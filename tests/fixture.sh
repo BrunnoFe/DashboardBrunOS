@@ -32,4 +32,12 @@ echo '{"name":"Oculto","id":"oculto","version":"1","tipi_version":1,"available":
 echo '{"name":"Atalho","id":"atalho","version":"1","tipi_version":1,"available":true}' > "$R"/apps/atalho/config.json
 ln -s "$T"/outside/secret.txt "$R"/apps/atalho/metadata/logo.jpg
 ln -s "$T"/outside/secret.txt "$R"/apps/atalho/metadata/description.md
+# Loja do Garimpo (0.19.0): o ramo "casaos" do repositório, com o garimpo.json da origem
+G="$T"/runtipi/repos/casaos
+mkdir -p "$G"/.git "$G"/apps/alist/metadata
+printf '[remote "origin"]\n\turl = https://github.com/BrunnoFe/Garimpo\n' > "$G"/.git/config
+echo 'ref: refs/heads/casaos' > "$G"/.git/HEAD
+echo '{"brunos":1,"nome":"CasaOS","selo":"via CasaOS","fonte":"https://github.com/IceWhaleTech/CasaOS-AppStore","licenca":"Apache-2.0","sobre":"Apps do CasaOS."}' > "$G"/garimpo.json
+echo '{"name":"AList","id":"alist","port":5244,"short_desc":"Lista de arquivos","categories":["utilities"],"version":"v3.45","tipi_version":1,"available":true}' > "$G"/apps/alist/config.json
+echo "$JPEG" | base64 -d > "$G"/apps/alist/metadata/logo.jpg
 echo "fixture pronta em $T"

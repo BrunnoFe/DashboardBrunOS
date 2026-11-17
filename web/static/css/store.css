@@ -58,6 +58,32 @@
 .st-card small { font-size: 11px; opacity: .55; margin-top: -6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-dot { position: absolute; top: 9px; right: 9px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: #2faa62; color: #fff; }
 
+/* cartões das lojas (0.19.0): Todas, cada loja e as sugeridas do Garimpo */
+.st-scard { flex: none; width: 150px; padding: 13px 13px 12px; border-radius: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; scroll-snap-align: start;
+  background: rgba(255,255,255,.045); box-shadow: var(--shadow-btn-hl-soft); transition: background .15s, transform .15s; }
+.st-scard:hover { background: rgba(255,255,255,.09); }
+.st-scard:active { transform: scale(.98); }
+.st-scard b { font-size: 13px; margin-top: 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-scard small { font-size: 11px; opacity: .55; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-scard i { font-style: normal; font-size: 11px; font-weight: 700; margin-top: 4px; opacity: .8; }
+.st-sicon { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; color: #fff; flex: none;
+  background: linear-gradient(160deg, hsl(var(--h, 220) 58% 54%), hsl(calc(var(--h, 220) + 38) 62% 34%)); }
+.st-scard.all .st-sicon { background: linear-gradient(160deg, var(--brand), var(--brand-dark, #3b2a8f)); }
+.st-scard.sug { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.16); }
+.st-scard.sug:hover { background: rgba(255,255,255,.05); }
+.st-scard.sug .st-sicon { background: rgba(255,255,255,.1); }
+.st-scard.sug i { color: var(--brand-lightest); opacity: 1; }
+.st-scard:disabled { opacity: .5; pointer-events: none; }
+.st-tag.via { background: rgba(232,170,60,.18); color: #f1c46f; opacity: 1; }
+.st-note.via { opacity: .75; }
+.st-sinfo { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 2px 0 6px; border-radius: 16px; background: rgba(255,255,255,.045); }
+.st-sinfo > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.st-sinfo b { font-size: 14px; }
+.st-sname { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.st-sinfo small { font-size: 12px; line-height: 1.45; opacity: .65; }
+.st-sinfo small a { color: inherit; text-decoration: underline; }
+.st-sh { margin: 14px 2px 8px; font-size: 13px; }
+
 /* lista de apps */
 .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 8px; }
 .st-more { height: 1px; }
@@ -156,6 +182,9 @@
   .st-grid { grid-template-columns: minmax(0, 1fr); }
   .st-app { min-height: 74px; }
   .st-card { width: 112px; }
+  .st-scard { width: 136px; }
+  .st-sinfo { flex-wrap: wrap; }
+  .st-sinfo > .pill-btn { flex: 1 1 100%; height: 36px; }
   .st-dwrap { padding: 2px 12px 30px; }
   .st-dbar .pill-btn { height: 36px; }
   .st-hero { flex-wrap: wrap; padding: 14px; gap: 14px; }
@@ -174,4 +203,4 @@
 }
 /* em tela cheia (celular), o fim da lista não fica debaixo da dock */
 #win-host[data-mode="full"] .st-content, #win-host[data-mode="full"] .st-dwrap { padding-bottom: calc(var(--dock-space, 90px) + 12px); }
-@media (prefers-reduced-motion: reduce) { .st-card, .st-app, .st-cat { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .st-card, .st-scard, .st-app, .st-cat { transition: none; } }

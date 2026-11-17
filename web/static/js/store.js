@@ -65,11 +65,15 @@ async function reload(first = false) {
 }
 function apply(r) {
   S.cat = r.catalog; S.script = r.script || {}; S.self = r.self || ''; S.panelFrame = r.panelFrame || ''; S.loadedAt = Date.now();
+  S.suggested = r.suggested || [];
 }
 const app = (urn) => S.cat.apps.find((a) => a.urn === urn);
-// A loja oficial do Runtipi aparece com o nome dela (a pasta se chama "migrated" desde o Runtipi 4).
+// A loja oficial do Runtipi aparece com o nome dela (a pasta se chama "migrated" desde o Runtipi 4); as
+// lojas do Garimpo (0.19.0), com o nome da loja de origem que vem no garimpo.json ("CasaOS").
 const official = (s) => /github\.com\/runtipi\/runtipi-appstore$/i.test(s?.url || '');
-const storeName = (slug) => (official(S.cat.stores.find((s) => s.slug === slug)) ? 'Runtipi' : slug);
+const storeOf = (slug) => S.cat.stores.find((s) => s.slug === slug);
+const storeName = (slug) => { const s = storeOf(slug); return official(s) ? 'Runtipi' : s?.name || slug; };
+const via = (slug) => storeOf(slug)?.badge || ''; // selo dos apps convertidos: "via CasaOS"
 const isFav = (a) => S.ctx.favs().includes(a.urn);
 
 function shell() {
@@ -146,7 +150,8 @@ function badge(a) {
 }
 function row(a) {
   const tags = [];
-  if (S.cat.stores.length > 1 && !S.store) tags.push(`<i class="st-tag store">${esc(storeName(a.store))}</i>`);
+  if (via(a.store)) tags.push(`<i class="st-tag via">${esc(via(a.store))}</i>`);
+  else if (S.cat.stores.length > 1 && !S.store) tags.push(`<i class="st-tag store">${esc(storeName(a.store))}</i>`);
   const c = a.categories.find((x) => x !== 'featured');
   if (c) tags.push(`<i class="st-tag">${esc(catLabel(c))}</i>`);
   if (a.local) tags.push('<i class="st-tag">fora das lojas</i>');
@@ -154,6 +159,26 @@ function row(a) {
 }
 const card = (a) => `<button class="st-card" data-urn="${esc(a.urn)}">${logo(a, 'lg')}<b>${esc(a.name)}</b><small>${esc(catLabel(a.categories.find((x) => x !== 'featured') || '') || storeName(a.store))}</small>${a.installed ? `<span class="st-dot" title="Instalado">${svg('check')}</span>` : ''}</button>`;
 const shelf = (title, list) => (list.length ? `<h3 class="st-h">${esc(title)}</h3><div class="st-shelf">${list.map(card).join('')}</div>` : '');
+
+// Um cartão por loja (e o "Todas"), como pediu o Bruno: clicar mostra só os apps daquela loja. As lojas
+// sugeridas (Garimpo) aparecem no fim, com o botão de adicionar.
+function storesShelf() {
+  const stores = S.cat.stores, sug = S.suggested || [];
+  if (stores.length < 2 && !sug.length) return '';
+  const total = S.cat.apps.filter((a) => !a.local).length;
+  const sub = (s) => (official(s) ? 'Loja oficial' : s.badge ? 'Convertida pelo Garimpo' : 'Loja extra');
+  const one = (k, name, small, n, cls = '') => `<button class="st-scard ${cls}" data-store="${esc(k)}" style="--h:${hue(name)}"><span class="st-sicon">${svg('bag')}</span><b>${esc(name)}</b><small>${esc(small)}</small><i>${n} ${n === 1 ? 'app' : 'apps'}</i></button>`;
+  return `<h3 class="st-h">Lojas</h3><div class="st-shelf st-srow-cards">${one('', 'Todas', 'Todas as lojas juntas', total, 'all')}${stores.map((s) => one(s.slug, storeName(s.slug), sub(s), s.apps)).join('')}
+    ${sug.map((g) => `<button class="st-scard sug" data-sug="${esc(g.slug)}" ${S.busy ? 'disabled' : ''}><span class="st-sicon">${svg('plus')}</span><b>${esc(g.name)}</b><small>Sugerida (Garimpo)</small><i>Adicionar</i></button>`).join('')}</div>`;
+}
+// Faixa com o que é a loja escolhida (as do Garimpo dizem de onde vêm e a licença).
+function storeInfo(s) {
+  if (!s) return '';
+  const host = (u) => u.replace(/^https?:\/\/(www\.)?/, '');
+  const txt = official(s) ? 'A loja oficial do Runtipi.' : s.about || 'Uma loja extra adicionada ao Runtipi.';
+  return `<div class="st-sinfo"><span class="st-sicon" style="--h:${hue(storeName(s.slug))}">${svg('bag')}</span><span><span class="st-sname"><b>${esc(storeName(s.slug))}</b>${s.badge ? '<i class="st-tag via">convertida pelo Garimpo</i>' : ''}</span><small>${esc(txt)}${s.origin ? ` Origem: <a href="${esc(s.origin)}" target="_blank" rel="noopener noreferrer">${esc(host(s.origin))}</a>${s.license ? ` (licença ${esc(s.license)})` : ''}.` : ''}</small></span>
+    <button class="pill-btn sm" data-store="">Todas as lojas</button></div>`;
+}
 
 function drawList() {
   const box = $('.st-content', S.body);
@@ -168,7 +193,7 @@ function drawList() {
     const base = scoped();
     const fresh = base.filter((a) => a.created).sort((a, b) => b.created - a.created).slice(0, 12);
     const seen = new Set(fresh.map((a) => a.urn));
-    top = shelf('Favoritos', base.filter(isFav)) + shelf('Novos na loja', fresh)
+    top = (S.store ? storeInfo(storeOf(S.store)) : storesShelf()) + shelf('Favoritos', base.filter(isFav)) + shelf('Novos na loja', fresh)
       + shelf('Atualizados recentemente', base.filter((a) => a.updated && !seen.has(a.urn)).sort((a, b) => b.updated - a.updated).slice(0, 12));
   }
   const title = S.q ? `Resultados para “${S.q}”` : S.catKey === '@fav' ? 'Favoritos' : S.catKey ? catLabel(S.catKey) : S.tab === 'installed' ? 'Instalados' : S.tab === 'updates' ? 'Com atualização' : 'Todos os apps';
@@ -228,22 +253,24 @@ function drawDetail() {
   const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
   const date = (t) => (t ? new Date(t * 1000).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
   const old = S.script.have > 0 && S.script.have < S.script.want;
-  const note = a.installed && old ? `<p class="st-note">${svg('info')}Para parar, iniciar e desinstalar por aqui, o script do servidor precisa ser atualizado: abra as atualizações, ao lado do sino.</p>`
-    : !a.installed && !a.local ? `<p class="st-note">${svg('info')}A instalação é feita na tela do Runtipi, que abre ${S.panelFrame === 'no' ? 'em nova aba' : 'numa janela'}. Quando terminar, o app aparece aqui como instalado.</p>` : '';
+  const st = storeOf(a.store);
+  const note = (a.installed && old ? `<p class="st-note">${svg('info')}Para parar, iniciar e desinstalar por aqui, o script do servidor precisa ser atualizado: abra as atualizações, ao lado do sino.</p>`
+    : !a.installed && !a.local ? `<p class="st-note">${svg('info')}A instalação é feita na tela do Runtipi, que abre ${S.panelFrame === 'no' ? 'em nova aba' : 'numa janela'}. Quando terminar, o app aparece aqui como instalado.</p>` : '')
+    + (st?.badge ? `<p class="st-note via">${svg('shield')}Convertido automaticamente da loja ${esc(st.name || st.slug)} pelo Garimpo do BrunOS. Receitas que dão poder demais sobre o servidor ficam de fora; se este app não funcionar, a receita original pode precisar de ajuste.</p>` : '');
   const fields = d?.fields?.length ? `<div class="card st-side"><h4>A instalação pergunta</h4>${d.fields.map((f) => `<div class="st-field"><b>${esc(f.label)}${f.required ? ' <i>obrigatório</i>' : ''}</b>${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="st-dwrap">
     <div class="st-dbar"><button class="pill-btn sm" data-st="back">${svg('chevR', 'flip')}Loja</button>
       <button class="pill-btn sm st-fav ${fav ? 'on' : ''}" data-st="fav" aria-pressed="${fav}">${svg('star')}${fav ? 'Nos favoritos' : 'Favoritar'}</button></div>
     <div class="st-hero">${logo(a, 'xl')}
       <div class="st-htxt"><h2>${esc(a.name)}</h2><p>${esc(a.shortDesc || '')}</p>
-        <div class="st-tags">${a.installed ? `<i class="st-tag ok">${svg('check')}Instalado${a.have ? ` · ${esc(a.have)}` : ''}</i>` : ''}${a.update ? `<i class="st-tag up">Nova versão: ${esc(a.version)}</i>` : ''}${a.categories.filter((c) => c !== 'featured').map((c) => `<i class="st-tag">${esc(catLabel(c))}</i>`).join('')}${a.deprecated ? '<i class="st-tag warn">Descontinuado</i>' : ''}</div></div>
+        <div class="st-tags">${via(a.store) ? `<i class="st-tag via">${esc(via(a.store))}</i>` : ''}${a.installed ? `<i class="st-tag ok">${svg('check')}Instalado${a.have ? ` · ${esc(a.have)}` : ''}</i>` : ''}${a.update ? `<i class="st-tag up">Nova versão: ${esc(a.version)}</i>` : ''}${a.categories.filter((c) => c !== 'featured').map((c) => `<i class="st-tag">${esc(catLabel(c))}</i>`).join('')}${a.deprecated ? '<i class="st-tag warn">Descontinuado</i>' : ''}</div></div>
       <div class="st-acts">${actionsHTML(a)}</div></div>
     ${note}
     <div class="st-cols">
       <article class="st-md">${d ? (d.description ? md(d.description) : `<p class="st-dim">${a.local ? 'Este app foi instalado fora das lojas (criado à mão, ou a loja dele foi removida).' : 'Este app não tem descrição na loja.'}</p>`) : '<div class="st-loading"><span class="upd-spin"></span>Carregando a descrição…</div>'}</article>
       <aside><div class="card st-side">${kv('Versão', esc(a.version || '—'))}${kv('Loja', esc(storeName(a.store) || '—'))}${kv('Autor', esc(a.author || ''))}${kv('Porta', a.port ? String(a.port) : '')}
         ${kv('Funciona em', esc((a.archs || []).join(', ')))}${kv('Na loja desde', date(a.created))}${kv('Atualizado', a.updated ? esc(timeAgo(a.updated)) : '')}
-        ${kv('Site', link(a.website, host(a.website)))}${kv('Código', link(a.source, host(a.source)))}</div>${fields}</aside>
+        ${kv('Site', link(a.website, host(a.website)))}${kv('Código', link(a.source, host(a.source)))}${st?.origin ? kv('Receita de', link(st.origin, host(st.origin))) : ''}</div>${fields}</aside>
     </div></div>`;
   box.scrollTop = keep;
 }
@@ -285,6 +312,10 @@ async function onClick(e) {
   if (tab) { S.tab = tab.dataset.tab; S.catKey = ''; drawTop(); drawCats(); drawList(); return; }
   const cat = e.target.closest('[data-cat]');
   if (cat) { S.catKey = cat.dataset.cat; drawCats(); drawList(); return; }
+  const store = e.target.closest('[data-store]');
+  if (store) { S.store = store.dataset.store; S.catKey = ''; drawTop(); drawCats(); drawList(); return; }
+  const sug = e.target.closest('[data-sug]');
+  if (sug) { addSuggested(sug.dataset.sug); return; }
   const act = e.target.closest('[data-st]');
   if (act) { runAction(act.dataset.st); return; }
   const item = e.target.closest('[data-urn]');
@@ -347,7 +378,7 @@ async function startStop(a, k) {
   act(a, k, stop ? `Parando ${a.name}…` : `Iniciando ${a.name}…`, `${a.name} ${stop ? 'parado' : 'iniciado'}`);
 }
 
-// Desinstalar apaga os dados do app: pede a Senha de formatação (a mesma de formatar discos), que o
+// Desinstalar apaga os dados do app: pede a Senha de configuração (a mesma de formatar discos), que o
 // servidor confere. O diálogo fica aberto enquanto desinstala e mostra o erro (senha errada, trava).
 // Antes de pedir a senha, confere no servidor se ela já foi criada e se não está bloqueada.
 async function uninstall(a) {
@@ -356,17 +387,17 @@ async function uninstall(a) {
   if (!S) return;
   if (!info.hasPassword) {
     const term = S.ctx.openTerminal;
-    const d = openDialog(`<h2>${svg('key')}Falta a Senha de formatação</h2>
-      <p>Desinstalar apaga os dados do app. Por isso o servidor pede a Senha de formatação: uma senha só para as ações que apagam dados (formatar discos e desinstalar apps), diferente da senha do BrunOS. Ela é criada uma vez, <b>direto no servidor</b>, para que ninguém que invada o BrunOS consiga criar uma.</p>
+    const d = openDialog(`<h2>${svg('key')}Falta a Senha de configuração</h2>
+      <p>Desinstalar apaga os dados do app. Por isso o servidor pede a Senha de configuração: uma senha só para as ações sensíveis do servidor (formatar discos e desinstalar apps), diferente da senha do BrunOS. Ela é criada uma vez, <b>direto no servidor</b>, para que ninguém que invada o BrunOS consiga criar uma.</p>
       <p class="st-dlg-gap">No Terminal, rode o comando abaixo (o sudo pede a senha do seu usuário do servidor), escolha a senha e depois volte aqui:</p>
-      <pre class="pw-cmds">sudo brunos-host senha-formatar</pre>
+      <pre class="pw-cmds">sudo brunos-host senha-config</pre>
       <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button>${term ? `<button class="pill-btn primary" data-c="term">${svg('terminal')}Abrir no Terminal</button>` : ''}</div>`, { closeBtn: false, width: 500 });
     $('[data-c="close"]', d.el).addEventListener('click', () => d.close());
-    $('[data-c="term"]', d.el)?.addEventListener('click', () => { d.close(); term({ typeCmd: 'sudo brunos-host senha-formatar' }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); });
+    $('[data-c="term"]', d.el)?.addEventListener('click', () => { d.close(); term({ typeCmd: 'sudo brunos-host senha-config' }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); });
     return;
   }
   if (info.lockedUntil > Date.now() / 1000) {
-    const d = openDialog(`<h2>${svg('lock')}Desinstalar está bloqueado</h2><p>A Senha de formatação foi digitada errada 5 vezes. Por segurança, formatar e desinstalar voltam a funcionar às ${esc(new Date(info.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}.</p>
+    const d = openDialog(`<h2>${svg('lock')}Desinstalar está bloqueado</h2><p>A Senha de configuração foi digitada errada 5 vezes. Por segurança, formatar e desinstalar voltam a funcionar às ${esc(new Date(info.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}.</p>
       <div class="dlg-actions"><button class="pill-btn primary" data-c="close">Entendi</button></div>`, { closeBtn: false, width: 440 });
     $('[data-c="close"]', d.el).addEventListener('click', () => d.close());
     return;
@@ -378,7 +409,7 @@ function uninstallDialog(a) {
   const d = openDialog(`<h2>Desinstalar ${esc(a.name)}?</h2>
     <p>O Runtipi remove o app <b>e apaga os dados dele</b> (configurações, contas, banco de dados e o que estiver guardado na pasta do app). Não dá para desfazer. O que fica em outras pastas do servidor, como fotos e filmes em outros discos, continua lá.</p>
     <p class="st-dlg-gap">Se quiser guardar os dados, faça antes um backup pela página do app no Runtipi.</p>
-    <form class="form-grid st-dlg-gap"><label>Senha de formatação (a mesma de formatar discos: protege o que apaga dados)<input class="text-input st-wide" type="password" autocomplete="off" maxlength="200" autofocus></label>
+    <form class="form-grid st-dlg-gap"><label>Senha de configuração (a mesma de formatar discos: protege as ações sensíveis do servidor)<input class="text-input st-wide" type="password" autocomplete="off" maxlength="200" autofocus></label>
       <p class="st-err" hidden></p>
       <div class="dlg-actions"><span class="st-busy" hidden><span class="upd-spin"></span>Desinstalando… pode levar um minuto.</span><button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn danger-solid" disabled>Desinstalar</button></div></form>`,
   { closeBtn: false, width: 460, backdropClose: false, beforeClose: () => !running });
@@ -400,7 +431,8 @@ function uninstallDialog(a) {
     } catch (ex) {
       if (!done) {
         const m = ex.message || String(ex);
-        err.textContent = /ainda não existe Senha de formatação/.test(m) ? 'Ainda não existe Senha de formatação. Crie uma vez no Terminal do servidor com: sudo brunos-host senha-formatar' : m;
+        // o script do servidor antigo (até a versão 12) ainda chamava de Senha de formatação
+        err.textContent = /ainda não existe Senha de (configuração|formatação)/.test(m) ? 'Ainda não existe Senha de configuração. Crie uma vez no Terminal do servidor com: sudo brunos-host senha-config' : m;
         err.hidden = false;
       }
     }
@@ -411,6 +443,24 @@ function uninstallDialog(a) {
 }
 
 /* ── Lojas ─────────────────────────────────────────────────────── */
+// Adiciona uma loja sugerida (as do Garimpo) com um clique, depois de explicar o que ela é.
+async function addSuggested(slug, dlgDraw) {
+  const g = (S?.suggested || []).find((x) => x.slug === slug);
+  if (!g || S.busy) return;
+  if (!(await confirmDialog(`Adicionar a loja ${g.name}?`, `${g.about} A conversão é feita pelo Garimpo, do BrunOS, e não é oficial. Endereço: ${g.url.replace(/^https:\/\//, '')}`, 'Adicionar'))) return;
+  if (!S || S.busy) return;
+  S.busy = '@stores'; draw(); dlgDraw?.();
+  toast(`Adicionando ${g.name}…`, 'O Runtipi baixa a loja; pode levar um minuto.');
+  try {
+    const r = await api.store.stores('add', g.slug, g.url);
+    if (!S) return;
+    S.cat = r.catalog; S.suggested = r.suggested || []; S.loadedAt = Date.now();
+    toast(`Loja ${g.name} adicionada`, `${S.cat.stores.find((s) => s.slug === g.slug)?.apps ?? 0} apps novos na Loja.`);
+  } catch (err) { toastError(err, `Não deu para adicionar ${g.name}`); }
+  if (!S) return;
+  S.busy = ''; draw(); dlgDraw?.();
+}
+
 async function refreshStores(dlgDraw) {
   if (!S || S.busy) return;
   S.busy = '@stores'; dlgDraw?.();
@@ -434,8 +484,10 @@ function storesDialog() {
     const busy = !!S.busy, keep = { name: $('[name="name"]', box)?.value || '', url: $('[name="url"]', box)?.value || '' };
     box.innerHTML = `<h2>Lojas</h2>
       <p>As lojas são repositórios com as receitas dos apps. A oficial do Runtipi já vem pronta; aqui você adiciona outras, suas ou de outras pessoas.</p>
-      <div class="st-slist">${S.cat.stores.map((s) => `<div class="st-srow"><span class="mini sys">${svg('bag')}</span><span class="st-stxt"><b>${esc(storeName(s.slug))}${official(s) ? ' <i class="st-tag">oficial</i>' : ''}</b><small>${s.url ? esc(s.url.replace(/^https?:\/\//, '')) : 'endereço não informado'} · ${s.apps} ${s.apps === 1 ? 'app' : 'apps'}</small></span>
+      <div class="st-slist">${S.cat.stores.map((s) => `<div class="st-srow"><span class="mini sys">${svg('bag')}</span><span class="st-stxt"><b>${esc(storeName(s.slug))}${official(s) ? ' <i class="st-tag">oficial</i>' : s.badge ? ' <i class="st-tag via">Garimpo</i>' : ''}</b><small>${s.url ? esc(s.url.replace(/^https?:\/\//, '')) : 'endereço não informado'} · ${s.apps} ${s.apps === 1 ? 'app' : 'apps'}${s.license ? ` · licença ${esc(s.license)}` : ''}</small></span>
         ${official(s) ? '' : `<button class="pill-btn sm danger" data-rm="${esc(s.slug)}" ${busy ? 'disabled' : ''}>Remover</button>`}</div>`).join('') || '<div class="empty-note">Nenhuma loja encontrada.</div>'}</div>
+      ${S.suggested?.length ? `<h4 class="st-sh">Sugeridas</h4><div class="st-slist">${S.suggested.map((g) => `<div class="st-srow"><span class="mini sys">${svg('plus')}</span><span class="st-stxt"><b>${esc(g.name)} <i class="st-tag via">Garimpo</i></b><small>${esc(g.about)}</small></span>
+        <button class="pill-btn sm primary" data-sug="${esc(g.slug)}" ${busy ? 'disabled' : ''}>Adicionar</button></div>`).join('')}</div>` : ''}
       <form class="form-grid st-add"><h4>Adicionar loja</h4>
         <label>Nome (letras minúsculas, números e traço)<input class="text-input st-wide" name="name" placeholder="minha-loja" maxlength="32" autocomplete="off" value="${esc(keep.name)}"></label>
         <label>Endereço do repositório<input class="text-input st-wide" name="url" placeholder="https://github.com/usuario/loja" maxlength="200" autocomplete="off" inputmode="url" value="${esc(keep.url)}"></label>
@@ -448,7 +500,7 @@ function storesDialog() {
     try {
       const r = await api.store.stores(action, name, url);
       if (!S) return;
-      S.cat = r.catalog; S.loadedAt = Date.now();
+      S.cat = r.catalog; S.suggested = r.suggested || S.suggested; S.loadedAt = Date.now();
       toast(okMsg);
       if (action === 'add') { $('[name="name"]', box).value = ''; $('[name="url"]', box).value = ''; }
     } catch (e) { err = e.message || String(e); }
@@ -461,6 +513,7 @@ function storesDialog() {
       const name = rm.dataset.rm;
       if (await confirmDialog(`Remover a loja ${name}?`, 'Os apps dela saem da Loja. Apps já instalados precisam ser desinstalados antes.', 'Remover', { danger: true })) run('remove', name, '', `Loja ${name} removida`);
     } else if (e.target.closest('[data-refresh]')) refreshStores(paint);
+    else if (e.target.closest('[data-sug]')) addSuggested(e.target.closest('[data-sug]').dataset.sug, paint);
   });
   box.addEventListener('submit', (e) => {
     e.preventDefault();

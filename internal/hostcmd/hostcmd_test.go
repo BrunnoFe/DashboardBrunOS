@@ -235,6 +235,8 @@ func TestHostScriptRefuses(t *testing.T) {
 		"rotulo abcd", "rotulo abcd nome;reboot", "rotulo abcd nome-comprido-demais-xx", "formatar", "formatar sda S1 ext4",
 		"formatar sda1 S1 ext4 X", "formatar sda S1 fat32 X", "formatar sda S;1 ext4 X", "formatar sda S1 exfat NOMEMUITOLONGO",
 		"formatar-executar sda S1 ext4 X", "discos-estado x", "senha-formatar", "esquecer-senha-formatar",
+		// script 13 (Senha de configuração: nome novo do comando)
+		"senha-config", "esquecer-senha-config", "senha-config x",
 		// script 12 (janela Loja)
 		"iniciar-app", "iniciar-app immich", "iniciar-app immich:migrated x", "iniciar-app ../x:y", "iniciar-app Immich:migrated",
 		"parar-app immich:migrated;reboot", "parar-app $(id):x", "desinstalar-app", "desinstalar-app a:b:c", "desinstalar-app -x:y",
@@ -261,11 +263,13 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("pedido %q deveria passar da conferência, veio %d: %s", ok, code, out)
 		}
 	}
-	// a Senha de formatação nunca pela chave do BrunOS (a mensagem explica o caminho certo)
-	if out, _ := run("senha-formatar"); !strings.Contains(out, "Terminal do servidor") {
-		t.Errorf("senha-formatar pelo SSH: %s", out)
+	// a Senha de configuração nunca pela chave do BrunOS (a mensagem explica o caminho certo)
+	for _, c := range []string{"senha-config", "senha-formatar"} {
+		if out, _ := run(c); !strings.Contains(out, "Terminal do servidor") || !strings.Contains(out, "Senha de configuração") {
+			t.Errorf("%s pelo SSH: %s", c, out)
+		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 12") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 13") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa

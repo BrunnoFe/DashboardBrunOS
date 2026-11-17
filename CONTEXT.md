@@ -143,6 +143,13 @@ Repositório com as receitas dos apps que o Runtipi sabe instalar. Há a oficial
 adiciona; a Loja do BrunOS mostra todas juntas.
 _Evite_: repositório (sozinho), catálogo, fonte
 
+**Garimpo**:
+O conversor que transforma lojas de outros sistemas (CasaOS/ZimaOS) em Lojas do Runtipi, no repositório
+`BrunnoFe/Garimpo`, rodando no GitHub Actions. Cada loja de origem vira uma Loja do Runtipi com o nome da
+origem ("CasaOS", "LinuxServer"), chamada de **Loja convertida**. Os apps dela levam o **Selo** da
+origem ("via CasaOS").
+_Evite_: apps convertidos (o Bruno achou "coisa de igreja"), loja Garimpo (o Garimpo é a oficina, não a loja)
+
 ## Dados
 
 **Fonte**:
@@ -199,10 +206,12 @@ _Evite_: ponto de montagem, mount, caminho
 Apagar um Disco inteiro e deixá-lo com uma única partição vazia (ext4, Btrfs, NTFS ou exFAT).
 _Evite_: limpar, zerar, inicializar
 
-**Senha de formatação**:
-Senha própria, criada uma vez pelo Terminal com sudo, que o servidor confere antes das ações que apagam
-dados: Formatar um disco e desinstalar um app pela Loja. Diferente da senha do BrunOS.
-_Evite_: senha de admin, senha do sudo, PIN
+**Senha de configuração**:
+A segunda credencial do BrunOS, criada uma vez pelo Terminal com sudo (`sudo brunos-host senha-config`),
+que o servidor confere antes das ações sensíveis do servidor: Formatar um disco e desinstalar um app pela
+Loja. Diferente da senha do BrunOS. Até a 0.18.0 se chamava Senha de formatação (o comando antigo
+`senha-formatar` continua funcionando).
+_Evite_: senha de formatação (nome antigo), senha de admin, senha do sudo, PIN
 
 ## Energia
 

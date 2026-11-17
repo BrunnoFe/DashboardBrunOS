@@ -158,10 +158,14 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `Invalidate()` zera os dois. Nada de seguir symlink dentro de `repos/` (`Lstat`), tamanhos limitados
   (config 256 KiB, descrição 64 KiB, logo 2 MiB), `available: false` e `deprecated` só aparecem se
   instalados. `CatalogDetail(urn)` traz o `description.md` e os campos do formulário (menos os `random`).
-  Rotas: `GET /api/store` (`{catalog, script: {have, want}, self, panelFrame}`; `panelFrame` é o
-  veredito do `framecheck` para o painel do Runtipi), `GET /api/store/app?urn=`,
+  Loja que é um ramo (`.git/HEAD` com ramo diferente de main/master) ganha `/tree/<ramo>` no endereço;
+  o `garimpo.json` na raiz de uma Loja convertida (0.19.0, decisão 60) dá `name`, `badge` (selo),
+  `origin`, `license` e `about` da loja (textos cortados, endereço só http/https).
+  Rotas: `GET /api/store` (`{catalog, script: {have, want}, self, panelFrame, suggested}`; `panelFrame` é o
+  veredito do `framecheck` para o painel do Runtipi; `suggested` são as lojas do Garimpo ainda não
+  adicionadas, lista fixa em `store.go`), `GET /api/store/app?urn=`,
   `GET /api/store/logo?urn=`, `POST /api/store/app {urn, action: start|stop|uninstall, password}` (`password` = Senha de
-  formatação, só no `uninstall`: vai pela entrada padrão do script, que confere; o BrunOS não grava) e
+  configuração, só no `uninstall`: vai pela entrada padrão do script, que confere; o BrunOS não grava) e
   `POST /api/store/stores {action: add|remove|refresh, name, url}`. As ações vão pelo script do servidor
   (`hostcmd.StoreActAllowed`, um pedido por vez, até 5 min) e devolvem o catálogo novo; `refresh` é o
   mesmo "Conferir apps" das atualizações. O próprio BrunOS (`brunos`) não pode ser parado nem
