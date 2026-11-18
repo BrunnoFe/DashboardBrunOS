@@ -1,11 +1,20 @@
 // Gerenciador de arquivos do BrunOS (janela "Arquivos").
-import { api } from './api.js';
+import { api as apiAll } from './api.js';
 import {
   $, $$, esc, html, clamp, fmtBytes, timeAgo, debounce, svg, folderSVG, fileSVG, extKind, KIND_LABEL,
-  toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
+  toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog as uiConfirm, promptDialog as uiPrompt,
 } from './ui.js';
 
-let F = null;                 // estado da janela aberta
+// Várias janelas do Arquivos (0.23.1): cada janela tem o próprio estado; F aponta para o da janela em uso.
+// Tocar numa janela torna o estado dela o atual, e tudo o que espera o servidor ou uma resposta (diálogos)
+// volta para o estado de quem pediu antes de continuar. Antes, a segunda janela tomava o lugar da primeira.
+let F = null;                 // estado da janela em uso
+const insts = new Set();      // estados das janelas abertas
+const hold = (p) => { const f = F; return Promise.resolve(p).finally(() => { if (f) F = f; }); };
+const api = { ...apiAll, files: new Proxy(apiAll.files, { get: (t, k) => (typeof t[k] === 'function' ? (...a) => { const r = t[k](...a); return r?.then ? hold(r) : r; } : t[k]) }) };
+const confirmDialog = (...a) => hold(uiConfirm(...a));
+const promptDialog = (...a) => hold(uiPrompt(...a));
+const fetch = (...a) => hold(globalThis.fetch(...a));
 let clipboard = null;         // { mode: 'copy'|'cut', root, paths: [] }
 const uploads = [];           // fila de envios (sobrevive a fechar a janela)
 
@@ -15,11 +24,16 @@ const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const baseOf = (p) => p.split('/').pop();
 
 export function mountFiles(body, opts = {}) {
-  F = {
+  const f = F = {
     body, ctx: opts.ctx, root: null, path: '', entries: [], view: opts.ctx?.settings?.filesView || 'list',
     sort: { key: 'name', dir: 1 }, sel: new Set(), anchor: null, hist: [], fwd: [], showHidden: !!opts.ctx?.settings?.filesHidden,
     mode: 'browse', search: null, trash: [], loading: false,
+    openTab: opts.openTab || null, onTitle: opts.onTitle || null, // guias (0.23.1): filetabs.js
   };
+  if (opts.hist) { f.hist = opts.hist; f.fwd = opts.fwd || []; } // guia reaberta: histórico guardado
+  insts.add(f);
+  // qualquer toque, tecla ou arrasto nesta janela: o estado dela vira o atual (antes de qualquer outro tratamento)
+  for (const ev of ['pointerdown', 'focusin', 'keydown', 'dragenter', 'dragover', 'drop', 'contextmenu', 'click']) body.addEventListener(ev, () => { F = f; }, true);
   body.innerHTML = `<div class="files">
     <aside class="f-side"><h2 class="sheet-title">Arquivos</h2><div class="f-side-list"></div></aside>
     <div class="f-main">
@@ -48,10 +62,15 @@ export function mountFiles(body, opts = {}) {
     else if (roots.length) await go(roots[0].id, '', false);
     else { drawSide(); $('.f-content', body).innerHTML = `<div class="empty-note big">${svg('folder')}<b>Nenhuma pasta disponível</b>Monte pastas em <code>/files</code> no docker-compose (ex.: <code>/home:/files/home</code>).</div>`; }
   })();
-  return () => { document.removeEventListener('keydown', onKey, true); document.removeEventListener('paste', onPaste); F = null; };
+  return () => {
+    insts.delete(f);
+    if (!insts.size) { document.removeEventListener('keydown', onKeyAny, true); document.removeEventListener('paste', onPasteAny); }
+    if (F === f) F = [...insts].at(-1) || null;
+  };
 }
 
-export function navigate(opts) { if (F && opts.root) go(opts.root, opts.path || ''); }
+// Abrir pasta pedida de fora (Ctrl+K, widget, Discos): na janela principal do Arquivos (a primeira aberta).
+export function navigate(opts) { const f = [...insts][0]; if (f && opts.root) { F = f; go(opts.root, opts.path || ''); } }
 
 const rootById = (id) => F.ctx.roots.find((r) => r.id === id);
 const rootRO = () => !!rootById(F.root)?.readOnly;
@@ -200,9 +219,16 @@ function iconFor(e, big = false) {
   if (big && THUMB_EXT.test(e.name) && e.size < 20e6 && !api.demo) return `<span class="thumb"><img src="${esc(api.files.rawUrl(F.root, pathOf(e)))}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('err')"></span>`;
   return fileSVG(e.name, big ? 'file-ico big' : 'file-ico');
 }
+// título da guia: a pasta aberta (ou Lixeira, Busca, o nome do local na raiz)
+function tabTitle() {
+  if (F.mode === 'trash') return 'Lixeira';
+  if (F.mode === 'search' && F.search) return `Busca: ${F.search.q}`;
+  return F.path ? baseOf(F.path) : rootById(F.root)?.name || 'Arquivos';
+}
 function draw() {
   if (!F) return;
   drawSide(); drawToolbar();
+  F.onTitle?.(tabTitle(), { root: F.root, path: F.path, mode: F.mode, hist: F.hist, fwd: F.fwd });
   const box = $('.f-content', F.body);
   if (F.loading && !F.entries.length) { box.innerHTML = '<div class="f-loading"><i></i><i></i><i></i></div>'; return; }
   if (F.mode === 'trash') return drawTrash(box);
@@ -405,6 +431,7 @@ function itemMenu(e, x, y) {
   const isFav = one?.dir && (F.ctx.favorites || []).some((f) => f.root === F.root && f.path === pathOf(one));
   contextMenu(x, y, [
     { icon: one?.dir ? 'folder' : 'eye', label: one?.dir ? 'Abrir' : 'Visualizar', hidden: !one, run: () => openEntry(one), kbd: 'Enter' },
+    { icon: 'plus', label: 'Abrir em nova guia', hidden: !(one?.dir && F.openTab), run: () => F.openTab(F.root, pathOf(one)), kbd: 'Clique do meio' },
     { icon: 'edit', label: ro ? 'Abrir no editor (só leitura)' : 'Editar', hidden: !canEdit(one), run: () => editFile(pathOf(one), one.name) },
     { icon: 'unzip', label: 'Extrair aqui', hidden: !(one && !one.dir && ARCHIVE.test(one.name)) || ro, run: () => extractArchive(one) },
     { icon: 'folder', label: 'Mostrar na pasta', hidden: !(one && F.mode === 'search'), run: () => go(F.root, parentOf(one.path)).then(() => { F.sel = new Set([one.name]); draw(); }) },
@@ -565,6 +592,14 @@ function onPaste(e) {
   const files = [...(e.clipboardData?.files || [])];
   if (files.length && !rootRO() && F.mode === 'browse') { e.preventDefault(); enqueue(files.map((f) => ({ file: f, rel: f.name || `colado-${Date.now()}.png` })), F.root, F.path); }
 }
+// Atalhos só quando a tecla vem de uma janela do Arquivos (com várias janelas abertas, uma tecla no
+// Terminal ou em outra janela não pode virar atalho daqui); diálogos abertos pelo Arquivos continuam.
+const instOf = (e) => [...insts].find((f) => f.body.contains(e.target));
+function onKeyAny(e) {
+  const f = instOf(e);
+  if (f) { F = f; onKey(e); } else if (dialogs.length) onKey(e);
+}
+function onPasteAny(e) { const f = instOf(e); if (f) { F = f; onPaste(e); } }
 function onKey(e) {
   if (!F || menuOpen()) return;
   if (dialogs.length) { const top = $$('.dialog').pop(); top?._keys?.(e); return; }
@@ -593,10 +628,10 @@ function onKey(e) {
   }
 }
 function wire() {
-  const body = F.body;
-  document.addEventListener('keydown', onKey, true);
-  document.addEventListener('paste', onPaste);
-  $('[data-f="q"]', body).addEventListener('input', debounce((e) => runSearch(e.target.value), 350));
+  const body = F.body, f = F;
+  document.addEventListener('keydown', onKeyAny, true); // a mesma função: o navegador não registra duas vezes
+  document.addEventListener('paste', onPasteAny);
+  $('[data-f="q"]', body).addEventListener('input', debounce((e) => { F = f; runSearch(e.target.value); }, 350));
   body.addEventListener('click', async (e) => {
     const t = e.target;
     let el;
@@ -638,6 +673,17 @@ function wire() {
     else if ((el = t.closest('[data-key]'))) selectClick(el.dataset.key, e);
     else if (t.closest('.f-scroll') && !t.closest('button')) { F.sel.clear(); draw(); }
   });
+  // clique do meio (rodinha) numa pasta, disco ou favorito: abre em guia nova
+  body.addEventListener('auxclick', (e) => {
+    if (e.button !== 1 || !F.openTab) return;
+    const row = e.target.closest('[data-key]'), side = e.target.closest('[data-root],[data-fav]');
+    if (row) {
+      const ent = visibleEntries().find((x) => keyOf(x) === row.dataset.key);
+      if (ent?.dir) { e.preventDefault(); F.openTab(F.root, pathOf(ent)); }
+    } else if (side?.dataset.root) { e.preventDefault(); F.openTab(side.dataset.root, ''); }
+    else if (side?.dataset.fav) { const fv = (F.ctx.favorites || [])[+side.dataset.fav]; if (fv) { e.preventDefault(); F.openTab(fv.root, fv.path); } }
+  });
+  body.addEventListener('mousedown', (e) => { if (e.button === 1 && e.target.closest('[data-key],[data-root],[data-fav]')) e.preventDefault(); }); // sem rolagem automática
   body.addEventListener('dblclick', (e) => {
     const el = e.target.closest('[data-key]'); if (!el) return;
     const ent = visibleEntries().find((x) => keyOf(x) === el.dataset.key);

@@ -1745,6 +1745,31 @@ body.has-sheet #sheet-host { z-index: 36; }
 .win-body.sys-body { display: flex; overflow: hidden; }
 .win-body.sys-body > * { flex: 1; min-width: 0; min-height: 0; }
 .win-body.sys-body > .sheet-loading { flex: 1; }
+/* guias do Arquivos (0.23.1), como num navegador */
+.ftabs { display: flex; flex-direction: column; min-height: 0; }
+.ftabs-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 0 10px 6px; }
+.ftabs-list { flex: 0 1 auto; display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ftabs-list > .ftab { width: 190px; }
+.ftabs-list::-webkit-scrollbar { display: none; }
+.ftab { flex: 0 1 190px; min-width: 96px; height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 4px 0 11px; border-radius: 10px;
+  background: rgba(255,255,255,.04); font-size: 12.5px; font-weight: 600; opacity: .7; cursor: default; user-select: none; touch-action: none; transition: background .15s, opacity .15s; }
+.ftab:hover { opacity: 1; background: rgba(255,255,255,.07); }
+.ftab.on { opacity: 1; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.ftab:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.ftab.dragging { opacity: .85; }
+.ftab.out { outline: 2px dashed var(--brand); outline-offset: 2px; opacity: .6; }
+.ftab-ico { flex: none; display: grid; font-size: 13px; opacity: .8; }
+.ftab-txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftab-x { flex: none; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 11px; opacity: .55; }
+.ftab-x:hover { opacity: 1; background: rgba(255,255,255,.12); }
+.ftabs-add { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; opacity: .7; }
+.ftabs-add:hover { opacity: 1; background: rgba(255,255,255,.08); }
+.ftabs-add:disabled { opacity: .25; }
+.ftabs-pages { flex: 1; min-height: 0; position: relative; display: flex; }
+.ftab-page { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.ftab-page[hidden] { display: none; }
+.ftab-page > .files { flex: 1; min-width: 0; }
+@media (pointer: coarse) { .ftab { height: 38px; } .ftab-x { width: 28px; height: 28px; } .ftabs-add { width: 38px; height: 38px; } }
 .win-body.term-host { display: flex; flex-direction: column; }
 .win-body.term-host > .term-win { flex: 1; height: 100%; }
 .win-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }

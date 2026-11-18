@@ -304,6 +304,17 @@ janelas do sistema. `openSheet` agora abre `sys:<tipo>` no `windows.js` (a folha
 acabou); o `terminal.js` monta dentro do corpo da janela (`ctx.host`) e devolve a limpeza, que só desliga a
 tela. Etapa 12 (0.17.0 Janelas de app + 0.23.0) entregue; o plano dela foi apagado.
 
+## 0.23.1 (17/11): guias no Arquivos e conserto das duas janelas
+Bug (gif do Bruno): a segunda janela do Arquivos tomava o lugar da primeira (o `files.js` tinha um estado
+global só). Agora cada janela/guia tem o próprio estado; tocar numa janela torna o dela o atual, e toda
+espera pelo servidor ou por um diálogo volta para o estado de quem pediu (`hold`, no `files.js`); os
+atalhos só valem com o foco dentro do Arquivos. Pedido do Bruno: guias como num navegador, destacáveis
+sem perder o que está aberto. `filetabs.js`: barra de guias ("+", clique do meio numa pasta, disco ou
+favorito, "Abrir em nova guia" no menu, Alt+T/Alt+W/Alt+1…9, porque o Chrome não deixa sites usarem
+Ctrl+T/W/Tab), reordenar arrastando, destacar arrastando para fora ou "Mover para nova janela" (a página
+inteira muda de janela, sem recarregar: pasta, voltar/avançar e seleção continuam), guias da janela
+principal lembradas neste aparelho; pasta pedida de fora (Ctrl+K, widget) abre em guia nova.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

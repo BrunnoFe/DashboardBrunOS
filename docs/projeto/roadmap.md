@@ -26,7 +26,8 @@ Termos em `CONTEXT.md` (seção Janelas); porquê na decisão 58. Etapa entregue
 | Versão | O que | Status |
 |---|---|---|
 | 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado e testado no servidor |
-| 0.23.0 | Janelas do sistema no mesmo gerenciador (combinado em 17/11/2026): Arquivos, Discos, Widgets, Configurações e Terminal viram janelas (minimizar, dock, tela cheia no celular), seguindo o "Estilo das janelas" (Folha ou Flutuante); Terminal com o minimizar comum (as Abas seguem no servidor); Arquivos pode abrir uma segunda janela; o limite de apps abertos não conta as janelas do sistema | feito e lançado em 17/11; aguardando teste |
+| 0.23.0 | Janelas do sistema no mesmo gerenciador (combinado em 17/11/2026): Arquivos, Discos, Widgets, Configurações e Terminal viram janelas (minimizar, dock, tela cheia no celular), seguindo o "Estilo das janelas" (Folha ou Flutuante); Terminal com o minimizar comum (as Abas seguem no servidor); Arquivos pode abrir uma segunda janela; o limite de apps abertos não conta as janelas do sistema | feito e lançado em 17/11; testado (o retorno virou a 0.23.1) |
+| 0.23.1 | Conserto das duas janelas do Arquivos (uma comandava a outra) e **guias no Arquivos**: nova guia, clique do meio, Alt+T/W/1…9, reordenar, destacar para janela própria sem recarregar, guias lembradas | feito e lançado em 17/11; aguardando teste |
 
 ## Etapa 13 (0.18.0 → 0.20.0), combinada em 16/11/2026: Loja
 

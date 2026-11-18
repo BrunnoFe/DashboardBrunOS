@@ -1512,25 +1512,26 @@ const SYS_TITLE = { files: 'Arquivos', widgets: 'Widgets', disks: 'Discos', sett
 const sysIcon = (kind) => { const s = SYS[kind]; return s ? `<span class="win-app-ico" style="--tile:${s.tile}">${svg(s.glyph)}</span>` : ''; };
 export function openSheet(kind, originEl, opts = {}) {
   let id = `sys:${kind}`;
-  if (opts.another && kind === 'files') { id = wins.has(id) ? 'sys:files:2' : id; if (wins.has(id)) { wins.dockClick(id); return; } }
-  if (wins.has(id)) { // já aberta: traz para a frente e repassa o pedido (abrir pasta, disco, widget)
+  // Arquivos (0.23.1): guias como num navegador; uma guia destacada (opts.adopt) abre numa janela nova
+  if (kind === 'files' && opts.adopt) { let n = 2; while (wins.has(`sys:files:${n}`)) n++; id = `sys:files:${n}`; }
+  else if (wins.has(id)) { // já aberta: traz para a frente e repassa o pedido (abrir pasta, disco, widget)
     wins.restore(id); wins.focus(id);
-    if (kind === 'files' && (opts.root || opts.search)) import('./files.js').then((m) => m.navigate(opts));
+    if (kind === 'files' && (opts.root || opts.search)) import('./filetabs.js').then((m) => m.openInMain(opts));
     if (kind === 'widgets') import('./widgetsapp.js').then((m) => m.focusWidgets(opts));
     if (kind === 'disks') import('./disksapp.js').then((m) => m.focusDisk(opts));
     return;
   }
-  const title = SYS_TITLE[kind] + (id.endsWith(':2') ? ' (2)' : '');
-  const tools = kind === 'files' && !id.endsWith(':2') ? [{ icon: 'plus', label: 'Abrir outra janela do Arquivos', run: () => openSheet('files', null, { another: true }) }] : [];
+  const title = SYS_TITLE[kind] + (id.startsWith('sys:files:') ? ` (${id.split(':')[2]})` : '');
   wins.open({
-    id, title, icon: sysIcon(kind), originEl, tools,
+    id, title, icon: sysIcon(kind), originEl,
     mount(body) {
       body.classList.add('sys-body', `sys-${kind}`);
       let cleanup = null, gone = false;
       const keep = (fn) => { if (gone) fn?.(); else cleanup = fn; };
       if (kind === 'settings') { renderSettings(body); return () => { gone = true; pickClose?.(); }; }
       body.innerHTML = '<div class="sheet-loading"></div>';
-      const load = { files: () => import('./files.js').then((m) => keep(m.mountFiles(body, { ...opts, ctx: filesCtx }))),
+      const load = { files: () => import('./filetabs.js').then((m) => keep(m.mountTabs(body, { ctx: filesCtx, opts, adopt: opts.adopt, persist: id === 'sys:files',
+          closeWin: () => wins.close(id), detach: (tab) => openSheet('files', null, { adopt: tab }) }))),
         widgets: () => import('./widgetsapp.js').then((m) => keep(m.mountWidgets(body, { ...opts, ctx: widgetsCtx }))),
         disks: () => import('./disksapp.js').then((m) => keep(m.mountDisks(body, { ...opts, ctx: disksCtx }))) }[kind];
       load?.().catch((e) => toastError(e, `Não deu para abrir ${SYS_TITLE[kind]}`));
