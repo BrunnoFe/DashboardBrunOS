@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -69,7 +70,13 @@ func (h *mgrHost) actIn(ctx context.Context, cmd string, in []byte) ([]byte, err
 func (h *mgrHost) set(f func(*mgrHost)) { h.mu.Lock(); f(h); h.mu.Unlock() }
 
 func newMgr(t *testing.T) (*Monitor, *mgrHost, *events.Store) {
-	dir := t.TempDir()
+	// pasta própria em vez de t.TempDir: a linha do tempo é gravada em segundo plano e às vezes termina
+	// depois do teste; o t.TempDir falhava o teste ao apagar a pasta ("directory not empty", no CI)
+	dir, err := os.MkdirTemp("", "disks-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { time.Sleep(50 * time.Millisecond); _ = os.RemoveAll(dir) })
 	ev := events.New(filepath.Join(dir, "events.json"))
 	h := &mgrHost{}
 	m := New(filepath.Join(dir, "disk-events.json"), h.query, h.act, ev)
@@ -196,11 +203,17 @@ func TestFormat(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(30 * time.Millisecond)
-	list, _ := ev.List()
+	// o aviso sai logo depois do fim: espera até 2 s por ele (com 30 ms fixos, o CI às vezes não via)
+	var list []events.Event
 	found := false
-	for _, e := range list {
-		found = found || (e.Kind == "disk-formatted" && strings.Contains(e.Title, "Novo"))
+	for i := 0; i < 200 && !found; i++ {
+		list, _ = ev.List()
+		for _, e := range list {
+			found = found || (e.Kind == "disk-formatted" && strings.Contains(e.Title, "Novo"))
+		}
+		if !found {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 	if !found {
 		t.Fatalf("sem aviso de disco formatado: %+v", list)
