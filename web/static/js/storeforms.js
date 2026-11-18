@@ -11,6 +11,7 @@ import { $, esc, svg, toast, openDialog } from './ui.js';
 const DESTINOS = ['/media', '/movies', '/tv', '/music', '/photos', '/books', '/downloads', '/data', '/config', '/backups'];
 const MEMORIA = [[0, 'Sem limite (recomendado)'], [256, '256 MB'], [512, '512 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB'], [8192, '8 GB'], [16384, '16 GB']];
 const NUCLEOS = [[0, 'Sem limite (recomendado)'], [0.5, 'Meio núcleo'], [1, '1 núcleo'], [2, '2 núcleos'], [3, '3 núcleos'], [4, '4 núcleos'], [6, '6 núcleos'], [8, '8 núcleos']];
+const SHM = [[0, 'Como o app vem'], [256, '256 MB'], [512, '512 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']];
 const REINICIO = [['', 'Como o app vem (recomendado)'], ['unless-stopped', 'Sempre, menos quando eu parar'], ['always', 'Sempre'], ['on-failure', 'Só quando der erro'], ['no', 'Nunca']];
 const PRONTAS = [
   { label: 'Fuso horário de Brasília', vars: [['TZ', 'America/Sao_Paulo']] },
@@ -101,7 +102,10 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     env: [...rec.env.map((v) => ({ key: v.key, value: userEnv.has(v.key) ? userEnv.get(v.key) : v.value, rec: v.value })),
       ...st0.env.filter((v) => !recEnv.has(v.key)).map((v) => ({ key: v.key, value: v.value, rec: null }))],
     memoryMB: st0.memoryMB || 0, cpus: st0.cpus || 0, gpu: !!st0.gpu, tag: manualImage ? '' : imageTag(st0.image), restart: st0.restart || '',
+    shm: st0.shmMB || 0,
   };
+  // app de área de trabalho pelo navegador (Brave, Firefox...) sem memória compartilhada na receita: trava
+  const needShm = rec.desktop && !rec.shmMB && !st0.shmMB;
 
   /* respostas da instalação */
   const val = (f) => (cur ? cur.values?.[f.env] : undefined) ?? (edit ? '' : f.default ?? '');
@@ -170,6 +174,7 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     M.gpu = $('[data-sw="gpu"]', ajBox).classList.contains('on');
     M.tag = $('[name="tag"]', ajBox)?.value.trim() || '';
     M.restart = $('[name="restart"]', ajBox).value;
+    M.shm = Number($('[name="shm"]', ajBox)?.value) || 0;
   };
   const drawAj = () => {
     if (!ajBox) return;
@@ -199,6 +204,8 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
       <div class="sf-grid2">${field('Versão da imagem', manualImage ? `<input class="text-input" value="${esc(st0.image)}" disabled>` : `<input class="text-input" name="tag" value="${esc(M.tag)}" placeholder="${esc(imageTag(rec.image) || 'latest')} (a do app)" autocomplete="off" spellcheck="false">`,
         { help: manualImage ? 'A imagem foi trocada à mão no Runtipi; o BrunOS deixa como está.' : `Deixe em branco para seguir a versão do app (recomendado): ele atualiza junto com a loja. Escrever uma versão (ex.: ${esc(imageTag(rec.image) || '1.2.3')}) fixa o app nela, e as atualizações da loja deixam de trocar a versão.` })}
         ${field('Reiniciar sozinho', `<select class="text-input" name="restart">${opt(REINICIO, M.restart, (v) => v)}</select>`, { help: 'O que o Docker faz quando o app para ou o servidor reinicia. “Como o app vem” usa o que a receita e o Runtipi já definem.' })}</div>
+      ${field(`Memória compartilhada${needShm ? ' <i>recomendado: 1 GB</i>' : ''}`, `<select class="text-input" name="shm">${opt(SHM.map(([v, l]) => [v, v === 0 && rec.shmMB ? `Como o app vem (${rec.shmMB >= 1024 ? `${rec.shmMB / 1024} GB` : `${rec.shmMB} MB`})` : v === 0 ? 'Como o app vem (64 MB)' : v === 1024 && rec.desktop ? '1 GB (recomendado para este app)' : l]), M.shm, (v) => `${v} MB`)}</select>`,
+        { help: 'Área de memória que alguns programas usam para trocar dados rápido (/dev/shm). O Docker dá só 64 MB. Navegadores e programas com tela pelo navegador (Brave, Chromium, Firefox, Webtop...) ficam lentos e travando com isso: para eles, 1 GB.', hint: needShm ? 'Este app costuma travar com o padrão de 64 MB.' : '' })}
       ${edit ? field('Limite de backups', `<input class="text-input" type="number" name="maxBackups" min="0" max="100" value="${cur?.maxBackups ?? ''}" placeholder="padrão do Runtipi">`, { help: 'Quantos backups do app o Runtipi guarda; os mais antigos são apagados. Em branco, vale o padrão das configurações do Runtipi; 0 = sem limite.' }) : ''}
       ${rec.ports.length ? field('Portas extras da receita', `<div class="sf-locks">${rec.ports.map((p) => `<div class="sf-lock"><span class="sf-lico">${svg('lock')}</span><span class="sf-ltxt"><b>${esc(p)}</b><small>servidor : app</small></span></div>`).join('')}</div>`, { help: 'Portas que o app abre no servidor além da principal (para descoberta na rede, streaming…). Vêm da receita.' }) : ''}`;
     const advHTML = `${st0.manual.length ? `<p class="st-note">${svg('info')}<span>Feito à mão no Runtipi, fica como está: ${st0.manual.map(esc).join(', ')}.</span></p>` : ''}
@@ -215,7 +222,7 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     syncAj();
     return { mounts: M.mounts, memoryMB: M.memoryMB, cpus: M.cpus, gpu: M.gpu,
       env: M.env.filter((v) => v.key && (v.rec === null || v.value !== v.rec)).map(({ key, value }) => ({ key, value })),
-      image: manualImage ? st0.image : M.tag ? `${repo}:${M.tag}` : '', restart: M.restart };
+      image: manualImage ? st0.image : M.tag ? `${repo}:${M.tag}` : '', restart: M.restart, shmMB: M.shm };
   };
   const on = (k) => $(`[data-sw="${k}"]`, box)?.classList.contains('on') || false;
   const instBody = () => {
@@ -346,8 +353,22 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
   }
 }
 
+// Instalações em andamento (0.21.2): a Loja mostra "Instalando…" no lugar de Instalar e o sino ganha um anel
+// animado enquanto houver alguma. Avisa por um evento da janela ("brunos:installs"), sem acoplar os módulos.
+export const installing = new Map(); // urn → { name, since }
+function installEvent(a, on) {
+  if (on) installing.set(a.urn, { name: a.name, since: Date.now() }); else installing.delete(a.urn);
+  const list = [...installing.entries()].map(([urn, v]) => ({ urn, ...v }));
+  window.brunosInstalls = list; // para a Loja que abrir depois saber o que já está instalando
+  window.dispatchEvent(new CustomEvent('brunos:installs', { detail: { list } }));
+}
+
 // Acompanha a instalação até o app ligar (continua mesmo se a janela for fechada).
 async function follow(a, ctx, box, d) {
+  installEvent(a, true);
+  try { await followLoop(a, ctx, box, d); } finally { installEvent(a, false); }
+}
+async function followLoop(a, ctx, box, d) {
   const view = (html) => { if (box.isConnected) box.innerHTML = html; };
   view(`<h2>Instalando ${esc(a.name)}</h2><div class="sf-progress"><span class="upd-spin"></span><span>O Runtipi está baixando e ligando o app. Pode levar alguns minutos na primeira vez; pode fechar esta janela que o BrunOS avisa quando terminar.</span></div>
     <div class="dlg-actions"><button class="pill-btn" data-c="close">Fechar</button></div>`);

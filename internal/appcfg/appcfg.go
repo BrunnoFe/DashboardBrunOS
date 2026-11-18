@@ -48,6 +48,7 @@ type Settings struct {
 	Env      []Var   `json:"env"`
 	Image    string  `json:"image"`   // imagem fixada (0.21.0); "" = a da receita, que acompanha as atualizações
 	Restart  string  `json:"restart"` // política de reinício (0.21.0); "" = a da receita
+	ShmMB    int     `json:"shmMB"`   // memória compartilhada /dev/shm (0.21.2); 0 = a da receita (Docker: 64 MB)
 }
 
 // State é o que o arquivo tem hoje.
@@ -250,7 +251,7 @@ func envOf(n *yaml.Node) []Var {
 
 // managed são as chaves do serviço que a tela edita (o resto aparece como "feito à mão").
 var managed = map[string]bool{"volumes": true, "environment": true, "deploy": true, "mem_limit": true, "cpus": true, "devices": true,
-	"image": true, "restart": true}
+	"image": true, "restart": true, "shm_size": true}
 
 // Parse lê o arquivo de ajustes do serviço principal do app.
 func Parse(raw []byte, service string) (State, error) {
@@ -296,6 +297,9 @@ func Parse(raw []byte, service string) (State, error) {
 	}
 	if v := mapGet(s, "restart"); v != nil {
 		st.Restart = v.Value
+	}
+	if v := mapGet(s, "shm_size"); v != nil {
+		st.ShmMB = ParseMemory(v.Value)
 	}
 	limits := mapGet(mapGet(mapGet(s, "deploy"), "resources"), "limits")
 	if m := mapGet(limits, "memory"); m != nil {
@@ -473,6 +477,9 @@ func Validate(s Settings) error {
 	if !restarts[s.Restart] {
 		return errors.New("política de reinício inválida")
 	}
+	if s.ShmMB != 0 && (s.ShmMB < 64 || s.ShmMB > 16384) {
+		return errors.New("memória compartilhada inválida")
+	}
 	return nil
 }
 
@@ -598,7 +605,14 @@ func Apply(raw []byte, service string, s Settings) ([]byte, error) {
 	setLimit("cpus", "cpus", cpu)
 
 	// imagem fixada e política de reinício (vazio = a da receita)
-	for _, kv := range [][2]string{{"image", s.Image}, {"restart", s.Restart}} {
+	shm := ""
+	if s.ShmMB > 0 {
+		shm = memoryString(s.ShmMB)
+		if o := mapGet(svc, "shm_size"); o != nil && ParseMemory(o.Value) == s.ShmMB {
+			shm = o.Value // mesmo valor escrito de outro jeito ("1gb"): deixa como estava
+		}
+	}
+	for _, kv := range [][2]string{{"image", s.Image}, {"restart", s.Restart}, {"shm_size", shm}} {
 		k, v := kv[0], kv[1]
 		if v == "" {
 			mapDel(svc, k)

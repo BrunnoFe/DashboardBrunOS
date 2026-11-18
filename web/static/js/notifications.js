@@ -4,8 +4,16 @@
 import { api } from './api.js';
 import { $, esc, html, svg, toast, timeAgo, emit } from './ui.js';
 
-const S = { events: [], unread: 0 };
+const S = { events: [], unread: 0, installs: [] };
 let panel = null;
+
+// 0.21.2: instalações acompanhadas em segundo plano (storeforms.js): o sino ganha um anel girando e o
+// painel mostra "Em andamento" com uma barra animada, até o app ligar.
+addEventListener('brunos:installs', (e) => {
+  S.installs = e.detail.list || [];
+  paintBell();
+  if (panel) drawPanel();
+});
 
 const LEVEL = { info: 'Informação', aviso: 'Aviso', critico: 'Importante' };
 const ICON = (e) => e.kind.startsWith('power') ? 'bolt' : e.kind.startsWith('disk') ? 'disks' : e.kind.startsWith('login') ? 'lock' : 'bell';
@@ -49,7 +57,10 @@ function paintBell(ring = false) {
   badge.hidden = !S.unread;
   const crit = S.events.some((e) => !e.read && e.level === 'critico');
   b.classList.toggle('crit', crit);
-  b.setAttribute('aria-label', S.unread ? `Notificações: ${S.unread} sem ler` : 'Notificações');
+  const busy = S.installs.length;
+  b.classList.toggle('working', !!busy);
+  b.title = busy ? `Instalando: ${S.installs.map((x) => x.name).join(', ')}` : '';
+  b.setAttribute('aria-label', `${busy ? `Instalando ${busy} ${busy === 1 ? 'app' : 'apps'}. ` : ''}${S.unread ? `Notificações: ${S.unread} sem ler` : 'Notificações'}`);
   if (ring) { b.classList.remove('ring'); void b.offsetWidth; b.classList.add('ring'); }
 }
 
@@ -77,9 +88,14 @@ function drawPanel() {
   if (!panel) return;
   const list = $('.np-list', panel);
   $$np(panel).forEach((b) => { b.disabled = b.dataset.np === 'read' ? !S.unread : !S.events.length; });
-  list.innerHTML = S.events.length ? S.events.map((e) => `<div class="np-item lv-${esc(e.level)} ${e.read ? '' : 'unread'}">
+  const working = S.installs.length ? `<div class="np-sec">Em andamento</div>${S.installs.map((x) => `<div class="np-item np-work">
+      <span class="np-ico">${svg('download')}</span>
+      <span class="np-text"><b>Instalando ${esc(x.name)}</b><small>O Runtipi está baixando e ligando o app. O sino avisa quando terminar.</small><span class="np-bar" role="progressbar" aria-label="Instalando ${esc(x.name)}"><i></i></span><time>${esc(timeAgo(Math.floor(x.since / 1000)))}</time></span>
+    </div>`).join('')}${S.events.length ? '<div class="np-sec">Avisos</div>' : ''}` : '';
+  list.innerHTML = working + (S.events.length ? S.events.map((e) => `<div class="np-item lv-${esc(e.level)} ${e.read ? '' : 'unread'}">
       <span class="np-ico" title="${esc(LEVEL[e.level] || '')}">${svg(ICON(e))}</span>
       <span class="np-text"><b>${esc(e.title)}</b>${e.body ? `<small>${esc(e.body)}</small>` : ''}<time datetime="${new Date(e.time * 1000).toISOString()}" title="${esc(new Date(e.time * 1000).toLocaleString('pt-BR'))}">${esc(timeAgo(e.time))}</time></span>
-    </div>`).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, problemas nos discos e acessos novos ao BrunOS aparecem aqui.</small></span></div>`;
+    </div>`).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, problemas nos discos e acessos novos ao BrunOS aparecem aqui.</small></span></div>`)
+    .replace(/^(<div class="np-empty">.*)$/s, S.installs.length ? '' : '$1');
 }
 const $$np = (p) => [...p.querySelectorAll('[data-np]')];

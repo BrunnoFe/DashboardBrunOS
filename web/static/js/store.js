@@ -37,12 +37,16 @@ export function storeWindow(ctx, { originEl, urn } = {}) {
     tools: [{ icon: 'refresh', label: 'Atualizar as lojas (baixa a lista nova de apps)', run: () => refreshStores() }],
     mount(body) {
       S = { ctx, body, cat: null, script: {}, self: '', panelFrame: '', tab: 'discover', catKey: '', store: '', q: '', view: null, detail: null,
-        busy: '', watch: null, watchT: 0, io: null, loadedAt: 0, tstate: {}, tT: 0 };
+        busy: '', watch: null, watchT: 0, io: null, loadedAt: 0, tstate: {}, tT: 0,
+        inst: new Set((window.brunosInstalls || []).map((x) => x.urn)) };
+      // 0.21.2: instalação acompanhada em segundo plano (storeforms.js): "Instalando…" no lugar de Instalar
+      const onInst = (e) => { if (!S) return; S.inst = new Set(e.detail.list.map((x) => x.urn)); if (S.cat) { drawList(); if (S.view) drawDetail(); } };
+      addEventListener('brunos:installs', onInst);
       body.innerHTML = `<div class="st"><div class="st-loading"><span class="upd-spin"></span>Abrindo a Loja…</div></div>`;
       const onFocus = () => { if (S && Date.now() - S.loadedAt > 30000) reload(); };
       addEventListener('focus', onFocus);
       loadCss().then(() => S && reload(true)).then(() => { if (S && urn) openDetail(urn); });
-      return () => { removeEventListener('focus', onFocus); clearInterval(S?.watchT); clearTimeout(S?.tT); S?.io?.disconnect(); S = null; };
+      return () => { removeEventListener('focus', onFocus); removeEventListener('brunos:installs', onInst); clearInterval(S?.watchT); clearTimeout(S?.tT); S?.io?.disconnect(); S = null; };
     },
   };
 }
@@ -147,6 +151,7 @@ function logo(a, cls = '') {
   return `<span class="st-logo ${cls} ${a.demoIcon ? 'pad' : ''}" style="--h:${hue(a.name)}" data-l="${esc(l)}">${src ? `<img src="${esc(src)}" alt="" loading="lazy" draggable="false">` : `<span class="st-letter">${esc(l)}</span>`}</span>`;
 }
 function badge(a) {
+  if (S.inst?.has(a.urn)) return `<span class="st-badge inst"><span class="upd-spin"></span>Instalando</span>`;
   if (a.update) return `<span class="st-badge up">${svg('arrowUp')}Atualização</span>`;
   if (a.installed) return `<span class="st-badge ok">${svg('check')}Instalado</span>`;
   return `<span class="st-go">${svg('chevR')}</span>`;
@@ -258,6 +263,7 @@ function actionsHTML(a) {
   const tb = a.installed && TIPI_BUSY[S.tstate[a.urn]];
   if (tb) return `<span class="st-busy"><span class="upd-spin"></span>O Runtipi está ${tb} este app. Os botões voltam quando ele terminar (mexer agora recriaria o app no meio do caminho).</span>`;
   const dis = S.busy ? 'disabled' : '';
+  if (S.inst?.has(a.urn)) return `<span class="st-busy"><span class="upd-spin"></span>Instalando… Pode fechar a Loja: o sino mostra o andamento e avisa quando terminar.</span>`;
   if (!a.installed) return `<button class="pill-btn primary" data-st="install" ${dis}>${svg('download')}Instalar</button>`;
   const inst = S.ctx.installed(a.urn), stopped = inst?.state === 'stopped', self = a.id === S.self;
   return [

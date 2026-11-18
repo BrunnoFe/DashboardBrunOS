@@ -111,6 +111,30 @@ func TestRecipeVariavelComDoisPontos(t *testing.T) {
 	}
 }
 
+func TestMemoriaCompartilhada(t *testing.T) {
+	r, _ := ParseRecipe([]byte("services:\n  brave:\n    image: linuxserver/brave:1.99.57\n"), false, "brave")
+	if !r.Desktop || r.ShmMB != 0 {
+		t.Fatalf("brave: %+v", r)
+	}
+	r, _ = ParseRecipe([]byte("services:\n  app:\n    image: x/app:1\n    shm_size: 1gb\n"), false, "app")
+	if r.Desktop || r.ShmMB != 1024 {
+		t.Fatalf("shm da receita: %+v", r)
+	}
+	out, err := Apply(nil, "brave", Settings{ShmMB: 1024})
+	if err != nil || !strings.Contains(string(out), "shm_size: 1G") {
+		t.Fatalf("gravar: %v\n%s", err, out)
+	}
+	if st, _ := Parse(out, "brave"); st.ShmMB != 1024 || len(st.Manual) != 0 {
+		t.Fatalf("ler: %+v", st)
+	}
+	if out, _ := Apply(out, "brave", Settings{}); strings.Contains(string(out), "shm") {
+		t.Fatalf("tirar:\n%s", out)
+	}
+	if Validate(Settings{ShmMB: 10}) == nil {
+		t.Fatal("10 MB deveria ser recusado")
+	}
+}
+
 func TestAjustesImagemEReinicio(t *testing.T) {
 	out, err := Apply([]byte("services:\n  app:\n    labels:\n      a: b\n"), "app", Settings{Image: "x/app:1.2.3", Restart: "always"})
 	if err != nil {

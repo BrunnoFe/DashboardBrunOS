@@ -29,6 +29,8 @@ type Recipe struct {
 	Mounts     []Mount  `json:"mounts"`     // pastas do serviço principal
 	Ports      []string `json:"ports"`      // portas extras publicadas no servidor (texto para mostrar)
 	Restart    string   `json:"restart"`    // política de reinício da receita ("" = a do Runtipi)
+	ShmMB      int      `json:"shmMB"`      // memória compartilhada da receita (0 = a do Docker, 64 MB)
+	Desktop    bool     `json:"desktop"`    // app de área de trabalho no navegador (Brave, Firefox...): precisa de shm maior
 	Services   int      `json:"services"`   // quantos serviços a receita tem
 	Privileges []string `json:"privileges"` // o que a receita pede de poder sobre o servidor, em português
 }
@@ -219,6 +221,10 @@ func ParseRecipe(raw []byte, isJSON bool, id string) (Recipe, error) {
 	if v := mapGet(s, "restart"); v != nil {
 		r.Restart = v.Value
 	}
+	if v := mapGet(s, "shm_size"); v != nil {
+		r.ShmMB = ParseMemory(v.Value)
+	}
+	r.Desktop = isDesktopImage(r.Image)
 	r.Env = envOf(mapGet(s, "environment"))
 	for _, it := range seqOf(mapGet(s, "volumes")) {
 		if m, ok := bindOf(it); ok {
@@ -254,7 +260,7 @@ func jsonRecipe(raw []byte) (*yaml.Node, string, error) {
 		}
 		svc := newMap()
 		mapSet(svcs, name, svc)
-		for _, kv := range [][2]string{{"image", "image"}, {"privileged", "privileged"}, {"networkMode", "network_mode"}, {"pid", "pid"}, {"restart", "restart"}} {
+		for _, kv := range [][2]string{{"image", "image"}, {"privileged", "privileged"}, {"networkMode", "network_mode"}, {"pid", "pid"}, {"restart", "restart"}, {"shmSize", "shm_size"}} {
 			if v := rawScalar(s[kv[0]]); v != "" {
 				mapSet(svc, kv[1], str(v))
 			}
@@ -327,6 +333,34 @@ func jsonRecipe(raw []byte) (*yaml.Node, string, error) {
 		}
 	}
 	return root, main, nil
+}
+
+// desktopImages são imagens do LinuxServer.io que rodam um programa de computador com tela pelo navegador
+// (KasmVNC/Selkies). Navegadores baseados no Chromium travam com os 64 MB de /dev/shm do Docker; o
+// LinuxServer recomenda shm_size 1gb (e a mesma lista vale para o Garimpo).
+var desktopImages = map[string]bool{"brave": true, "chromium": true, "firefox": true, "librewolf": true, "mullvad-browser": true,
+	"opera": true, "vivaldi": true, "ungoogled-chromium": true, "webtop": true, "obsidian": true, "libreoffice": true,
+	"kicad": true, "freecad": true, "blender": true, "gimp": true, "inkscape": true, "krita": true, "digikam": true,
+	"darktable": true, "kdenlive": true, "calibre": true, "rdesktop": true, "remmina": true, "steamos": true, "kasm": true,
+	"signal": true, "telegram": true, "thunderbird": true, "zotero": true, "audacity": true, "handbrake": true}
+
+func isDesktopImage(img string) bool {
+	repo := imageRepoName(img)
+	for _, p := range []string{"linuxserver/", "lscr.io/linuxserver/", "ghcr.io/linuxserver/"} {
+		if name, ok := strings.CutPrefix(repo, p); ok {
+			return desktopImages[name]
+		}
+	}
+	return false
+}
+
+// imageRepoName tira a versão e o digest de uma imagem ("lscr.io/linuxserver/brave:1.2" → "lscr.io/linuxserver/brave").
+func imageRepoName(img string) string {
+	img, _, _ = strings.Cut(img, "@")
+	if i := strings.LastIndex(img, ":"); i > strings.LastIndex(img, "/") {
+		img = img[:i]
+	}
+	return img
 }
 
 // rawScalar transforma um valor JSON simples (texto, número, verdadeiro/falso) em texto.

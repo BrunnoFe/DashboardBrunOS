@@ -276,6 +276,17 @@ português; (3) antes de pedir ao Runtipi para ligar, parar, reiniciar ou reconf
 estragado: desinstalar e instalar de novo. Lição: o Runtipi recria o container a cada "ligar", e os logs do
 anterior somem junto.
 
+## 0.21.2 (17/11): andamento da instalação e navegadores lentos
+Pedidos do Bruno: depois de "Instalar", a página continuava com o botão Instalar; o sino poderia mostrar
+que a instalação acontece em segundo plano; o Brave (via LinuxServer) estava muito lento. Feito: a janela de
+instalar avisa o resto do BrunOS (evento `brunos:installs`); a Loja troca Instalar por "Instalando…" (página
+e lista), o sino ganha um anel girando e o painel mostra "Em andamento" com barra animada até o app ligar.
+Brave lento: a receita não tinha `shm_size`, e o Docker dá só 64 MB de /dev/shm (navegadores Chromium
+travam). Ajustes ganharam **Memória compartilhada** (Opcionais, "1 GB recomendado" para apps de área de
+trabalho do LinuxServer); o Garimpo põe `shm_size: 1gb` nesses apps (31 na loja LinuxServer), o que sobe o
+tipi_version e aparece como atualização. O aviso "--no-sandbox" dentro do Brave é normal no container
+(tirar exigiria desligar uma proteção do Docker, seccomp: o app passaria a requerer privilégios).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.
