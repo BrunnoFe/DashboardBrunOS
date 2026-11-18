@@ -21,12 +21,12 @@ testadas no servidor (17/11/2026).
 
 ## Etapa 12 (0.17.0 → 0.18.0), combinada em 13/11/2026
 
-Plano detalhado em `plano-etapa12.md`; termos em `CONTEXT.md` (seção Janelas); porquê na decisão 58.
+Termos em `CONTEXT.md` (seção Janelas); porquê na decisão 58. Etapa entregue: resumo no `historico.md`.
 
 | Versão | O que | Status |
 |---|---|---|
 | 0.17.0 | Janelas de app: abrir apps dentro do BrunOS (Flutuante ou Folha, tela cheia no celular), dock com apps abertos, Só em aba automático, limite de apps abertos | feito, lançado e testado no servidor |
-| depois da etapa 13 | Janelas do sistema (Arquivos, Terminal, Discos...) no mesmo sistema de janelas (era a 0.18.0; a Loja passou na frente e já usa o gerenciador de Janelas) | a combinar (o teste da 0.17.0 já foi feito) |
+| 0.23.0 | Janelas do sistema no mesmo gerenciador (combinado em 17/11/2026): Arquivos, Discos, Widgets, Configurações e Terminal viram janelas (minimizar, dock, tela cheia no celular), seguindo o "Estilo das janelas" (Folha ou Flutuante); Terminal com o minimizar comum (as Abas seguem no servidor); Arquivos pode abrir uma segunda janela; o limite de apps abertos não conta as janelas do sistema | feito e lançado em 17/11; aguardando teste |
 
 ## Etapa 13 (0.18.0 → 0.20.0), combinada em 16/11/2026: Loja
 

@@ -1,5 +1,5 @@
-// Janelas (0.17.0, decisão 58): gerenciador genérico. Hoje só as Janelas de app usam; na 0.18.0 as
-// janelas do sistema (Arquivos, Terminal...) vêm para cá também.
+// Janelas (0.17.0, decisão 58): gerenciador genérico. Janelas de app, Loja (0.18.0) e, desde a 0.23.0,
+// todas as janelas do sistema (Arquivos, Discos, Widgets, Configurações, Terminal), com id "sys:...".
 //
 // - Estilo das janelas (Aparência): Flutuante (arrasta, redimensiona, encaixa, várias ao mesmo tempo) ou
 //   Folha (centralizada, uma por vez, fundo escurecido). Tela estreita: sempre tela cheia.
@@ -60,6 +60,7 @@ const visible = () => [...wins.values()].filter((w) => !w.min).sort((a, b) => a.
 const front = () => visible().at(-1) || null;
 const dockSpace = () => { const d = $('#dock'); return d ? d.offsetHeight + 20 : 94; };
 
+export const isSys = (id) => String(id).startsWith('sys:');
 export const has = (id) => wins.has(id);
 export const count = () => wins.size;
 export const list = () => [...wins.values()].map(({ id, title, min, z, used }) => ({ id, title, min, z, used }));
@@ -76,11 +77,13 @@ function changed() { cfg.onChange?.(); }
 export async function open(o) {
   const old = wins.get(o.id);
   if (old) { if (old.min) setMin(old, false); else focus(old.id); return true; }
+  // o limite é só para os apps (0.23.0): as janelas do sistema (id "sys:...") são leves e não contam
   const limit = narrowMQ.matches ? +st().winLimitMobile || 5 : +st().winLimitPc || 8;
-  if (wins.size >= limit) {
-    const victim = wins.get(pickToClose(list()));
+  const apps = list().filter((x) => !isSys(x.id));
+  if (!isSys(o.id) && apps.length >= limit) {
+    const victim = wins.get(pickToClose(apps));
     if (victim) {
-      const ok = await cfg.confirm(`Você já tem ${wins.size} ${wins.size === 1 ? 'app aberto' : 'apps abertos'}`,
+      const ok = await cfg.confirm(`Você já tem ${apps.length} ${apps.length === 1 ? 'app aberto' : 'apps abertos'}`,
         `Para abrir ${o.title}, o BrunOS precisa fechar ${victim.title}. O limite muda em Configurações → Sistema.`, `Fechar ${victim.title}`);
       if (!ok) return false;
       close(victim.id, false);

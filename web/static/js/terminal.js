@@ -74,7 +74,9 @@ export function terminalWindow(ctx) {
   let term = null, fit = null, stopStream = null, ro = null, sendTimer = 0, pending = '', keyInfo = null, offUnlock = null, pingTimer = 0;
   let fontSize = st.termFontSize || (isPhone() ? 11 : 13);
 
-  const d = openDialog(`<div class="term-win">
+  // 0.23.0: dentro de uma janela do sistema (ctx.host = corpo da janela; minimizar e fechar são os da
+  // janela). Sem host, continua o diálogo de antes.
+  const inner = `<div class="term-win">
       <div class="term-head">
         <div class="term-tabs" role="tablist"></div>
         <span class="term-add">
@@ -89,13 +91,19 @@ export function terminalWindow(ctx) {
           <button class="icon-btn" data-t="config" title="Chave, conexões e comandos" aria-label="Configurar o terminal">${svg('sliders')}</button>
         </span>
         <span class="term-win-btns">
-          <button class="icon-btn" data-t="minimize" title="Minimizar (as abas continuam rodando)" aria-label="Minimizar">${svg('minus')}</button>
-          <button class="icon-btn" data-t="closeall" title="Fechar todas as abas" aria-label="Fechar">${svg('x')}</button>
+          ${ctx.host ? '' : `<button class="icon-btn" data-t="minimize" title="Minimizar (as abas continuam rodando)" aria-label="Minimizar">${svg('minus')}</button>`}
+          <button class="icon-btn" data-t="closeall" title="Fechar todas as abas" aria-label="Fechar todas as abas">${svg(ctx.host ? 'trash' : 'x')}</button>
         </span>
       </div>
       <div class="term-snips" hidden></div>
       <div class="term-body"></div>
-    </div>`, { width: 1000, cls: 'term-dlg', backdropClose: false, closeBtn: false, onClose: () => detachAll() });
+    </div>`;
+  let d;
+  if (ctx.host) {
+    ctx.host.innerHTML = inner;
+    ctx.host.classList.add('term-host');
+    d = { el: ctx.host, close: () => ctx.closeWin?.() }; // fechar a janela: a limpeza (detachAll) vem do gerenciador
+  } else d = openDialog(inner, { width: 1000, cls: 'term-dlg', backdropClose: false, closeBtn: false, onClose: () => detachAll() });
   const body = $('.term-body', d.el);
 
   openWin = {
@@ -237,7 +245,7 @@ export function terminalWindow(ctx) {
       dd.el.addEventListener('click', (e) => {
         const b = e.target.closest('[data-c]'); if (!b) return;
         done = true; dd.close();
-        if (b.dataset.c === 'min') { resolve(false); setTimeout(() => d.close(), 60); return; }
+        if (b.dataset.c === 'min') { resolve(false); setTimeout(() => (ctx.minimizeWin || d.close)(), 60); return; }
         resolve(b.dataset.c === 'ok');
       });
     });
@@ -515,7 +523,7 @@ export function terminalWindow(ctx) {
     else if (k === 'config') showConfig();
     else if (k === 'back') { if (tabs.length) showTab(Math.max(0, Math.min(active, tabs.length - 1))); else startEmpty(); }
     else if (k === 'connect') startEmpty();
-    else if (k === 'minimize') d.close();
+    else if (k === 'minimize') (ctx.minimizeWin || d.close)();
     else if (k === 'closeall') {
       const live = tabs.filter((t) => !t.ended);
       if (live.length && !(await okToClose(live))) return;
@@ -568,4 +576,5 @@ export function terminalWindow(ctx) {
     if (tabs.length) showTab(tabs.length - 1);
     else startEmpty();
   })();
+  return detachAll; // dentro de uma janela: fechar a janela só desliga a tela (as Abas seguem no servidor)
 }

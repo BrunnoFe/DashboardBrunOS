@@ -47,10 +47,15 @@ function runtipiAuto() {
   return `http://${host}${port}`;
 }
 let termMod = null; // carregado na primeira vez que o Terminal abre (a busca usa os Comandos salvos dele)
+// Terminal (0.23.0): janela do sistema comum; minimizar e fechar são os da janela (as Abas continuam no servidor)
+const TERM_WIN = 'sys:terminal';
 function openTerminal(opts = {}) {
   import('./terminal.js').then((m) => {
     termMod = m;
-    m.terminalWindow({ settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, saveNow, defaultHost: S.tipi.internalIp || location.hostname, onTabs: () => renderDock(), ...opts });
+    const base = { settings: set(), saveSetting: (k, v) => { set()[k] = v; save(); }, saveNow, defaultHost: S.tipi.internalIp || location.hostname, onTabs: () => renderDock(), ...opts };
+    if (wins.has(TERM_WIN)) { wins.restore(TERM_WIN); wins.focus(TERM_WIN); m.terminalWindow(base); return; } // já aberta: digita o comando pedido
+    wins.open({ id: TERM_WIN, title: 'Terminal', icon: `<span class="win-app-ico" style="--tile:${SYS.terminal.tile}">${svg('terminal')}</span>`, originEl: $('[data-sys="terminal"]'),
+      mount: (body) => m.terminalWindow({ ...base, host: body, closeWin: () => wins.close(TERM_WIN), minimizeWin: () => wins.minimize(TERM_WIN) }) });
   }).catch((e) => toastError(e, 'Não deu para abrir o terminal'));
 }
 const openPower = () => powerDialog({ openTerminal: S.terminal === false ? null : openTerminal });
@@ -849,7 +854,7 @@ const widgetsCtx = {
   newId,
   refreshInternet,
   reloadIntegrations: () => loadIntegrations(),
-  organize: () => { closeSheet(); setTimeout(() => setWidgetEditing(true), 250); },
+  organize: () => { closeSheet('widgets'); setTimeout(() => setWidgetEditing(true), 250); },
 };
 async function loadIntegrations() {
   try {
@@ -1483,7 +1488,7 @@ function positionTip() {
   dock.addEventListener('click', (e) => {
     const item = e.target.closest('.dock-item'); if (!item) return;
     item.classList.remove('bounce'); void item.offsetWidth; item.classList.add('bounce');
-    if (item.dataset.sys) { const k = item.dataset.sys; if (currentSheet === k) closeSheet(); else SYS[k].run(item); }
+    if (item.dataset.sys) { const k = item.dataset.sys; if (wins.has(`sys:${k}`) && k !== 'store') wins.dockClick(`sys:${k}`); else SYS[k].run(item); }
     else if (wins.has(item.dataset.app)) { if (currentSheet) closeSheet(); wins.dockClick(item.dataset.app); }
     else openApp(appById(item.dataset.app), { originEl: item });
   });
@@ -1499,43 +1504,39 @@ const markDockOpen = () => {
     : !!el.dataset.sys && (el.dataset.sys === currentSheet || wins.has(`sys:${el.dataset.sys}`)))); // Loja e tela do Runtipi são janelas
 };
 
-/* ── Sheets ────────────────────────────────────────────────────── */
-let currentSheet = null, sheetCleanup = null;
+/* ── Janelas do sistema (0.23.0; antes eram "folhas") ──────────── */
+// Arquivos, Discos, Widgets e Configurações abrem no gerenciador de Janelas (id "sys:<tipo>"), com o
+// "Estilo das janelas" de Aparência (Folha ou Flutuante). O Arquivos pode abrir uma segunda janela.
+const currentSheet = null; // (compatibilidade: não existe mais folha por cima de tudo)
+const SYS_TITLE = { files: 'Arquivos', widgets: 'Widgets', disks: 'Discos', settings: 'Configurações' };
+const sysIcon = (kind) => { const s = SYS[kind]; return s ? `<span class="win-app-ico" style="--tile:${s.tile}">${svg(s.glyph)}</span>` : ''; };
 export function openSheet(kind, originEl, opts = {}) {
-  const host = $('#sheet-host');
-  if (currentSheet === kind) {
-    if (kind === 'files' && opts.root) import('./files.js').then((m) => m.navigate(opts));
+  let id = `sys:${kind}`;
+  if (opts.another && kind === 'files') { id = wins.has(id) ? 'sys:files:2' : id; if (wins.has(id)) { wins.dockClick(id); return; } }
+  if (wins.has(id)) { // já aberta: traz para a frente e repassa o pedido (abrir pasta, disco, widget)
+    wins.restore(id); wins.focus(id);
+    if (kind === 'files' && (opts.root || opts.search)) import('./files.js').then((m) => m.navigate(opts));
     if (kind === 'widgets') import('./widgetsapp.js').then((m) => m.focusWidgets(opts));
     if (kind === 'disks') import('./disksapp.js').then((m) => m.focusDisk(opts));
     return;
   }
-  sheetCleanup?.(); sheetCleanup = null;
-  host.innerHTML = '';
-  const backdrop = html('<div class="sheet-backdrop"></div>');
-  const sheet = html(`<section class="sheet sheet-${kind}" role="dialog" aria-modal="true" aria-label="${{ files: 'Arquivos', widgets: 'Widgets', disks: 'Discos' }[kind] || 'Configurações'}"><button class="sheet-close" aria-label="Fechar">${svg('x')}</button><div class="sheet-body"></div></section>`);
-  if (originEl) {
-    const r = originEl.getBoundingClientRect(), w = Math.min(1100, innerWidth - 32), left = (innerWidth - w) / 2;
-    sheet.style.setProperty('--origin', `${r.left + r.width / 2 - left}px ${innerHeight - 20}px`);
-  }
-  backdrop.addEventListener('click', closeSheet);
-  $('.sheet-close', sheet).addEventListener('click', closeSheet);
-  host.append(backdrop, sheet);
-  const body = $('.sheet-body', sheet);
-  currentSheet = kind;
-  document.body.classList.add('has-sheet');
-  markDockOpen();
-  if (kind === 'files') {
-    body.innerHTML = '<div class="sheet-loading"></div>';
-    import('./files.js').then((m) => { if (currentSheet === 'files') sheetCleanup = m.mountFiles(body, { ...opts, ctx: filesCtx }); });
-  } else if (kind === 'widgets') {
-    body.innerHTML = '<div class="sheet-loading"></div>';
-    import('./widgetsapp.js').then((m) => { if (currentSheet === 'widgets') sheetCleanup = m.mountWidgets(body, { ...opts, ctx: widgetsCtx }); })
-      .catch((e) => toastError(e, 'Não deu para abrir os widgets'));
-  } else if (kind === 'disks') {
-    body.innerHTML = '<div class="sheet-loading"></div>';
-    import('./disksapp.js').then((m) => { if (currentSheet === 'disks') sheetCleanup = m.mountDisks(body, { ...opts, ctx: disksCtx }); })
-      .catch((e) => toastError(e, 'Não deu para abrir os discos'));
-  } else renderSettings(body);
+  const title = SYS_TITLE[kind] + (id.endsWith(':2') ? ' (2)' : '');
+  const tools = kind === 'files' && !id.endsWith(':2') ? [{ icon: 'plus', label: 'Abrir outra janela do Arquivos', run: () => openSheet('files', null, { another: true }) }] : [];
+  wins.open({
+    id, title, icon: sysIcon(kind), originEl, tools,
+    mount(body) {
+      body.classList.add('sys-body', `sys-${kind}`);
+      let cleanup = null, gone = false;
+      const keep = (fn) => { if (gone) fn?.(); else cleanup = fn; };
+      if (kind === 'settings') { renderSettings(body); return () => { gone = true; pickClose?.(); }; }
+      body.innerHTML = '<div class="sheet-loading"></div>';
+      const load = { files: () => import('./files.js').then((m) => keep(m.mountFiles(body, { ...opts, ctx: filesCtx }))),
+        widgets: () => import('./widgetsapp.js').then((m) => keep(m.mountWidgets(body, { ...opts, ctx: widgetsCtx }))),
+        disks: () => import('./disksapp.js').then((m) => keep(m.mountDisks(body, { ...opts, ctx: disksCtx }))) }[kind];
+      load?.().catch((e) => toastError(e, `Não deu para abrir ${SYS_TITLE[kind]}`));
+      return () => { gone = true; cleanup?.(); };
+    },
+  });
 }
 // O que a janela Discos precisa do resto da interface
 const disksCtx = {
@@ -1549,16 +1550,11 @@ const disksCtx = {
   mapDisks: () => import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); })),
 };
 const openDisks = (opts = {}) => openSheet('disks', $('[data-sys="disks"]'), opts);
-export function closeSheet() {
+// Fecha uma janela do sistema (sem tipo: Configurações, que é quem mais chama isto ao levar a outra tela).
+export function closeSheet(kind = 'settings') {
   pickClose?.();
-  const sheet = $('#sheet-host .sheet');
-  if (!sheet) return;
-  sheetCleanup?.(); sheetCleanup = null;
-  currentSheet = null;
-  document.body.classList.remove('has-sheet');
-  markDockOpen();
-  sheet.classList.add('closing');
-  setTimeout(() => { if (!currentSheet) $('#sheet-host').innerHTML = ''; }, 220);
+  if (kind === 'all') { for (const w of wins.list()) if (wins.isSys(w.id) && w.id !== STORE_WIN) wins.close(w.id, false); return; }
+  if (wins.has(`sys:${kind}`)) wins.close(`sys:${kind}`);
 }
 // O gerenciador de arquivos usa estes ganchos para conversar com o resto da interface.
 const filesCtx = {
@@ -1677,7 +1673,7 @@ function settingsRows() {
     })(),
     { group: 'Aparência', cat: 'look', icon: 'phone', title: 'No celular, widgets e apps em telas separadas', desc: 'Na tela pequena, os widgets de uma página ficam numa tela e os apps na seguinte (deslize para o lado). Desligado, ficam um embaixo do outro', ctrl: sw('mobileSplit', 'Widgets e apps em telas separadas no celular') },
     { group: 'Aparência', cat: 'look', icon: 'sparkles', title: 'Reduzir animações', desc: 'Desliga a ampliação do dock e as transições', ctrl: sw('reduceMotion') },
-    { group: 'Aparência', cat: 'look', icon: 'winMax', title: 'Estilo das janelas', desc: 'Flutuante: arraste pela barra, mude o tamanho pelas bordas, encaixe nas laterais e deixe vários apps abertos lado a lado. Folha: uma janela por vez, centralizada. No celular as duas ocupam a tela inteira',
+    { group: 'Aparência', cat: 'look', icon: 'winMax', title: 'Estilo das janelas', desc: 'Vale para os apps e para as janelas do BrunOS (Arquivos, Discos, Widgets, Configurações, Terminal, Loja). Flutuante: arraste pela barra, mude o tamanho pelas bordas, encaixe nas laterais e deixe várias abertas lado a lado. Folha: uma janela por vez, centralizada. No celular as duas ocupam a tela inteira',
       ctrl: `<div class="seg">${[['float', 'Flutuante'], ['sheet', 'Folha']].map(([k, l]) => `<button class="${(st.winStyle || 'float') === k ? 'on' : ''}" data-winstyle="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Dock com app maximizado', desc: 'Sempre visível: a dock fica por cima do app. Esconde sozinha: some e volta quando o mouse chega na beirada de baixo (no celular, toque na beirada). App acima da dock: o app para onde a dock começa',
       ctrl: `<div class="seg">${[['visible', 'Sempre visível'], ['auto', 'Esconde sozinha'], ['above', 'App acima da dock']].map(([k, l]) => `<button class="${(st.dockWithMax || 'auto') === k ? 'on' : ''}" data-dockmax="${k}">${l}</button>`).join('')}</div>` },

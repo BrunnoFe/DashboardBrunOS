@@ -296,6 +296,14 @@ privilégios novos em relação ao arquivo de hoje; com algum, devolve 409 com a
 há privilégio novo). O selo "Requer privilégios" do app instalado passa a olhar também o arquivo de Ajustes.
 Enquanto edita o texto, os botões de Pastas e recursos e Opcionais ficam parados (os dois não se misturam).
 
+## 0.23.0 (17/11): janelas do sistema (fecha a etapa 12)
+Perguntas respondidas pelo Bruno: todas viram janela, inclusive Configurações, com a escolha Folha ou
+Flutuante (o "Estilo das janelas" de Aparência passa a valer para tudo); Terminal com o minimizar comum;
+o Arquivos pode abrir uma segunda janela (botão "+" na barra); o limite de apps abertos não conta as
+janelas do sistema. `openSheet` agora abre `sys:<tipo>` no `windows.js` (a folha por cima de tudo
+acabou); o `terminal.js` monta dentro do corpo da janela (`ctx.host`) e devolve a limpeza, que só desliga a
+tela. Etapa 12 (0.17.0 Janelas de app + 0.23.0) entregue; o plano dela foi apagado.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.
