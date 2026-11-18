@@ -70,7 +70,6 @@ export function mountFiles(body, opts = {}) {
 }
 
 // Abrir pasta pedida de fora (Ctrl+K, widget, Discos): na janela principal do Arquivos (a primeira aberta).
-export function navigate(opts) { const f = [...insts][0]; if (f && opts.root) { F = f; go(opts.root, opts.path || ''); } }
 
 const rootById = (id) => F.ctx.roots.find((r) => r.id === id);
 const rootRO = () => !!rootById(F.root)?.readOnly;

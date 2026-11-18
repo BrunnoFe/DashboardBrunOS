@@ -365,13 +365,13 @@ func (m *Monitor) Step(b *Reading) {
 		m.deadline = now // durante a contagem a bateria despencou: não espera o resto
 	}
 	if m.phase == PhaseCountdown && !now.Before(m.deadline) {
-		m.executeLocked(now)
+		m.executeLocked()
 	}
 	m.mu.Unlock()
 }
 
 // executeLocked desliga (ou simula). Solta o mutex durante a conexão SSH.
-func (m *Monitor) executeLocked(now time.Time) {
+func (m *Monitor) executeLocked() {
 	cfg := m.cfg
 	if cfg.Simulate {
 		m.phase = PhaseDone
@@ -396,7 +396,7 @@ func (m *Monitor) executeLocked(now time.Time) {
 	cancel()
 	m.execMu.Unlock()
 	m.mu.Lock()
-	now = m.Now()
+	now := m.Now()
 	if m.phase != PhaseRunning { // a energia voltou ou desativaram enquanto conectava
 		return
 	}

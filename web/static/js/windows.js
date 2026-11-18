@@ -126,7 +126,6 @@ export function focus(id) {
 
 export const minimize = (id) => { const w = wins.get(id); if (w) setMin(w, true); };
 export const restore = (id) => { const w = wins.get(id); if (w) setMin(w, false); };
-export const toggleMax = (id) => { const w = wins.get(id); if (w) setMax(w, w.state === 'normal' ? 'max' : 'normal'); };
 
 // Clique no ícone da dock: volta se minimizada, vem para a frente se atrás, minimiza se já é a da frente.
 export function dockClick(id) {

@@ -123,7 +123,7 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   registra a volta ao normal. `Subscribe` alimenta o SSE das estatísticas (`event: notify`).
 - **`internal/hostcmd`**: cliente SSH com chave própria que roda um script fixo no servidor
   (`HostScript`, instalado pelos comandos que a janela Energia mostra). `Test` conecta e autentica **sem
-  abrir sessão**; `Run`/`Output` abrem a sessão e mandam o pedido. `ReadAllowed` e `ActAllowed` conferem o
+  abrir sessão**; `Run`/`OutputInput` abrem a sessão e mandam o pedido. `ReadAllowed` e `ActAllowed` conferem o
   pedido inteiro antes de mandar e o script confere de novo. `ScriptVersion` sobe quando entra pedido novo;
   `SetupVersion` só quando muda o que se cola no servidor. Só aceita servidor já confirmado (TOFU).
   Pedidos: desligar, limite de carga, leituras (Tailscale, energia, atualizações, discos, SMART e
@@ -295,7 +295,7 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     `/api/search/random`, foto `size=preview`; listas de fotos uma vez por dia), `plex.go`
     (`/status/sessions`, `/library/sections` uma vez por hora, capa por `/photo/:/transcode`),
     `watchyourlan.go` (`/api/all`; aviso `Op: "new"` por item com `Item.ID` = MAC), `tailscale.go`
-    (`NoURL`; `HostQuery("tailscale")` → `power.Monitor.HostOutput` → `hostcmd.Runner.Output`). Métricas
+    (`NoURL`; `HostQuery("tailscale")` → `power.Monitor.HostOutput` → `hostcmd.Runner.OutputInput`). Métricas
     do tipo `media` (lista de `Item{img}`, `MetricDef.Look` = photo | poster). Campos extras do
     formulário (ex.: álbum) ficam em `Integration.Options`.
   - 0.9.3: `transmission.go` (RPC `session-stats` + `torrent-get`; 409 → `X-Transmission-Session-Id`,
@@ -390,7 +390,7 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   `openDialog(html, {width, cls, closeBtn, backdropClose, onClose})`, `confirmDialog`, `promptDialog`, `toast`.
 - `js/windows.js` (0.17.0, decisão 58): gerenciador de Janelas (genérico; hoje só Janelas de app).
   `initWindows({settings, confirm, onChange})`, `open({id, title, icon, originEl, mount, tools})`,
-  `focus`, `minimize`, `restore`, `toggleMax`, `close`, `closeAll`, `dockClick`, `has`, `count`, `list`,
+  `focus`, `minimize`, `restore`, `close`, `closeAll`, `dockClick`, `has`, `count`, `list`,
   `frontId`, `layout`, `allowUnload`. Fica em `#win-host` (camada 33: acima da pesquisa e do sino, abaixo
   da faixa `#dock-peek` e da dock; folha do sistema aberta sobe para 36). Modos por `data-mode`: `float`
   (arrastar com Pointer Events, redimensionar por `.win-rz`, encaixe topo/laterais com `#win-snap`),
@@ -420,7 +420,7 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   estiver em https com painel em http ou se "Abrir apps em" não for "No BrunOS"). Janelas `sys:<nome>`
   minimizam para o ícone `data-sys="<nome>"` da dock. Preferência: `storeFavs` (lista de urn).
 - `js/files.js`: janela Arquivos; exporta `mountFiles`, `navigate`, `mapDisksDialog(ctx, onDone)`.
-- `js/battery.js`: `batteryWidgetHTML`, `paintBattery(root, battery)`, `batteryDialog`.
+- `js/battery.js`: `paintBattery(root, battery)`, `batteryDialog`.
 - `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.
 - `js/notifications.js` (0.4.0): sino `#bell` (no `index.html`), painel, `onNotify(e)` (toast),
   `refreshNotifications()` (chamado no `init` do stream, ou seja, também a cada reconexão).
@@ -442,7 +442,7 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
 - `js/api.js`: arquivos > 16 MB vão por `chunkedUpload` (pedaços de 8 MB, até 8 tentativas com espera
   crescente, id guardado no `localStorage` por raiz|pasta|nome|tamanho|lastModified para retomar).
 - `js/ui.js`: `openDialog(..., {beforeClose})` (devolver false cancela o fechamento).
-- `js/internet.js` (0.8.0): `internetWidgetHTML`, `paintInternet(root, status)`, `internetDialog()`.
+- `js/internet.js` (0.8.0): `internetDialog()`.
   O Uso ao vivo (`app.js`) ganhou o seletor 5 min / 24 h / 7 dias e a aba Processos (com filtro).
 - `js/appinfo.js` (0.7.0): `appDetails(a, ctx)` (estado, linha do tempo de 96 blocos de 15 min, gráfico
   SVG de 24 h, logs com "Ao vivo", ligar/parar/reiniciar, "Abrir no Runtipi", "Desinstalar…" que abre

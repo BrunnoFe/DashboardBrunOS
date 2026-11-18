@@ -3,41 +3,6 @@ import { api } from './api.js';
 import { mountChart, periodSeg, PERIOD_LONG } from './charts.js';
 import { $, esc, fmt, svg, timeAgo, fmtDuration, openDialog } from './ui.js';
 
-export const internetWidgetHTML = () => `<button class="widget w-internet" data-action="internet">
-  <span class="w-caption">Internet</span>
-  <span class="w-value"><span data-net="ms">—</span><span class="w-unit" data-net="unit"></span></span>
-  <svg class="w-net-spark" viewBox="0 0 200 34" preserveAspectRatio="none"><path data-net="spark" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>
-  <span class="w-sub" data-net="sub">medindo…</span></button>`;
-
-// linha da latência; minutos sem internet quebram a linha
-function sparkPath(points, w, h, pad = 3) {
-  const ok = points.filter((p) => p.ms >= 0);
-  if (ok.length < 2) return '';
-  const t0 = points[0].t, t1 = points[points.length - 1].t || t0 + 1;
-  const max = Math.max(...ok.map((p) => p.ms), 10);
-  let d = '', prev = null;
-  for (const p of points) {
-    if (p.ms < 0) { prev = null; continue; }
-    const x = ((p.t - t0) / Math.max(1, t1 - t0)) * w, y = h - pad - (p.ms / max) * (h - pad * 2);
-    d += `${prev && p.t - prev.t <= 180 ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
-    prev = p;
-  }
-  return d;
-}
-
-export function paintInternet(root, st) {
-  const el = (k) => $(`[data-net="${k}"]`, root);
-  if (!el('ms')) return;
-  if (!st) return;
-  if (!st.enabled) { el('ms').textContent = 'desligado'; el('unit').textContent = ''; el('sub').textContent = 'ligue em Configurações'; return; }
-  if (!st.checked) { el('ms').textContent = '—'; el('unit').textContent = ''; el('sub').textContent = 'medindo…'; return; }
-  el('ms').textContent = st.up ? fmt(st.ms, st.ms < 10 ? 1 : 0) : 'sem internet';
-  el('unit').textContent = st.up ? ' ms' : '';
-  root.querySelector('.w-internet')?.classList.toggle('down', !st.up);
-  el('sub').textContent = st.uptime != null ? `${fmt(st.uptime, st.uptime === 100 ? 0 : 1)}% no ar · 24 h` : '';
-  el('spark').setAttribute('d', sparkPath(st.points.slice(-120), 200, 34));
-}
-
 export async function internetDialog() {
   const d = openDialog(`<h2>${svg('globe')}Internet</h2><div class="inet"><div class="inet-load"><div class="f-loading"><i></i><i></i><i></i></div></div></div>`, { width: 640 });
   let st;

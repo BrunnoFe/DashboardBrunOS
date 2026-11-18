@@ -67,7 +67,6 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
   background-size: cover; background-position: center;
   transition: opacity 700ms ease;
 }
-.wp-layer.fading { opacity: 0; }
 .wp-blur { filter: blur(48px) saturate(120%); transform: scale(1.15); opacity: 0; transition: opacity 500ms ease; }
 .wp-shade { position: absolute; inset: 0; background: rgba(0,0,0,0); transition: background 400ms ease; pointer-events: none; }
 body.is-locked .wp-blur,
@@ -182,12 +181,7 @@ button.widget:active { transform: scale(.98); }
 .w-files .cell-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .w-files .folder-ico { width: 17px; height: 14px; }
 
-.w-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; height: 100%; }
-.w-stats .cell { border-radius: 999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 2px; }
-.w-stats .svg { font-size: 17px; opacity: .9; margin-bottom: 4px; }
-.w-stats .k { font-size: 11px; font-weight: 600; opacity: .55; }
-.w-stats .v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.w-stats .k, .w-caption { opacity: .7; }
+.w-caption { opacity: .7; }
 
 .track { height: 6px; border-radius: 99px; background: rgba(255,255,255,.12); box-shadow: var(--shadow-track); overflow: hidden; }
 .track > i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--brand-lighter), var(--brand-lightest)); transition: width 700ms var(--ease-out); }
@@ -229,7 +223,6 @@ button.widget:active { transform: scale(.98); }
   filter: drop-shadow(0 2px 4px rgba(0,0,0,.6));
 }
 .app.dragging { opacity: .35; }
-.app.drop-before .app-icon { box-shadow: -12px 0 0 -6px #fff, 0 6px 16px rgba(0,0,0,.22); }
 .status-dot { position: absolute; right: -2px; top: -2px; width: 11px; height: 11px; border-radius: 50%; background: #3ad16b; box-shadow: 0 0 0 2px rgba(0,0,0,.28); z-index: 2; }
 .status-dot.off { background: #8a8a8e; }
 
@@ -290,7 +283,6 @@ body.has-dialog #dock { opacity: .35; filter: blur(6px); pointer-events: none; }
 
 /* ── Sheets (Arquivos, Configurações) ────────────────────────── */
 #sheet-host { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
-.sheet-backdrop { position: absolute; inset: 0; pointer-events: auto; }
 .sheet {
   position: absolute; left: 50%; top: 20px; bottom: 0; width: min(1100px, calc(100vw - 32px));
   margin-left: calc(min(1100px, calc(100vw - 32px)) / -2); pointer-events: auto;
@@ -314,7 +306,6 @@ body.has-dialog #dock { opacity: .35; filter: blur(6px); pointer-events: none; }
 }
 .sheet-close:hover { opacity: 1; background: rgba(255,255,255,.12); }
 .sheet-title { font-size: 28px; font-weight: 700; letter-spacing: -0.035em; margin: 0; }
-.sheet-body { flex: 1; min-height: 0; display: flex; }
 .v1-note { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 99px; background: var(--brand-soft); color: var(--brand-lightest); }
 
 /* ── Configurações ───────────────────────────────────────────── */
@@ -435,7 +426,6 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 0; bord
 .f-tile.sel { background: var(--brand-soft); }
 .f-tile .folder-ico, .f-tile .file-ico { width: 54px; height: 46px; }
 .f-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.f-footer { position: absolute; right: 24px; bottom: 100px; font-size: 11.5px; opacity: .45; font-weight: 600; pointer-events: none; }
 .file-ico { width: 20px; height: 22px; flex: none; }
 
 /* ── Diálogos ────────────────────────────────────────────────── */
@@ -560,9 +550,6 @@ body.dragover #drop-hint { opacity: 1; }
 }
 @media (max-width: 640px) {
   .widget { width: min(240px, 44vw); height: 130px; padding: 10px; }
-  .w-stats { gap: 5px; }
-  .w-stats .v { font-size: 11px; }
-  .w-stats .k { font-size: 10px; }
   .w-value { font-size: 18px; }
   .w-files .cell-btn { flex-direction: column; justify-content: center; gap: 4px; padding: 4px; font-size: 10.5px; }
   .w-files .cell-btn span { max-width: 100%; }

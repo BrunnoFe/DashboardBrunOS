@@ -89,8 +89,6 @@ export const BRUNOS_METRICS = [
   B('os_reboot', 'Reinício necessário', 'text', '', 'power'),
 ];
 const METER_TXT = { plug: 'pela tomada', battery: 'pela bateria', rapl: 'só o processador', estimate: 'estimativa calibrada' };
-const BRUNOS_BY_ID = Object.fromEntries(BRUNOS_METRICS.map((m) => [m.id, m]));
-export const brunosDef = (id) => BRUNOS_BY_ID[id];
 
 /** Valor atual de uma Métrica da fonte BrunOS. S = { snapshot, internet, apps }. */
 export function brunosValue(id, S) {
@@ -513,7 +511,6 @@ function clockNow(tz) {
       short: d.toLocaleDateString('pt-BR', { ...o, weekday: 'short', day: 'numeric', month: 'short' }) };
   } catch { return clockNow(''); } // fuso inválido: usa o do aparelho
 }
-export const clockTicks = (it) => it.format === 'clock' && it.clock?.seconds;
 function clockHTML(item) {
   const c = item.clock || {}, t = clockNow(c.tz);
   const tzName = c.tz ? (TIMEZONES.find(([z]) => z === c.tz)?.[1] || c.tz.split('/').pop().replace(/_/g, ' ')) : '';

@@ -9,6 +9,7 @@ Ao retomar uma ideia daqui, pergunte as decisões em aberto com opções antes d
 - Formatar uma partição só e editor de partições (criar, apagar, redimensionar).
 - "Dormir após X minutos parado" (`hdparm -S`): ganho pequeno e alguns adaptadores USB ignoram.
 - Integração com o Beszel como Fonte de Métricas em widgets (não como lugar dos Históricos).
+- Um BrunOS de teste no servidor, com os discos só para leitura (opção B do acesso de diagnóstico).
 
 Regra geral das ideias que mexem no servidor: nada de privilégios no container; o que precisa de root vai
 por SSH com chave restrita (ver `docs/privado/seguranca.md`).
@@ -42,14 +43,6 @@ importante" (por isso a interface já é testada em tamanho de celular).
   fazer só com a biblioteca padrão: ECDSA P-256 + JWT). Regras de quais eventos vão para onde.
 - **F6 Enviar do celular pelo menu Compartilhar**: depende da PWA (Web Share Target) e de uma pasta
   configurável.
-
-## Ideias anotadas na etapa 11 (não aprovadas)
-
-- Formatar só uma partição e editor de partições (criar, apagar, redimensionar) ("quem sabe no futuro").
-- "Dormir após X minutos parado" (`hdparm -S`): ganho pequeno e alguns adaptadores USB ignoram.
-- Beszel como Fonte de Métricas em widgets (não como lugar dos Históricos).
-- Um BrunOS de teste no servidor, com os discos só para leitura (opção B do acesso de diagnóstico),
-  deixado para depois da 0.13.0.
 
 ## Limpezas e conferências pendentes
 

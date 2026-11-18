@@ -1347,14 +1347,9 @@ func (r *Runner) Run(ctx context.Context, t Target, cmd string) (string, error) 
 // ErrOldScript indica que o servidor tem um brunos-host antigo, que não conhece o pedido.
 var ErrOldScript = errors.New("o script do servidor é antigo: em Configurações → Energia, copie os comandos de atualização e cole no servidor")
 
-// Output faz um pedido de leitura (ex.: CmdTailscale) e devolve a saída inteira (até 1 MB), sem
-// misturar com os erros. Usa sempre a chave atual.
-func (r *Runner) Output(ctx context.Context, t Target, cmd string) ([]byte, error) {
-	return r.OutputInput(ctx, t, cmd, nil)
-}
-
-// OutputInput é o Output mandando input pela entrada padrão do script (o script novo no
-// "atualizar-script").
+// OutputInput faz um pedido de leitura (ex.: CmdTailscale) e devolve a saída inteira (até 1 MB), sem
+// misturar com os erros. Manda input (pode ser nil) pela entrada padrão do script (o script novo no
+// "atualizar-script"). Usa sempre a chave atual.
 func (r *Runner) OutputInput(ctx context.Context, t Target, cmd string, input []byte) ([]byte, error) {
 	out, errOut, err := r.exec(ctx, t, cmd, input)
 	if err != nil {

@@ -437,5 +437,3 @@ async function followLoop(a, ctx, box, d) {
 // nomes antigos (0.20.0)
 export const installDialog = (a, ctx, o = {}) => appDialog(a, ctx, o);
 export const settingsDialog = (a, ctx) => appDialog(a, ctx, { edit: true, open: 'aj' });
-
-export const _test = { splitHost, joinHost, isFolderField, imageRepo, imageTag, niceHost };

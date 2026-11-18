@@ -75,6 +75,19 @@
 - A loja tem testes próprios: `bun install && bun test` (18 testes de schema). Não commitar `node_modules`
   nem a alteração que o `bun` faz no `bun.lockb`.
 
+### Fatos do Runtipi 4.12 (lidos no código-fonte dele em 17/11/2026)
+
+- Instalar é `POST /api/app-lifecycle/<app>:<loja>/install` (formulário + porta, domínio, exposto,
+  `localSubdomain` `^[a-zA-Z0-9-]{1,63}$`, `enableAuth`, `isVisibleOnGuestDashboard`, `skipRun`); o estado
+  fica no banco do Runtipi, então gravar arquivos não basta. Editar as respostas é `PATCH .../update-config`
+  (não reinicia); `maxBackups` só vale por ele (na instalação é ignorado).
+- A API aceita `Authorization: Bearer` com um JWT assinado pelo segredo do CLI
+  (`/data/.secrets/cli-secret` dentro do container `runtipi`).
+- Ajustes do usuário: `user-config/<loja>/<app>/docker-compose.yml` e `app.env`, juntados pelo docker
+  compose em todo início (inclusive o da instalação) enquanto `userConfigEnabled` não for desligado, sem
+  conferir nada (por isso o BrunOS confere). Desinstalar apaga a pasta do app e o `app-data`, mas **não** o
+  `user-config`.
+
 ## Publicação (GitHub Actions)
 
 `.github/workflows/docker.yml`:

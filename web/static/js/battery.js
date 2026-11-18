@@ -42,19 +42,6 @@ export function stateText(b) {
   };
 }
 
-export function batteryWidgetHTML() {
-  return `<button class="widget w-battery" data-action="battery" aria-label="Bateria">
-    <span class="wb-top"><span class="w-caption">Bateria</span><span class="wb-power" data-bat="power"></span></span>
-    <span class="wb-main"><span data-bat="glyph"></span><span class="w-value" data-bat="pct">—</span><span class="wb-state" data-bat="title"></span></span>
-    <span class="wb-sub" data-bat="sub"></span>
-    <span class="wb-cells">
-      <span class="cell"><span class="k">Energia</span><span class="v" data-bat="wh">—</span></span>
-      <span class="cell"><span class="k" data-bat="wlabel">Consumo</span><span class="v" data-bat="w">—</span></span>
-      <span class="cell"><span class="k">Saúde</span><span class="v" data-bat="health">—</span></span>
-    </span>
-  </button>`;
-}
-
 const setText = (el, v) => { if (el && el.textContent !== v) el.textContent = v; };
 const setHTML = (el, v) => { if (el && el._h !== v) { el.innerHTML = v; el._h = v; } };
 

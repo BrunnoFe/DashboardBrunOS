@@ -2,51 +2,41 @@
 
 Resumo do que cada versão trouxe e das lições que ainda valem. Detalhes de código: `arquitetura.md`;
 porquês: `decisoes.md`; o que falta: `roadmap.md` e `ideias-futuras.md`. Detalhes de acesso ao servidor
-e de segurança ficam em `docs/privado/` (não versionado).
+e de segurança ficam em `docs/privado/` (não versionado). Textos mais longos de cada versão, antes da
+limpeza de 18/11/2026, estão no git (`git log -- docs/projeto/historico.md`).
 
 ## v0 e 0.1.0 (07/11/2026): primeira versão no Runtipi
-- Protótipo estático inspirado no umbrelOS; depois o backend Go (auth, sessões, preferências, papéis de
-  parede, estatísticas por SSE, apps do Runtipi, Docker por proxy, Arquivos com lixeira), CI com teste de
-  fumaça em Docker real, imagem no GHCR e app na loja. O Bruno confirmou: "Funcionou no Runtipi!"
-- Lições: fuga por link simbólico em upload/colar (escritas passaram a validar o caminho real); lista de
-  discos vazia no runner do CI (nome do disco pelo `st_dev`); ícone sem logo vira gradiente; o ambiente da
-  nuvem não cria tags, então a publicação é pelo arquivo `VERSION`.
+Protótipo estático inspirado no umbrelOS; depois o backend Go (auth, sessões, preferências, papéis de
+parede, estatísticas por SSE, apps do Runtipi, Docker por proxy, Arquivos com lixeira), CI com teste de
+fumaça em Docker real, imagem no GHCR e app na loja. O Bruno confirmou: "Funcionou no Runtipi!"
+- Lições: fuga por link simbólico em upload/colar (escritas validam o caminho real); lista de discos vazia
+  no runner do CI (nome do disco pelo `st_dev`); ícone sem logo vira gradiente; a nuvem não cria tags, a
+  publicação é pelo arquivo `VERSION`.
 
-## 0.2.0 (07/11): ajustes depois de usar
-Bolinha de status inteira; "X" da janela Arquivos alinhado; seção **Discos** com "Mapear"; widget e janela
-de **bateria**; "Apps no dock" em lista suspensa; ícone da loja do Runtipi; linhas de configuração que
-quebram os controles para baixo.
+## 0.2.0 a 0.4.0 (07/11)
+- 0.2.0: bolinha de status, seção **Discos** com "Mapear", widget e janela de **bateria**, "Apps no dock".
+- 0.3.0: terminal SSH (xterm.js, senha ou chave, TOFU, SSE, `x/crypto` vendorizado). Lição: a biblioteca
+  preferia a chave ECDSA; passou a seguir a ordem do OpenSSH (ED25519 primeiro). Senha errada = recusa de
+  login, não erro genérico.
+- 0.4.0: sino (`internal/events`), quedas de energia (`internal/power`), **desligamento seguro** pela
+  bateria (simulação por padrão, SSH com chave restrita), aviso de disco mapeado desmontado, TOFU
+  compartilhado (`internal/sshknown`). Lição: `bytes.Buffer` compartilhado entre stdout e stderr do SSH
+  perdia saída.
 
-## 0.3.0 (07/11): terminal SSH
-xterm.js, SSH com senha ou chave, TOFU, SSE, `golang.org/x/crypto` vendorizado e conferido no CI. Lição: a
-biblioteca preferia a chave ECDSA do servidor; passou a seguir a ordem do OpenSSH (ED25519 primeiro).
-Senha errada vira recusa de login, não erro genérico.
-
-## 0.4.0 (07/11): energia, discos e central de notificações
-Sino (`internal/events`), quedas de energia (`internal/power`), **desligamento seguro** pela bateria (modo
-simulação por padrão, SSH com chave restrita), aviso de disco mapeado desmontado, TOFU compartilhado
-(`internal/sshknown`). Lição: um `bytes.Buffer` compartilhado entre stdout e stderr da sessão SSH perdia
-saída; buffers separados.
-
-## 0.5.0 (08/11): login novo, temperatura dos discos, previsão de disco cheio
-Aviso de acesso novo por navegador+sistema+rede; temperatura por `drivetemp`/`nvme` sem acordar HD parado;
-previsão de disco cheio **opcional** (desligada por padrão, a pedido do Bruno).
-
-## 0.6.0 (08/11): arquivos
-Tipos de mídia próprios (a imagem `scratch` não tem `/etc/mime.types`), editor CodeMirror 6 vendorizado,
-envio com retomada, extrair zip/tar, duplicados, mapa do espaço. As etapas de segurança (dois passos,
-sessões ativas, link público) foram adiadas (`ideias-futuras.md`).
-
-## 0.7.0 (08/11): apps
-Detalhes do app (disponibilidade 24 h, CPU/memória, logs ao vivo, ligar/parar/reiniciar), desinstalar pelo
-painel do Runtipi, monitor de disponibilidade com aviso, pastas e páginas na tela inicial.
+## 0.5.0 a 0.7.0 (08/11)
+- 0.5.0: aviso de acesso novo (navegador+sistema+rede), temperatura dos discos (`drivetemp`/`nvme`, sem
+  acordar HD), previsão de disco cheio **opcional**.
+- 0.6.0: Arquivos: tipos de mídia próprios (a `scratch` não tem `/etc/mime.types`), editor CodeMirror 6,
+  envio com retomada, extrair zip/tar, duplicados, mapa do espaço. Segurança etapa 3 adiada.
+- 0.7.0: Detalhes do app (disponibilidade 24 h, CPU/memória, logs ao vivo, ligar/parar/reiniciar),
+  desinstalar pelo painel do Runtipi, monitor de disponibilidade com aviso, pastas e páginas na tela inicial.
 
 ## 0.8.0 e 0.8.1 (08/11): monitoramento; correções depois do primeiro apagão de verdade
 - 0.8.0: histórico de 24 h/7 dias, processos do servidor (como o htop), internet (latência TCP e quedas).
-- 0.8.1: **o desligamento seguro falhava** num Ubuntu novo: uma trava do systemd (inhibitor) valia até para o
-  root e o comando foi recusado até a bateria acabar. Corrigido com um script no servidor que ignora a
-  trava, tentativas sem limite na bateria e desligamento imediato se a bateria despencar. Duração das
-  quedas passou a fechar no último minuto visto. Limite de carga agnóstico ao notebook. Ajustes de celular.
+- 0.8.1: **o desligamento seguro falhava** num Ubuntu novo (trava do systemd valia até para o root).
+  Corrigido com um script no servidor que ignora a trava, tentativas sem limite na bateria e desligamento
+  imediato se a bateria despencar. Duração das quedas fecha no último minuto visto. Limite de carga
+  agnóstico ao notebook.
 
 ## 0.9.0 a 0.9.3 (08/11): widgets personalizáveis e integrações
 Janela Widgets (Modelos, Formatos, gráficos, prévia), Área de widgets por Página, colunas com encaixe,
@@ -55,287 +45,138 @@ nunca vão ao navegador): AdGuard, Speedtest Tracker, Immich, Plex, WatchYourLAN
 Syncthing, Nextcloud. Papel de parede por horário. Lição: apagar uma integração durante uma busca dela
 derrubava o BrunOS (nil pointer).
 
-## 0.10.0 e 0.10.1 (10/11): bloqueio, relógio, clima, notas e Terminal com abas
+## 0.10.0 e 0.10.1 (10/11): bloqueio, relógio, clima, notas, Terminal com abas
 Tela de bloqueio (com senha valendo no servidor, ou só visual), widgets Relógio, Clima (Open-Meteo) e
 Notas, Terminal com Abas, Chave do Terminal, Conexões e Comandos salvos. Lições: o login montado atrás da
-Tela de bloqueio roubava o foco; a imagem `scratch` não tinha certificados de autoridades (todo HTTPS
-para fora falhava com `x509`; a imagem agora leva `ca-certificates.crt`); listas vazias vão como `[]`,
-não `null`.
+Tela de bloqueio roubava o foco; a `scratch` não tinha certificados de autoridades (todo HTTPS para fora
+falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão como `[]`, não `null`.
 
 ## 0.11.0 a 0.11.2 (10 e 11/11): consumo, SMART, atualizações; preferências protegidas
-- 0.11.0: consumo e custo (Medidor, Tomada Tuya local sem nuvem), saúde dos discos (SMART pelo script do
-  servidor), aviso de atualização de apps e do Linux.
+- 0.11.0: consumo e custo (Medidor, Tomada Tuya local), saúde dos discos (SMART pelo script), aviso de
+  atualização de apps e do Linux.
 - 0.11.1: **as preferências zeravam** quando a leitura de `/api/settings` falhava (a tela seguia com o
-  padrão e salvava por cima). Agora a tela nunca entra nem salva sem ler, o servidor recusa gravar o
-  padrão por cima (409) e guarda uma cópia por dia (14 dias). A Tomada Tuya atende uma conexão por vez:
-  fila por tomada.
-- 0.11.2: o SMART estourava o tempo por causa de certos adaptadores USB (o `smartctl` adivinhava NVMe e o
-  kernel reiniciava o disco). Agora lê um disco por vez, tenta SATA primeiro nos USB, guarda o modo pelo
-  número de série e marca "sem SMART" quando um disco trava uma vez.
+  padrão e salvava por cima). Agora a tela nunca entra nem salva sem ler, o servidor recusa gravar o padrão
+  por cima (409) e guarda uma cópia por dia (14 dias). Tomada Tuya: fila por tomada.
+- 0.11.2: o SMART estourava o tempo por causa de certos adaptadores USB; agora lê um disco por vez, tenta
+  SATA primeiro nos USB, guarda o modo pelo número de série e marca "sem SMART" quando um disco trava.
 
 ## 0.12.0 a 0.12.3 (12/11): atualizar pela interface
 - 0.12.0: botão de atualizações ao lado do sino; atualizar Linux e apps sem abrir o terminal (roda solto
-  no servidor e o BrunOS retoma o andamento); Terminal sempre no dock; Configurações sem a aba "Tudo".
-  Bug antigo corrigido: as rotinas de consumo, SMART e atualizações nunca eram ligadas.
-- 0.12.1: o script do servidor passa a se atualizar sozinho, só com assinatura do CI; backup do Runtipi
-  antes de atualizar app; `apt` tolerante a repositório extra quebrado.
+  no servidor, o BrunOS retoma o andamento); Terminal sempre no dock. Bug antigo: as rotinas de consumo,
+  SMART e atualizações nunca eram ligadas.
+- 0.12.1: o script do servidor se atualiza sozinho (só com assinatura do CI); backup do Runtipi antes de
+  atualizar app; `apt` tolerante a repositório extra quebrado.
 - 0.12.2: o andamento de atualizações compridas perdia a primeira linha do registro e concluía "não
-  começou" (marca de "visto rodando" + script novo). Pegadinha: um segredo salvo pelo PowerShell veio com
-  CRLF e o `ssh-keygen` recusou; o CI limpa CR/BOM antes de assinar.
+  começou". Pegadinha: um segredo salvo pelo PowerShell veio com CRLF e o `ssh-keygen` recusou; o CI limpa
+  CR/BOM antes de assinar.
 - 0.12.3: "5 atualizações que não somem" eram pacotes segurados pela liberação gradual do Ubuntu; agora
-  contam à parte. "Conferir" por seção; lojas do Runtipi atualizadas antes de conferir os apps.
+  contam à parte. Lojas do Runtipi atualizadas antes de conferir os apps.
 
-## 0.13.0 (12/11): tela inicial nova
-Widgets com lugar e Tamanho livres numa grade de Quadros (Medida até 6 × 4), Disposições (widgets em
-cima, apps em cima, à esquerda, à direita, só widgets, só apps), Área de apps com Medida própria, arrastar
-feito pelo BrunOS (sombra, vizinhos que abrem espaço, "Desfazer"), celular com Área compacta e telas
-separadas. Encaixe em `web/static/js/layout.js` (funções puras) com `tests/layout.test.mjs` no CI.
-Lições dos testes com Playwright: `justify-content: center` antigo da `.app-page` centralizava as telas na
-vertical; a grade de apps com `auto-fill` alargava a tela no lado a lado (`min-width: 0`); soltar fora da
-tela inicial deixava o fantasma preso (ouvir os eventos de soltar na janela inteira).
+## Etapa 11 (0.13.0 → 0.16.0, 12 e 13/11): tela inicial nova, Históricos, janela Discos
+- 0.13.0: widgets com lugar e Tamanho livres numa grade de Quadros, Disposições, Área de apps com Medida
+  própria, arrastar feito pelo BrunOS, celular com Área compacta. Encaixe em `web/static/js/layout.js`
+  (funções puras) com `tests/layout.test.mjs`. Lições: `justify-content: center` antigo centralizava as telas
+  na vertical; grade `auto-fill` alargava a tela (`min-width: 0`); ouvir os eventos de soltar na janela
+  inteira, senão o fantasma do arraste ficava preso.
+- 0.13.1: tamanho do ícone em 4 degraus pela Régua + Espaço entre ícones (Fixo, Elástico, Preencher). A
+  Régua depende do zoom do Quadro, que só se conhece depois de desenhar os widgets: usa a do anterior e
+  refaz se mudou.
+- 0.13.2: **Área útil** (margem ~7 %), Quadro estica de 150 a 340 px, ícones e widgets na mesma escala,
+  "Encolher os widgets"/"Widgets grandes", telas de continuação sem widgets. Uma matriz de 252 combinações no
+  Playwright achou 7 defeitos. Lições: a Área de apps virou flex (grade não centraliza a última fileira);
+  o ícone Grande arredonda para baixo; mouse parado em cima de um ícone e a animação de entrada dão falsos
+  "fora do centro" na matriz.
+- 0.14.0: `internal/tsdb` (Históricos de 30 dias em três camadas, com foto a cada 6 h e diário), leitura/
+  escrita e % ocupado por disco, gráficos numa peça só (`mountChart`: eixo, balão, Período, Ponta viva).
+  Lição: `display: flex/grid` vence o atributo `hidden`; regra `[hidden] { display: none !important }`.
+- 0.15.0 e 0.15.1: janela **Discos** (lista, Visão geral, Saúde com SMART explicado e teste do próprio
+  disco, Desempenho, Espaço, Linha do tempo, Ejetar); script 10. Teste do disco conferido a cada 30 s com
+  andamento; dados reais trocados por genéricos nos testes e na demonstração. Lição: o plano dizia
+  `/data/disks.json`, mas ele já guarda os discos mapeados do Arquivos; conferir os nomes em `/data` antes
+  de criar um.
+- 0.16.0: na janela Discos: **Montar**, **Desmontar**, **Renomear** e o assistente **Formatar** (ext4,
+  Btrfs, exFAT, NTFS; digitar o modelo, senha do BrunOS e Senha de formatação conferida pelo servidor, 5
+  erros = 1 h de trava; script 11). Depois de montar/desmontar, "Reiniciar o BrunOS agora" (o container só
+  vê as montagens de quando ligou). Achado de segurança: o script procura o disco em todos os
+  `/proc/*/mountinfo` antes de ejetar ou formatar (decisão 57). Testes: `tests/script-discos.sh` e
+  `tests/script-formatar.sh` (script de verdade como root com ferramentas de disco falsas).
 
-## 0.13.1 (12/11): ícones com tamanho fixo (Régua)
-O ícone encolhia conforme a Medida da Área de apps (a área era limitada a 8 casas e o `appsPer` diminuía o
-ícone até 44 px). Agora: Tamanho do ícone em 4 degraus (Pequeno, Médio, Grande, Enorme) medidos pela
-Régua (largura dos widgets com 6 colunas; no Grande, 16 colunas vão de uma ponta à outra), com piso em px
-no celular (6 / 5 / 4 / 3 colunas em 360 px), e Espaço entre os ícones (Fixo, Elástico, Preencher). A
-Medida que não cabe mostra menos colunas; o ícone nunca encolhe. Lição: a Régua depende do zoom do Quadro,
-que só se conhece depois de desenhar os widgets; o desenho usa a do anterior e refaz na hora se mudou. A
-sobra do Elástico/Preencher vai como espaço entre as colunas (cada coluna fica com a casa mínima), senão
-poucas colunas largas passavam da tela.
+## Etapa 12 (0.17.0 e 0.23.x, 13 a 17/11): janelas
+- 0.17.0: **Janelas de app** (decisão 58): "Abrir apps em: No BrunOS", iframe direto, Estilo Flutuante
+  (arrastar, redimensionar, encaixar) ou Folha, dock com apps abertos, limite de apps abertos (8 no PC, 5 no
+  celular), `internal/framecheck` lê os cabeçalhos e o que recusa vira Só em aba. Lições: o encaixe guarda o
+  tamanho de antes do arraste; no celular, o toque na faixa da dock cancela o clique que cairia no app.
+- 0.23.0: **janelas do sistema** (Arquivos, Discos, Widgets, Configurações, Terminal) no mesmo gerenciador,
+  com Folha ou Flutuante; o Arquivos pode abrir uma segunda janela; `openSheet` abre `sys:<tipo>` no
+  `windows.js`; o `terminal.js` monta dentro do corpo da janela (`ctx.host`).
+- 0.23.1: bug (gif do Bruno): a segunda janela do Arquivos tomava o lugar da primeira (estado global único
+  no `files.js`). Agora cada janela/guia tem o próprio estado (`hold`). **Guias no Arquivos** (`filetabs.js`):
+  "+", clique do meio, Alt+T/W/1…9 (o Chrome não deixa sites usarem Ctrl+T/W), reordenar, destacar para
+  janela própria sem recarregar, guias lembradas neste aparelho.
 
-## 0.13.2 (13/11): Área útil e correções da tela inicial
-Depois do teste da 0.13.1 (fileira de 15 apps fora do centro, widgets repetidos na tela seguinte, 2 × 6
-passando do dock), uma matriz de 252 combinações no Playwright achou 7 defeitos. Agora: Área útil (margem
-de ~7 % dos lados, até a pesquisa) onde tudo cabe; o Quadro estica de 150 a 340 px para encher a largura;
-ícones e widgets na mesma escala no computador; "Encolher os widgets" ou "Widgets grandes" quando não cabe;
-telas de continuação sem widgets e usando a altura toda; última fileira centralizada (ou "como no
-celular"); Medidas até 8 × 5 e 20 × 8; submenu "Organização da tela inicial". Lições: a Área de apps virou
-flex (grade não centraliza a última fileira); o ícone Grande arredonda para baixo (para cima, 16 colunas
-passavam da Régua por 3 px); a folga do nome nas pontas pode avançar sobre a margem. Na matriz, o mouse
-parado em cima de um ícone e a animação de entrada davam falsos "fora do centro".
+## Etapa 13 (0.18.0 → 0.20.0, 16 e 17/11): Loja
+- 0.18.0: janela **Loja** (decisão 59): apps de todas as lojas do Runtipi lidos do disco, categorias, busca,
+  favoritos, página do app; parar/iniciar/desinstalar e adicionar/remover lojas pelo script (versão 12).
+  Lições: lojas são de terceiros (sem symlink nem HTML); mudar o `location.hash` minimiza a janela da frente;
+  o `/tmp` do WSL some quando ele reinicia.
+- 0.19.0: **Garimpo** (decisão 60): repositório `BrunnoFe/Garimpo`, conversor diário (CasaOS e
+  LinuxServer → lojas do Runtipi, um ramo por origem); na Loja, cartão por loja e selo "via CasaOS". A
+  Senha de formatação virou **Senha de configuração** (script 13). Lições: a LinuxServer põe o prefixo
+  `linuxserver-` nos nomes; os testes oficiais precisam de `bun install --ignore-scripts`; o GitHub barrou
+  um `SECRET_KEY` fixo com cara de chave da OpenAI (o conversor troca segredo fixo por campo `random`);
+  no PowerShell, comandos bash longos vão em arquivo `.sh`.
+- 0.20.0: **instalar e Ajustes dentro do BrunOS** (decisão 61): formulário na Loja, mandado à API do Runtipi
+  pelo script (script 14), Ajustes no `user-config` editados com `yaml.v3`, Senha de configuração em
+  Configurações → Sistema. Lições: o Runtipi 4.12 trocou a chave do CLI (agora dentro do container); chave e
+  token não vão na linha de comando; o arquivo de ajustes do Runtipi não tem nenhuma conferência.
 
-## 0.14.0 (13/11): Históricos de 30 dias e gráficos com valores
-`internal/tsdb`: uma série por dado, em três camadas (1 min por 48 h, 5 min por 7 dias, 20 min por 30
-dias, com média e pico), ~45 KB cada. Servidor (CPU, memória, temperatura, rede, ventoinha, bateria),
-cada app (CPU, memória, no ar), internet (latência) e, coleta nova, leitura/escrita e % ocupado de cada
-disco pelo `/proc/diskstats`. Sobrevive ao reinício: foto completa a cada 6 h e diário com só os pontos
-novos a cada 5 min (o SSD não é reescrito em MB à toa). Integrações passam de 7 para 30 dias. Gráficos
-numa peça só (`mountChart`): eixo Y com 3 valores redondos, valor ao passar o mouse ou o dedo, pico nos
-períodos longos, Ponta viva no "5 min" e seletor de Período (1 h a 30 dias) no Uso ao vivo, Detalhes do
-app, Internet (quedas em faixa vermelha) e Energia (barras com data e R$); widgets de Gráfico com balão e
-os Períodos 48 h e 30 dias. Lição: `display: flex/grid` no CSS vence o atributo `hidden` (o aviso "sem
-dados" aparecia junto com o gráfico); regra `[hidden] { display: none !important }` nos componentes.
-
-## 0.15.0 (13/11): janela Discos
-Ícone fixo na dock logo depois de Arquivos. Lista dos discos (com o grupo "Sem pasta de montagem") e cinco
-abas por disco: Visão geral (identificação, caminho fixo `/dev/disk/by-id`, barra de partições com
-montagem e fstab, apps que usam o disco, dormindo/acordado sem acordar), Saúde (todos os atributos do
-SMART explicados em pt-BR com "normal/preocupante", ATA e NVMe, e o teste curto/longo do próprio disco com
-andamento e aviso no sino ao terminar), Desempenho (leitura/escrita e % ocupado com Período e Ponta viva,
-temperatura, teste de velocidade que só lê 1 GB), Espaço (histórico, previsão, atalhos para Mapa do espaço
-e Duplicados) e Linha do tempo (conectado, sumiu, montado, SMART mudou, teste, pico de temperatura,
-velocidade, ejetado, em `/data/disk-events.json`, e os erros do registro do Linux daquele disco).
-"Ejetar com segurança" para disco USB desmontado. Avisos novos: disco novo conectado e disco sumiu. O Uso
-ao vivo virou um resumo que abre a janela. Script do servidor 10 (troca automática): `discos-detalhe`,
-`estado`, `erros`, `smart-teste`, `velocidade`, `ejetar`; o `smart` traz o andamento e o registro dos
-testes. Testes: `internal/disks`, `tests/script-discos.sh` (o script de verdade como root com `lsblk`,
-`hdparm`, `journalctl`, `smartctl` e `dd` falsos). Lição: o plano dizia `/data/disks.json`, mas esse
-arquivo já guarda os discos mapeados do Arquivos; conferir os nomes em `/data` antes de criar um.
-
-## 0.15.1 (13/11): teste do disco que não some e dados genéricos
-Teste do próprio disco conferido a cada 30 s (antes, 3 min), com andamento em "X% concluído" que avança
-segundo a segundo (o disco informa de 10 em 10%; o tempo decorrido completa a barra) e o tempo desde o
-começo. Todo teste pedido termina com aviso no sino e na Linha do tempo, inclusive "interrompido" e "sem
-resultado anotado", e o resultado fica na tela (`lastRun`). A estimativa usa quanto o teste levou de
-verdade da última vez (a do disco era curta demais). Disco que anota "interrompido pelo computador" depois
-de ser perguntado no meio do teste passa a ser conferido só quando o tempo estimado acaba (`quietTest`);
-durante um teste, as leituras de rotina deixam o disco em paz. Lição do teste do Bruno: o SSD do sistema
-já tinha testes interrompidos de antes do BrunOS, e o kernel não registrou nenhum reset; um disco não
-interrompe o teste do outro. Dados reais (usuário, nome do servidor, notebook, discos, versão do Ubuntu)
-trocados por genéricos no modo demonstração, nos testes e nos comentários; corrida antiga no teste de
-`updates` corrigida.
-
-## 0.16.0 (13/11): montar, desmontar e Formatar (fim da etapa 11)
-Na janela Discos: "Montar…" (nome da pasta em `/mnt/`, linha no `/etc/fstab` marcada `# brunos` com
-`nofail`, cópia do fstab antes e volta atrás se o `mount` falhar; a pasta já entra no Arquivos),
-"Desmontar" (recusa se um programa usa o disco e diz quem; tira só a linha do BrunOS), "Renomear" (rótulo
-de partição desmontada) e o assistente "Formatar…" (ext4, Btrfs, exFAT ou NTFS; mostra o que vai ser
-apagado; pede para digitar o modelo, a senha do BrunOS e a Senha de formatação; andamento em três etapas;
-aviso no sino e Linha do tempo). A Senha de formatação é criada só no Terminal do servidor (`sudo
-brunos-host senha-formatar`; recusado pela chave do BrunOS) e conferida pelo servidor (scrypt, 5 erros =
-1 h de trava); antes de apagar, o script confere de novo série, montagem, sistema, RAID/LVM, fstab e uso.
-Depois de montar ou desmontar, botão "Reiniciar o BrunOS agora" (o container só vê as montagens de quando
-ligou; o Runtipi não deixa ligar a propagação). Achado de segurança: um container guarda cópia da montagem
-mesmo depois de o servidor desmontar; o script agora procura o disco em todos os `/proc/*/mountinfo` antes
-de ejetar ou formatar (vale também para o "Ejetar" da 0.15). Script do servidor 11. Testes:
-`tests/script-formatar.sh` (script de verdade como root com as ferramentas de disco falsas), `internal/disks`
-e `apitest`.
-
-## Etapa 11 em resumo (0.13.1 → 0.16.0, combinada em 12/11/2026)
-Tela inicial com tamanho de ícone pela Régua e Área útil (0.13.1–0.13.2), Históricos de 30 dias com
-gráficos de verdade (0.14.0), janela Discos (0.15.0–0.15.1) e montar/desmontar/Formatar (0.16.0).
-Mudanças em relação ao plano: Linha do tempo em `disk-events.json` (o `disks.json` já era do Arquivos);
-os testes de disco viraram contêineres descartáveis com ferramentas falsas (no lugar do OpenSSH do
-`smoke.sh`); reinício do BrunOS depois de montar/desmontar e a trava de container (decisão 57). Ideias
-anotadas e não aprovadas foram para o `ideias-futuras.md`.
-
-## 0.17.0 (13/11): Janelas de app (etapa 12, decisão 58)
-"Abrir apps em: No BrunOS" abre o app numa janela dentro do painel (iframe direto, sem proxy). Estilo das
-janelas Flutuante (arrastar, redimensionar, encaixar no topo e nas laterais, vários abertos) ou Folha (uma
-por vez); tela estreita sempre em tela cheia. Barra com ⟳, ↗, minimizar, maximizar e fechar; animações de
-~200 ms saindo do ícone e voando para a dock. Dock com os apps abertos (segundo divisor, pontinho, clique
-que restaura/traz para a frente/minimiza) e "Dock com app maximizado" (visível, esconde sozinha, app acima
-da dock). Limite de apps abertos (8 no PC, 5 no celular; pergunta antes de fechar). O vigia de apps lê os
-cabeçalhos de cada app (`internal/framecheck`) e o que recusa vira Só em aba, abrindo em nova aba como
-antes. Voltar minimiza; F5 com app aberto pergunta; Sair fecha os apps; Bloqueio só esconde. Lições do teste
-visual: o encaixe precisa guardar o tamanho de antes do arraste; no celular, o toque na faixa da dock
-precisa cancelar o clique que cairia no app (ele roubava o foco e escondia a dock).
-
-## 0.18.0 (17/11): janela Loja (etapa 13, decisão 59)
-O ícone da sacola abre a Loja do BrunOS: os apps de todas as lojas do Runtipi, lidos do disco (`repos/`),
-com abas Descobrir / Instalados / Atualizações, categorias em português, busca, filtro por loja,
-favoritos, prateleiras "Novos na loja" e "Atualizados recentemente" e a página de cada app (descrição,
-versão, o que a instalação pergunta). Instalar abre a tela do Runtipi em Janela de app ou nova aba (o
-`runtipi-cli` não instala). Parar, iniciar e desinstalar pelo Runtipi e adicionar, remover e atualizar
-lojas pelo script do servidor (versão 12). Desinstalar pede a Senha de formatação, conferida pelo
-servidor com a mesma trava de 5 erros; sem a senha criada, a Loja mostra como criar. A Loja é a primeira
-janela do sistema no gerenciador de Janelas e o desenho segue a largura da janela (container query), então
-janela estreita e celular usam o mesmo arranjo. Lições: as lojas são de terceiros, então nada de seguir
-symlink nem de mostrar HTML delas; mudar o `location.hash` minimiza a janela da frente (o "voltar"); o
-`/tmp` do WSL some quando ele reinicia.
-
-## 0.19.0 (17/11): Garimpo e Senha de configuração (etapa 13, decisão 60)
-Novo repositório público `BrunnoFe/Garimpo`: um conversor que roda todo dia no GitHub Actions e transforma
-as lojas do CasaOS/ZimaOS (Apache-2.0) e a LinuxServer-AppStore (GPL-3.0) em lojas do Runtipi, uma por
-ramo (`casaos`, `linuxserver`). Recusa receitas perigosas (privileged, socket do Docker, rede do servidor,
-pastas do sistema, poderes de administrador, aparelhos além da placa de vídeo), pula o que já existe na
-loja oficial, confere tudo de novo com um programa separado e roda os testes oficiais da loja do Runtipi
-antes de publicar. Na primeira conversão: 86 apps na CasaOS e 188 na LinuxServer. Na Loja do BrunOS: um
-cartão por loja (ideia do Bruno), nome e selo da origem ("via CasaOS") lidos do `garimpo.json`, faixa com
-origem e licença, e as duas lojas sugeridas com um clique. A Senha de formatação passou a se chamar
-Senha de configuração (script do servidor 13, comando `senha-config`; o antigo continua). Lições: a
-LinuxServer põe o prefixo `linuxserver-` nos nomes (sem tirar, a comparação com a loja oficial falhava);
-o serviço da página web às vezes é um nginx na frente do principal; os testes oficiais precisam de
-`bun install --ignore-scripts`; no PowerShell, comandos bash longos vão em arquivo `.sh`. No primeiro
-lançamento, o GitHub barrou o ramo `casaos` porque a receita do Dify traz um `SECRET_KEY` fixo com cara de
-chave da OpenAI: o conversor agora troca segredo fixo (variável de SECRET/TOKEN/KEY/PASSWORD com valor
-longo) por um campo `random` do Runtipi, gerado em cada instalação, e recusa o app que ainda tiver algo
-com cara de chave; o `confere.py` também procura.
-
-## 0.20.0 (17/11): instalar e Ajustes dentro do BrunOS (etapa 13, decisão 61)
-Instalar na própria Loja: formulário com as perguntas do app (listas prontas de discos e pastas, o
-recomendado já marcado, porta, endereço local, domínio), conferido pelo BrunOS e mandado ao Runtipi pela
-API dele, com a chave do `runtipi-cli`, que não sai do servidor (script 14); o BrunOS acompanha até o app
-ligar. Cada app instalado ganhou **Instalação** (mudar as respostas, senhas guardadas ficam) e **Ajustes**
-(pastas do servidor, memória, núcleos, placa de vídeo, variáveis) no `user-config` do Runtipi, editado
-com `gopkg.in/yaml.v3` para não mexer no que foi escrito à mão; salvar pede a Senha de configuração e
-guarda cópias. Configurações → Sistema ganhou a linha da Senha de configuração, com "Criar agora" que abre
-o Terminal com o comando pronto, e um aviso no sino enquanto ela não existe. Lições: o Runtipi 4.12 trocou
-a chave do CLI (agora dentro do container, lida com `docker exec`); a chave e o token não podem ir na
-linha de comando (outros usuários veem os processos); o arquivo de ajustes do Runtipi não tem nenhuma
-conferência, por isso o BrunOS confere.
-
-## 0.21.0 (17/11): janela única de instalar e configurar; Requer privilégios (etapa 14, decisão 62)
-Retorno do Bruno depois de testar a 0.20.0. Instalação e Ajustes viraram **uma janela só** (botão
-"Configurar" no app instalado), com seções que abrem e fecham (O app pergunta e Acesso abertas; Pastas e
-recursos, Opcionais e Avançado fechadas, com resumo), "?" que abre a explicação embaixo (funciona no toque)
-e tela cheia com botões presos embaixo no celular. **Acesso** como no Runtipi: nome do endereço local
-(`https://[nome].server.lan`), pedir login do Runtipi, mostrar no painel de visitantes, limite de backups
-(ao editar). **Ajustes já na instalação**, preenchidos com o que a receita traz (variáveis com a setinha de
-voltar ao original, pastas da receita com cadeado e "Trocar pasta", portas), mais versão da imagem e
-política de reinício; o BrunOS grava só o que mudou. Ajustes que sobraram de uma instalação anterior
-aparecem na janela. **Requer privilégios**: o BrunOS lê a receita de todo app (YAML ou o JSON do Runtipi)
-com a régua do Garimpo; selo nos cartões, guia "Apps com Privilégios", lista na página do app, escudo no
-ícone da tela inicial e aviso em Detalhes do app; instalar pede "Entendo os riscos" + Senha de
-configuração. Script 15: `instalar-app-senha` (senha, formulário e Ajustes de uma vez; grava os Ajustes
-antes de pedir a instalação e devolve o arquivo anterior se o Runtipi recusar), `ajustes-desfazer` (o
-BrunOS tira os Ajustes se a instalação falhar depois) e `ajustes-ler` também de app não instalado.
-**Garimpo** junto: apps com privilégios entram na loja normal (privilegios.json + README), apps na rede do
-servidor sem porta publicada passam a entrar, senha fixa da receita vira pergunta obrigatória (menos as de
-serviços internos: banco, busca, MinIO...), o usuário que anda com ela e as variáveis descritas pelo
-CasaOS viram perguntas preenchidas, e o `perguntas.json` corrige app a app. Números na conversão real:
-CasaOS 107 apps (21 com privilégios, 10 com perguntas novas), LinuxServer 198 (10 com privilégios); na loja
-oficial do Runtipi, 40 de 271 apps ganham o selo (entre eles Plex, por usar a rede do servidor). Lições: a
-régua do BrunOS (Go) e a do Garimpo (Python) precisam dar o mesmo texto: conferidas lado a lado nos 305
-apps convertidos; caminho com `${VAR:-padrão}` tem ":" dentro da variável (separar com cuidado); o Runtipi
-ignora `maxBackups` na instalação (só vale pelo `update-config`) e não apaga o `user-config` ao desinstalar;
-`[hidden]` não esconde nada quando o CSS dá `display` ao elemento.
-
-## 0.21.1 (17/11): app estragado logo na instalação
-Teste do Bruno: o AnythingLLM (via CasaOS) ficou instável logo depois de instalar (erro P3009 do Prisma em
-todo início). Rastreado pelo acesso de diagnóstico: com a imagem ainda baixando, a página do app já mostrava
-"Iniciar" (o app aparece como instalado e parado antes de terminar); pedidos de ligar recriaram o container
-três vezes em 40 s, e o Docker matou o app no meio da primeira migração do banco, que ficou marcada como
-falha. Nada a ver com privilégios. Correções: (1) enquanto o Runtipi diz que o app está instalando,
-atualizando etc., a página do app troca os botões por um aviso e o BrunOS recusa ligar, parar, reconfigurar
-e salvar Ajustes (409); (2) o erro da fila interna do Runtipi (`dial tcp 127.0.0.1:5672`) sai em
-português; (3) antes de pedir ao Runtipi para ligar, parar, reiniciar ou reconfigurar, o BrunOS guarda as
-últimas linhas dos logs de cada container (na memória, a última cópia por app) e Detalhes do app mostra
-"Logs de antes", de quando são os logs de agora e o aviso "reiniciando sozinho". Remédio para o app
-estragado: desinstalar e instalar de novo. Lição: o Runtipi recria o container a cada "ligar", e os logs do
-anterior somem junto.
-
-## 0.21.2 (17/11): andamento da instalação e navegadores lentos
-Pedidos do Bruno: depois de "Instalar", a página continuava com o botão Instalar; o sino poderia mostrar
-que a instalação acontece em segundo plano; o Brave (via LinuxServer) estava muito lento. Feito: a janela de
-instalar avisa o resto do BrunOS (evento `brunos:installs`); a Loja troca Instalar por "Instalando…" (página
-e lista), o sino ganha um anel girando e o painel mostra "Em andamento" com barra animada até o app ligar.
-Brave lento: a receita não tinha `shm_size`, e o Docker dá só 64 MB de /dev/shm (navegadores Chromium
-travam). Ajustes ganharam **Memória compartilhada** (Opcionais, "1 GB recomendado" para apps de área de
-trabalho do LinuxServer); o Garimpo põe `shm_size: 1gb` nesses apps (31 na loja LinuxServer), o que sobe o
-tipi_version e aparece como atualização. O aviso "--no-sandbox" dentro do Brave é normal no container
-(tirar exigiria desligar uma proteção do Docker, seccomp: o app passaria a requerer privilégios).
-
-## 0.22.0 (17/11): editor do Avançado (fecha a etapa 14)
-Em Configurar → Avançado, "Editar o arquivo" abre o CodeMirror (carregado só nessa hora) com o arquivo de
-Ajustes, para opções sem botão (command, labels, healthcheck, sysctls...). `POST /api/store/settings/raw`:
-o BrunOS confere (`appcfg.CheckRaw`: compose válido, cada serviço um mapa, sem `build`) e calcula os
-privilégios novos em relação ao arquivo de hoje; com algum, devolve 409 com a lista e a janela pede
-"Entendo os riscos". Gravar pede a Senha de configuração, guarda cópia, avisa no sino (nível aviso quando
-há privilégio novo). O selo "Requer privilégios" do app instalado passa a olhar também o arquivo de Ajustes.
-Enquanto edita o texto, os botões de Pastas e recursos e Opcionais ficam parados (os dois não se misturam).
-
-## 0.23.0 (17/11): janelas do sistema (fecha a etapa 12)
-Perguntas respondidas pelo Bruno: todas viram janela, inclusive Configurações, com a escolha Folha ou
-Flutuante (o "Estilo das janelas" de Aparência passa a valer para tudo); Terminal com o minimizar comum;
-o Arquivos pode abrir uma segunda janela (botão "+" na barra); o limite de apps abertos não conta as
-janelas do sistema. `openSheet` agora abre `sys:<tipo>` no `windows.js` (a folha por cima de tudo
-acabou); o `terminal.js` monta dentro do corpo da janela (`ctx.host`) e devolve a limpeza, que só desliga a
-tela. Etapa 12 (0.17.0 Janelas de app + 0.23.0) entregue; o plano dela foi apagado.
-
-## 0.23.1 (17/11): guias no Arquivos e conserto das duas janelas
-Bug (gif do Bruno): a segunda janela do Arquivos tomava o lugar da primeira (o `files.js` tinha um estado
-global só). Agora cada janela/guia tem o próprio estado; tocar numa janela torna o dela o atual, e toda
-espera pelo servidor ou por um diálogo volta para o estado de quem pediu (`hold`, no `files.js`); os
-atalhos só valem com o foco dentro do Arquivos. Pedido do Bruno: guias como num navegador, destacáveis
-sem perder o que está aberto. `filetabs.js`: barra de guias ("+", clique do meio numa pasta, disco ou
-favorito, "Abrir em nova guia" no menu, Alt+T/Alt+W/Alt+1…9, porque o Chrome não deixa sites usarem
-Ctrl+T/W/Tab), reordenar arrastando, destacar arrastando para fora ou "Mover para nova janela" (a página
-inteira muda de janela, sem recarregar: pasta, voltar/avançar e seleção continuam), guias da janela
-principal lembradas neste aparelho; pasta pedida de fora (Ctrl+K, widget) abre em guia nova.
+## Etapa 14 (0.21.0 → 0.22.0, 17/11): janela de instalação completa
+- 0.21.0: **janela única** de instalar e configurar (seções que abrem e fecham, "?" com a explicação,
+  Acesso como no Runtipi, Ajustes já na instalação); **Requer privilégios** (decisão 62): selo, guia "Apps
+  com Privilégios", "Entendo os riscos" + Senha de configuração; script 15; Garimpo publica esses apps na
+  loja normal e põe perguntas de instalação por regra + `perguntas.json`. Conversão real: CasaOS 107 apps (21
+  com privilégios), LinuxServer 198 (10); 40 dos 271 apps da loja oficial do Runtipi ganharam o selo.
+  Lições: a régua do BrunOS (Go) e a do Garimpo (Python) precisam dar o mesmo texto (conferidas nos 305
+  apps); caminho com `${VAR:-padrão}` tem ":" dentro da variável; o Runtipi ignora `maxBackups` na instalação
+  e não apaga o `user-config` ao desinstalar.
+- 0.21.1: teste do Bruno: o AnythingLLM ficou instável logo depois de instalar (a página já mostrava
+  "Iniciar" com a imagem ainda baixando; pedidos de ligar recriaram o container e o Docker o matou no meio da
+  primeira migração). Agora os botões ficam travados enquanto o Runtipi instala/atualiza (409), o erro da
+  fila interna sai em português e Detalhes do app mostra "Logs de antes" (o Runtipi recria o container a
+  cada "ligar"). Remédio para app estragado: desinstalar e instalar de novo.
+- 0.21.2: "Instalando…" na Loja, anel no sino e "Em andamento" no painel; **Memória compartilhada** nos
+  Ajustes (o Docker dá só 64 MB de `/dev/shm`, e navegadores Chromium, como o Brave, travam); o Garimpo põe
+  `shm_size: 1gb` nos apps de área de trabalho. O aviso "--no-sandbox" no Brave é normal no container.
+- 0.22.0: **Avançado**: editor do arquivo de Ajustes (CodeMirror sob demanda), conferido antes de salvar
+  (`appcfg.CheckRaw`); privilégios novos só por ele, com a lista, "Entendo os riscos" + Senha de
+  configuração, aviso no sino e selo no app.
 
 ## Pegadinhas que ainda valem
-- Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
-  para saber que o app foi tocado, o BrunOS usa o `blur` da página.
+- Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
+  BrunOS usa o `blur` da página para saber que o app foi tocado.
 - Classes novas de CSS: conferir se o nome já existe (`.up-row` já era a lista de envios do Arquivos; o
   painel de atualizações usa o prefixo `upd-`).
 - Ao mudar JS/CSS, recompilar antes de testar contra o backend (`go:embed`).
 - O formulário da loja do Runtipi manda string vazia para campos novos em apps já instalados: tratar vazio
   como padrão.
+- Muitas classes CSS são montadas em JS (`wsz-${size}`, `lv-${nivel}`, `disp-${disp}`, `wfm-${formato}`):
+  ao procurar CSS morto, um `grep` do nome inteiro não basta.
+
+## Limpeza do repositório (18/11/2026)
+Pedido do Bruno: enxugar o que serve de contexto para IA, apagar o que não é mais usado e tirar código
+morto. Feito: `deadcode` e `staticcheck` no Go (sobrou só `Runner.Output`, removido; parâmetro `now` não usado
+em `power.executeLocked`); no JS, funções exportadas que ninguém usava (`batteryWidgetHTML`,
+`internetWidgetHTML`, `paintInternet` e o `sparkPath` dele, `navigate` do Arquivos, `brunosDef`,
+`clockTicks`, `toggleMax`, `_test`) e cerca de 30 regras de CSS órfãs (widgets antigos de bateria e
+internet, `.w-stats`, `.wsz-ico`...); `roadmap.md`, `decisoes.md` e este arquivo reescritos de forma
+compacta (as versões longas estão no git); fatos do Runtipi 4.12 passaram do roadmap para
+`runtipi-e-loja.md`.
+Mantido de propósito: `staticcheck ST1005` em `apps.go` (mensagens de erro em português com inicial
+maiúscula, que vão para a interface).
 
 ## Resumo do roadmap antigo (itens feitos, por letra)
-Removido do `roadmap.md` em 12/11/2026; o que não foi feito está em `ideias-futuras.md`.
-- **A** apps: aviso de atualização (A1, 0.11.0), widgets com dados dos apps (A2, 0.9.x), monitor de
-  disponibilidade (A4, 0.7.0). **B** energia: desligamento seguro, quedas, consumo e custo, limite de carga,
-  correções (0.4.0 a 0.11.0). **C1** central de notificações (0.4.0, ampliada a cada versão).
-- **D** discos: desmontado, temperatura, SMART, previsão de disco cheio, mapa do espaço (0.4.0 a 0.11.2).
-- **E** apps: logs, ligar/parar, pastas, páginas, uso por app, botão de atualizações, script que se
-  atualiza, backup antes de atualizar (0.7.0 a 0.12.1). **F** arquivos: vídeo, editor, envio com retomada,
-  extrair e duplicados (0.6.0).
-- **G** monitoramento: histórico longo, processos, internet (0.8.0). **H3** aviso de login novo (0.5.0).
-- **I1/I3** WatchYourLAN, Tailscale e AdGuard (0.9.x). **J** aparência: tela de bloqueio, papel de parede
-  por horário, widgets de relógio/clima/notas, Configurações sem "Tudo", Terminal no dock, tela inicial
-  nova (0.9.2 a 0.13.0). **K** terminal: comandos salvos, abas, chave própria (0.10.0).
-- Plano da etapa 10 (SMART um disco por vez, itens pequenos e atualizações, tela inicial nova): entregue
-  nas versões 0.11.2, 0.12.x e 0.13.0; o modelo de dados dele está em `arquitetura.md` (Preferências).
+A (apps), B (energia), C1 (central de notificações), D (discos), E (apps: logs, ligar/parar, pastas, páginas,
+atualizações, backup), F (arquivos), G (monitoramento), H3 (login novo), I1/I3 (WatchYourLAN, Tailscale,
+AdGuard), J (aparência: bloqueio, papel de parede por horário, relógio/clima/notas, tela inicial nova) e K
+(terminal: comandos salvos, abas, chave própria): todos entregues entre 0.4.0 e 0.13.0. O que não foi feito
+está em `ideias-futuras.md`.

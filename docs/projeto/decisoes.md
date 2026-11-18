@@ -1,371 +1,204 @@
 # Decisões técnicas (e por quê)
 
-Formato: decisão, motivo, consequência. Ao mudar alguma, registre aqui com a data.
+Formato: decisão, motivo, consequência, em poucas linhas. Ao mudar alguma, registre aqui com a data. A
+narrativa de cada versão está em `historico.md`; a versão longa deste arquivo (antes da limpeza de
+18/11/2026) está no git (`git log -- docs/projeto/decisoes.md`).
 
-1. **Painel próprio em vez de Homarr + CSS** (11/2026). O Homarr é pesado e o visual do umbrelOS exige
-   controle total de layout/animações. → Projeto próprio, leve, fiel ao umbrelOS.
-2. **Go só com stdlib no backend.** Binário estático pequeno, pouca RAM, sem runtime. → Imagem `scratch`
-   de ~4 MB, ~10 MiB de RAM. Exceção: `golang.org/x/crypto/ssh` para o terminal (decisão 10).
-3. **Frontend sem framework e sem build.** Menos peso, nada a compilar, embutido no binário. →
-   Módulos ES, CSS puro, ícones SVG inline. Bibliotecas grandes só sob demanda (xterm.js).
-4. **Senhas em PBKDF2-SHA256 do pacote `crypto/pbkdf2`.** Não exige dependência externa (bcrypt/argon2
-   estão no x/crypto). Parâmetros e detalhes em `docs/privado/seguranca.md`.
-5. **Docker por socket-proxy (`wollomatic/socket-proxy:1`) com lista de rotas.** O socket do Docker dá
-   root no host; o proxy só libera listar containers, stats e reiniciar, e só para o container
-   `brunos`. Reiniciar só se `BRUNOS_DOCKER_ACTIONS=true`.
-6. **Arquivos com `os.Root`** (Go 1.24) para leituras; escritas validam o caminho real (`realDir`).
-   Motivo: bloquear fuga por `..` e links simbólicos. O Go 1.24 não tem `Root.Rename`, por isso a
-   validação manual.
-7. **Discos mapeados pelo usuário** (0.2.0). O Bruno tem pastas em `/mnt` sem disco montado. → Seção
-   Discos com "Mapear"; sem configuração, mostra só pontos de montagem reais.
-8. **SSE em vez de WebSocket** (estatísticas e terminal). Stdlib pura, passa pelo Traefik sem
-   configuração, reconecta sozinho. Teclas do terminal vão por POST com lote de 8 ms.
-9. **Publicação pela versão do arquivo `VERSION`** (0.1.0). O ambiente do Claude na nuvem não consegue
-   criar tags no GitHub (o proxy bloqueia). → CI publica quando `VERSION` traz versão que não existe no
-   GHCR. Tags `v*` criadas pelo Bruno também publicam.
-10. **Terminal por SSH, embutido** (0.3.0; o Bruno escolheu entre: SSH embutido, atalho para o Sshwifty,
-    shell root no host). Mantém o container sem privilégios. TOFU da chave do servidor, nada de segredo
-    gravado. Usa `golang.org/x/crypto` **vendorizado** (o proxy do Go está bloqueado no ambiente da
-    nuvem; o código veio do espelho oficial `github.com/golang/crypto` e o CI compara com o sum.golang.org).
-11. **Ações privilegiadas via SSH com chave restrita** (0.4.0). Desligamento seguro, SMART, limite de
-    carga, atualizações: uma chave que só executa um script fixo no servidor, com usuário dedicado do
-    Bruno. Nunca dar `privileged` ao container. O teste de conexão nunca abre sessão; o CI prova isso com
-    OpenSSH real. Desenho completo (usuário, chave, pedidos aceitos): `docs/privado/seguranca.md`.
-12. **Detalhes de segurança fora do repositório público** (pedido do Bruno, commit `1713d35`; ampliado na
-    limpeza de 12/11/2026). Usuários, caminhos, desenho do acesso ao servidor e dados do hardware ficam em
-    `docs/privado/` (fora do git). Documentos e exemplos públicos usam nomes genéricos.
-13. **Modo demonstração no frontend.** Sem backend, `api.js` simula tudo. Serve para testar visual com
-    Playwright e para prévias.
-14. **Configurações no servidor** (`/api/settings`), não no `localStorage`: iguais em todos os
-    dispositivos. Papel de parede "local" (arrastado sem enviar) é a única exceção.
-15. **Formato da loja: `docker-compose.json` dinâmico do Runtipi** validado pelo `@runtipi/common` (zod).
+## Base
+
+1. **Painel próprio em vez de Homarr + CSS** (11/2026): o Homarr é pesado e o visual do umbrelOS pede
+   controle total de layout. → Projeto leve, fiel ao umbrelOS.
+2. **Go só com a biblioteca padrão.** Imagem `scratch` de ~4 MB, ~10 MiB de RAM. Exceções: `x/crypto/ssh`
+   (10) e `yaml.v3` (61).
+3. **Frontend sem framework e sem build**: módulos ES, CSS puro, ícones SVG inline; bibliotecas grandes
+   só sob demanda (xterm.js, CodeMirror).
+4. **Senhas em PBKDF2-SHA256** (`crypto/pbkdf2`), sem dependência. Parâmetros em `docs/privado/seguranca.md`.
+5. **Docker por socket-proxy** (`wollomatic/socket-proxy:1`) com lista de rotas: o socket dá root no host;
+   o proxy só libera listar, stats, logs, iniciar/parar/reiniciar (só do projeto do app pedido; reiniciar
+   só com `BRUNOS_DOCKER_ACTIONS=true`).
+6. **Arquivos com `os.Root`** (Go 1.24) para leituras; escritas validam o caminho real (`realDir`),
+   porque o Go 1.24 não tem `Root.Rename`. Bloqueia fuga por `..` e links simbólicos.
+7. **Discos mapeados pelo usuário** (0.2.0): sem configuração, só pontos de montagem reais.
+8. **SSE em vez de WebSocket**: stdlib pura, passa pelo Traefik, reconecta sozinho. Teclas do terminal vão
+   por POST em lote de 8 ms.
+9. **Publicação pelo arquivo `VERSION`**: o CI publica quando a versão não existe no GHCR (o ambiente da
+   nuvem não cria tags).
+10. **Terminal por SSH embutido** (0.3.0): container sem privilégios, TOFU da chave do servidor, nenhum
+    segredo gravado. `x/crypto` **vendorizado** e conferido no CI contra o sum.golang.org.
+11. **Ações privilegiadas via SSH com chave restrita** (0.4.0) a um script fixo no servidor (desligar,
+    SMART, limite de carga, atualizações...). Nunca `privileged`. O teste de conexão não abre sessão (o CI
+    prova com OpenSSH real). Desenho: `docs/privado/seguranca.md`.
+12. **Detalhes de segurança fora do repositório público** (pedido do Bruno, commit `1713d35`; reforçado em
+    12/11/2026): ficam em `docs/privado/`; docs e exemplos públicos usam nomes genéricos.
+13. **Modo demonstração** no frontend (`api.js` simula tudo): testar visual com Playwright sem backend.
+14. **Configurações no servidor** (`/api/settings`), iguais em todos os aparelhos. Exceção: papel de
+    parede "local" (arrastado, sem enviar).
+15. **Formato da loja**: `docker-compose.json` dinâmico do Runtipi, validado pelo `@runtipi/common`.
     Pegadinhas em `runtipi-e-loja.md`.
-16. **Plano em etapas, uma versão por etapa** (07/11/2026, escolha do Bruno). Nada que envolva o
-    celular por enquanto (C2, A3, F6 adiados). Plano em `roadmap.md`.
-17. **Avisos da central pelo mesmo SSE das estatísticas** (0.4.0). O navegador limita conexões por
-    host e o terminal já usa SSE; um `event: notify` a mais no stream existente não custa nada. A cada
-    reconexão (`init`) a interface relê a lista, então nada se perde.
-18. **Desligamento seguro começa em modo simulação** (0.4.0) e só sai dele depois de um teste de
-    conexão que passou. Há 1 minuto para cancelar no servidor.
-    **Revisto na 0.8.1:** uma trava ("inhibitor") do systemd num Ubuntu recente valia até para o root e o
-    desligamento era recusado até a bateria acabar (07/11/2026). O comando passou a ignorar a trava (numa
-    queda de energia, isso é mais seguro que deixar a bateria acabar) e o BrunOS não desiste mais:
-    tenta a cada minuto enquanto estiver na bateria. O comando virou um script no servidor (desligar +
-    limite de carga) com chave nova, para um servidor não atualizado nunca receber um pedido que ele
-    interpretaria errado. Detalhes: `docs/privado/seguranca.md`.
-19. **Temperatura de HD sem acordar o disco** (0.5.0). O `drivetemp` manda um comando ao disco a cada
-    leitura e, em alguns modelos, isso acorda um HD parado (spin down). Por isso o `readHwmon` (a cada
-    2 s) ignora o `drivetemp`, e o HD só é medido de novo quando o contador de E/S
-    (`/sys/block/sdX/stat`) mudou; parado, mostra a última medida com o horário. Carregar o módulo
-    exige root: a interface só mostra os comandos (`modprobe` + `/etc/modules-load.d`), em vez de usar
-    o SSH restrito.
-20. **"Lugar" do login novo = rede, não IP exato** (0.5.0). Qualquer IP local/Tailscale conta como
-    "rede local" (o DHCP troca IPs); na internet, a faixa /24 (IPv4) ou /48 (IPv6), para não avisar a
-    cada troca de IP do provedor. Celular no 4G pode mudar de faixa e gerar avisos; se incomodar,
-    afrouxar para /16.
-21. **Etapa 3 adiada, F3 junto** (08/11/2026, pedido do Bruno). O link público de compartilhamento
-    abre arquivos para fora de casa e foi planejado para depois da verificação em dois passos; adiado
-    com ela. As etapas seguintes foram renumeradas (a antiga 0.7.0 virou 0.6.0, e assim por diante).
-22. **Editor com CodeMirror 6 vendorizado** (0.6.0, escolha do Bruno entre ele e um editor leve feito à
-    mão). Como o frontend não tem build, o CodeMirror vem pronto num arquivo só
-    (`web/static/vendor/codemirror/codemirror.mjs`, ~650 KB, ~230 KB gzip), gerado por `tools/codemirror`
-    (versões fixas, esbuild) e carregado só quando o editor abre. Para atualizar: `npm ci && npm run build`
-    lá dentro. Saiu o SQL das linguagens para economizar.
-23. **Tipos de mídia próprios** (0.6.0). A imagem `scratch` não tem `/etc/mime.types`, e o `mime` do Go
-    só conhece imagens e arquivos da web; `.mp4` e `.mp3` saíam como `application/octet-stream`.
-24. **Desinstalar pelo painel do Runtipi** (0.7.0, escolha do Bruno). Quem sabe o que está instalado é
-    o banco do Runtipi; apagar containers pelo Docker deixaria o Runtipi achando que o app existe. A
-    alternativa (runtipi-cli por SSH com um usuário restrito e um script que valida o comando) foi
-    oferecida e recusada por ora: o botão abre `/apps/<loja>/<app>`, rota conferida em
-    `packages/frontend/src/routes.ts` do Runtipi.
-25. **Ligar/parar pelo Docker** (0.7.0, escolha do Bruno). Funciona sem nada novo no servidor, mas o
-    Runtipi não fica sabendo (o app volta ao estado dele quando o Runtipi/servidor reinicia); a interface
-    avisa na confirmação. O proxy do Docker passou a liberar `GET containers/<id>/logs` e
-    `POST containers/<id>/(start|stop)`; o BrunOS só aceita containers do projeto do app pedido.
-26. **Monitor de disponibilidade sem guardar em disco** (0.7.0; substituída pela 53 a partir da 0.14.0). 24 h × 1 ponto/minuto por app em
-    memória (alguns KB); reiniciar o BrunOS zera o gráfico. Avisa só depois de 2 minutos seguidos fora
-    do ar, e app parado de propósito não conta como queda.
-27. **Internet medida por TCP, não por ping** (0.8.0). ICMP exigiria `CAP_NET_RAW` no container. Abrir
-    uma conexão na porta 443 de três provedores grandes (vale o mais rápido) mede a latência e só acusa
-    queda quando nenhum responde por 2 minutos.
-28. **`/etc/passwd` montado só leitura** (0.8.0, escolha do Bruno) para mostrar o dono dos processos. O
-    arquivo só tem nomes de usuário (as senhas ficam no `/etc/shadow`, que continua fora).
-29. **Speedtest Tracker adiado para a 0.9.0** (escolha do Bruno). A API atual exige um token; a forma de
-    guardar tokens de apps será decidida uma vez só, junto com Immich/AdGuard/Plex/Tailscale.
-30. **Limite de carga detectado uma vez por início** (0.8.1, pedido do Bruno: "não tem pra que sempre
-    verificar [...] em um notebook que não permite"). Detectar custa ler poucos arquivos; fazer isso a
-    cada início (e não gravar "sem suporte" para sempre) é o que permite trocar de notebook sem mexer em
-    nada. Sem suporte, o vigia não faz mais nada até reiniciar. Com suporte e um limite pedido, relê um
-    arquivo a cada 10 min (alguns notebooks esquecem o limite ao reiniciar).
-31. **Widgets = Integração → Métricas → Widget com Formatos** (etapa 7, escolhas do Bruno em
-    08/11/2026; termos em `CONTEXT.md`). Cada Tipo de integração traduz a API do app em Métricas com
-    nome em pt-BR; o Widget não conhece o app, só preenche os Espaços de um Formato (Destaque, Grade,
-    Lista, Gráfico, Mídia, Atalhos) com Métricas de qualquer Fonte. Os widgets prontos são Modelos.
-    Alternativas recusadas: um catálogo fixo por app (não mistura apps num widget) e um widget de "API
-    crua" com caminho JSON (exige conhecer a API). Formatos, e não blocos livres, porque cada Formato é
-    desenhado para os 5 Tamanhos e sempre fica bonito.
-32. **Coleta híbrida das integrações** (etapa 7). O servidor só busca Métricas que algum Widget usa e só
-    enquanto há alguém conectado ao fluxo ao vivo; uma busca serve todas as abas. Gráficos usam o
-    histórico do próprio app quando ele tem (AdGuard, Speedtest). Só é coletado em segundo plano (a
-    cada 5 min) o que estiver num gráfico sem histórico próprio ou tiver um Aviso pronto ligado. Assim o
-    gasto cresce só com o que o Bruno escolhe, e com a tela fechada ele é zero.
-33. **Credenciais das integrações cifradas com chave em arquivo** (etapa 7, escolha do Bruno). AES-GCM
-    (biblioteca padrão) com chave aleatória em arquivo próprio (0600) e os dados em
-    `/data/integrations.json`. Protege contra vazar só o arquivo das integrações (cópia, backup
-    parcial). Recusado: chave derivada da senha do BrunOS, que pararia a coleta e os avisos depois de
-    reiniciar até alguém entrar. As credenciais nunca vão para o navegador (a API responde só
-    `hasSecret`).
-34. **Fotos do Immich só em Widget** (etapa 7, escolha do Bruno). O papel de parede com fotos do Immich
-    saiu do plano; fica o formato Mídia (tamanho "prévia", foto atual guardada em `/data`). O papel de
-    parede por horário (J2) continua. O Tailscale entra por SSH restrito (`tailscale status --json` no
-    `brunos-host`), sem token da nuvem.
-35. **Grade com colunas fixas + encaixe, Páginas montadas pelo Bruno** (0.9.1, escolhas do Bruno). A
-    Área de widgets tem N colunas por Página (ou automático) e os widgets seguem a ordem, fechando os
-    buracos (`grid-auto-flow: dense`): um Grande com Pequenos empilhados ao lado funciona sem guardar
-    posição exata, e no celular cai para 2 colunas sem quebrar. Recusado: posição exata (linha/coluna),
-    que exigiria regras para reorganizar em telas menores. Redimensionar na tela pula só entre os 5
-    Tamanhos (cada Formato foi desenhado para eles). Apps ganham Página própria (`appPlace`); os soltos
-    vão para a última Página com apps e, antes de mover algo, os soltos são "fixados" onde estão (senão
-    colocar um app na Página 2 levaria todos). A numeração se compacta quando uma Página fica vazia.
-    Arrastar widgets vale sempre, como os ícones; alça de tamanho e "−" só no modo Organizar.
-36. **Script do servidor ganha versão própria** (0.9.2). Pedidos novos entram como versão nova do script
-    (`ScriptVersion`) sem mexer na versão da configuração de usuário/chave (`SetupVersion`), para servidores
-    já configurados continuarem desligando. Script antigo responde "pedido inválido", que vira a mensagem
-    "copie os comandos de atualização".
-37. **Mídia e avisos sem estado no BrunOS** (0.9.2, escolhas do Bruno). As fotos do Immich vêm numa
-    lista do dia (até 24) e a troca acontece no navegador pelo relógio (padrão 30 min, ajustável): todas
-    as abas mostram a mesma foto e o servidor só baixa cada imagem uma vez (tamanho "prévia", cache de
-    60 imagens em `/data/img-cache`). A capa do Plex vem já reduzida pelo próprio Plex. O aviso de
-    aparelho novo usa o "conhecido" do WatchYourLAN (um aviso por MAC; marcar como conhecido lá fecha o
-    aviso), sem lista própria. O papel de parede por horário é uma lista livre de horários.
-38. **Integrações só de leitura, com a credencial mais fraca que serve** (0.9.3). Transmission: usuário e
-    senha opcionais, só `session-stats` e `torrent-get` (o id de sessão do RPC fica no cache). Syncthing:
-    chave da API, só GETs em `/rest`. Nextcloud: preferimos o token do app serverinfo (`NC-Token`, só
-    leitura) a usuário administrador + senha de app. Vaultwarden ficou de fora (escolha do Bruno): o que
-    interessa exigiria o ADMIN_TOKEN, que administra o cofre de senhas.
-39. **Bloqueio vale no servidor, por Sessão** (0.10.0, escolhas do Bruno). No modo com senha, a
-    Sessão ganha a marca "bloqueada" e o middleware recusa toda rota autenticada (423) menos o
-    desbloqueio, o logout e o estado da sessão: só esconder a tela seria burlável pelo console do
-    navegador, e o painel tem Terminal e Arquivos. Cada Sessão bloqueia sozinha (a inatividade é de um
-    aparelho); o modo só visual existe porque sai quase de graça. A Tela de bloqueio com senha não
-    mostra nada que venha da API (clima, avisos) para não abrir exceções.
-40. **Chave do Terminal própria, trancada pela senha do BrunOS** (0.10.0). Recusados: guardar a chave
-    pessoal do Bruno (ela sairia do computador dele) e cifrar com a chave de arquivo das integrações
-    (quem copiar o `/data` entraria no servidor). A chave de cifra vem da senha e só existe na memória da
-    Sessão desbloqueada. Esquecer a senha do BrunOS perde a chave (basta criar outra). Conexões salvas
-    são lista desde já, mas a interface mostra só a principal enquanto houver uma. Detalhes:
-    `docs/privado/seguranca.md`.
-41. **"Ainda está rodando?" por um canal SSH extra** (0.10.0). Na mesma conexão, um canal `exec` roda
-    um `ps` curto: o pai desse comando é o mesmo processo do sshd da Aba, então o shell interativo é o
-    irmão com terminal, e o grupo em primeiro plano do terminal diz se há algo rodando. Roda só ao
-    fechar, no fim do tempo sem ninguém olhando e a cada 1 min com Aba minimizada rodando algo — nada
-    contínuo, nada instalado no servidor. Falhou (não é Linux, sem `ps`) → "não sei" → pergunta.
-42. **Medidor com Automático e tomada local** (0.11.0, escolhas do Bruno). O consumo tem várias
-    origens possíveis e o Bruno escolhe (ou deixa no Automático: tomada → bateria → estimativa). Na
-    queda de energia a tomada lê 0 W e o Automático passa para a bateria. A tomada Tuya é lida pelo
-    protocolo local (sem nuvem: privado, rápido, funciona sem internet); a chave local é tirada uma vez
-    com o tinytuya e fica cifrada como as outras credenciais. O RAPL só lê o processador e exige root
-    desde 2020 (ataque Platypus): vai pelo script, e só quando o Medidor precisa; não deixamos o arquivo
-    legível para todos. A estimativa calibrada aprende o "resto da máquina" durante as quedas.
-43. **SMART e temperatura dos discos USB pelo smartctl, sem Scrutiny** (0.11.0). O Scrutiny seria outro
-    container com banco (100–200 MB) para dados que mudam pouco. `smartctl -n standby` não acorda HD
-    parado; muitos adaptadores USB não deixam o drivetemp passar, mas o `-d sat` costuma
-    passar, então a temperatura deles vem do SMART a cada 20 min.
-44. **Atualizações (apps e Linux): como se descobre** (0.11.0; a parte "só avisam" foi substituída pela
-    47). Apps: a cópia instalada (`apps/`) contra a loja baixada (`repos/`), pelo `tipi_version`, sem
-    tocar no Postgres do Runtipi. Linux: `apt-check` e `reboot-required` pelo script.
-45. **Preferências protegidas em três camadas** (0.11.1, depois do reset da 0.11.0). (1) A tela nunca
-    entra com o padrão nem salva antes de ler as preferências do servidor (tenta de novo e, se não der,
-    para com erro). (2) O servidor recusa (409) gravar preferências sem `welcomed` por cima de
-    preferências com `welcomed` — o "Restaurar aparência padrão" de propósito mantém `welcomed: true`.
-    (3) Uma cópia por dia, 14 dias, em `/data/settings-backup`, restaurável na interface. Uma cópia por
-    dia (e não por salvamento) porque a interface salva a cada mudança pequena; 14 cópias de ~20 KB.
-    Tomada Tuya: uma conexão por vez por tomada (fila + leitura reaproveitada), sem conexão persistente
-    por enquanto (mais simples; reavaliar se a fila não bastar).
-46. **SMART um disco por vez, SATA primeiro nos discos USB e "basta uma vez"** (0.11.2, combinado em
-    11/11/2026; corrige a 43). Num case USB do Bruno (chip de NVMe com um HD SATA dentro), o `smartctl`
-    adivinhava NVMe: o adaptador não respondia, o kernel reiniciava o USB do
-    disco montado (`uas_eh_device_reset_handler`) e a leitura de todos os discos estourava os 2 min
-    ("context deadline exceeded"). Com `-d sat` o mesmo disco respondeu em 2,5 s. O chip do case não diz
-    o que tem dentro e o `vpd_pg89` só aparece nos discos internos, então: disco USB tenta SATA; se
-    recusar na hora, o automático (que conhece as pontes NVMe); o modo que funcionou fica guardado pelo
-    número de série. Travou uma vez → "sem SMART" e nunca mais é lido sozinho (cada tentativa pode
-    reiniciar o USB de um disco montado); "Tentar de novo" testa o outro modo. Um limite de tempo por
-    disco não interrompe o `smartctl` (ele fica preso esperando o kernel), por isso a regra é não
-    insistir, e não esperar mais.
-47. **Atualizar Linux e apps pela interface** (0.12.0, escolha do Bruno: opção A; substitui a 44). Pedidos
-    fixos novos no script do servidor: `apt-get update && upgrade` sem perguntas (mantém os arquivos de
-    configuração) e `runtipi-cli app update <app>:<loja>` com nome validado. Rodam pelo `systemd-run`,
-    soltos da conexão SSH: se a atualização reiniciar o Docker (e o BrunOS junto), ela continua, e o
-    BrunOS retoma o andamento quando volta. Sempre com confirmação, um de cada vez, aviso no fim;
-    reiniciar o servidor continua manual. Fica anotada uma revisão de segurança do script para o futuro
-    (`ideias-futuras.md`, H5).
-48. **Widgets com posição livre, apps em fila, e as duas Áreas nunca misturadas** (0.13.0, combinado em
-    11/11/2026). Cada Página tem uma Disposição (onde ficam a Área de widgets e a Área de apps) e uma
-    Medida para cada Área. Widgets guardam lugar (coluna, linha) e Tamanho (largura × altura em
-    Quadros), com buracos permitidos, porque o Bruno quer montar painéis com liberdade (ex.: um 2×1 no
-    meio da última linha). Apps continuam em fila (ordem + Página): buraco numa grade de ícones parece
-    erro e a fila deixa o arrastar simples. Misturar ícones e widgets numa grade só (como no iPhone)
-    foi descartado: obrigaria o ícone a ser uma fração exata do Quadro (≈110 px × 240 px), complicaria
-    o arrastar e bagunçaria o celular. Em tela estreita a Área fica compacta (ordem de leitura, menos
-    colunas) sem mudar o que está guardado.
-49. **O script do servidor se atualiza sozinho, só com assinatura** (0.12.1, escolha do Bruno: "Pode
-    ser"). Colar comandos a cada versão do script era o maior atrito. A partir do script 7, o servidor só
-    instala um script novo se ele vier **assinado** pelo CI, com versão maior e sintaxe válida; quem
-    invadir o BrunOS não consegue instalar um script falso. O preço é confiar no repositório do GitHub,
-    como qualquer programa que se atualiza sozinho. Sem assinatura (compilação local), fica o caminho
-    manual pelo Terminal (o sudo pede a senha). Mudança de usuário ou de permissões no servidor continua manual. Testado como
-    root num contêiner no CI (`tests/script-selfupdate.sh`). Detalhes: `docs/privado/seguranca.md`.
-50. **Backup do Runtipi antes de atualizar app, marcado sempre** (0.12.1). `runtipi-cli app backup` é o
-    mesmo backup do painel do Runtipi (pasta do app + app-data, restaurável por ele); se falhar, nada é
-    atualizado. O tamanho é medido antes (`tamanho-backup`, `du` com limite) e mostrado na confirmação;
-    o Bruno quis a caixinha marcada independente do tamanho. Backup "só do essencial" foi descartado: a
-    restauração do Runtipi substitui a pasta do app e apagaria o que ficou de fora.
-51. **Acesso de diagnóstico só de leitura para o Claude** (0.12.1, opção A do Bruno). Um usuário próprio
-    no servidor, com chave presa a uma lista fixa de leituras (nada escreve), para achar problemas sem
-    prints. O script e o desenho ficam em `docs/privado/` (saíram do repositório em 12/11/2026). O BrunOS
-    de teste no servidor (opção B, com discos só leitura) está em `ideias-futuras.md`.
-52. **Tamanho do ícone em degraus medidos pela Régua** (0.13.1, combinado em 12/11/2026). O ícone
-    encolhia para caber a Medida e não tinha relação com os widgets. Agora são 4 tamanhos (o Grande é o
-    maior em que 16 colunas cabem na largura dos widgets com 6 colunas), com piso em px para o celular;
-    a Medida que não cabe vira Área compacta, nunca ícone menor. O espaço entre os ícones é escolha do
-    Bruno (Fixo, padrão; Elástico; Preencher): ele começou querendo espaço fixo, depois flexível, e
-    preferiu deixar configurável.
-53. **Históricos guardados pelo próprio BrunOS, em três camadas** (0.14.0, opção A do Bruno; substitui a
-    26). Recusados: usar o banco do Beszel (dependeria de um app que nem todos têm, e os avisos do sino
-    precisam dos dados próprios de qualquer jeito) e Prometheus/InfluxDB (centenas de MB de RAM).
-    Camadas escolhidas pelo Bruno: 1 min por 48 h, 5 min por 7 dias, 20 min por 30 dias (média + pico
-    nas duas últimas, para os picos não sumirem na média); ~4,5 MB para ~100 séries, binário em
-    `/data/tsdb/`. Gravação (0.14.0): reescrever 4,5 MB a cada 5 min daria ~1,3 GB por dia no SSD; em
-    vez disso, foto completa a cada 6 h e no desligamento, e um diário só com os pontos novos a cada 5 min
-    (alguns KB), reaplicado ao abrir. As integrações continuam no armazenamento próprio delas, só
-    ampliado para 30 dias (já funcionava e tem a coleta "só do que os widgets usam").
-54. **Formatar só com a Senha de formatação conferida pelo servidor** (0.16.0, ideia do Bruno com o
-    cadastro pela opção A). Se o BrunOS conferisse a senha, quem invadisse o container pularia a
-    conferência. Por isso quem confere é o servidor, fora do container, com trava após erros e nova
-    conferência do disco antes de apagar. O cadastro é feito uma vez, direto no servidor, para um invasor
-    não cadastrar a senha dele antes do Bruno. Montar e desmontar não pedem essa senha (o script tem
-    travas próprias). Detalhes: `docs/privado/seguranca.md`.
-55. **Área útil e escala única** (0.13.2, combinado em 12/11/2026 depois do teste da 0.13.1). O Bruno
-    desenhou o retângulo onde widgets e apps devem caber ("meio que uma mistura de área útil e limite").
-    Em vez de escolher entre widgets maiores ou mais colunas, a Medida decide e o Quadro estica (150 a
-    340 px) para encher a largura; no computador os ícones acompanham a mesma escala (até 60 %), e só o
-    celular mantém piso fixo. A Régua passou a depender só da largura da tela (6 colunas no Quadro
-    máximo, limitada à Área útil): o desenho não precisa mais ser refeito para descobrir o zoom. As
-    escolhas de gosto viraram opções (última fileira, encolher widgets ou mandar apps para a próxima
-    tela), como o Bruno pediu.
-56. **Janela Discos só lê, com três ações que não apagam nada** (0.15.0, plano da etapa 11). Teste do
-    próprio disco (o disco se lê), teste de velocidade (lê 1 GB para `/dev/null`, um por vez) e ejetar
-    (só USB e só sem nada montado). Tudo pelo script do servidor, conferido no BrunOS e no script; a lista
-    detalhada vem do lsblk (não fala com o disco) a cada 10 min e quando o `/proc/diskstats` muda (disco
-    ligou ou desligou), sem SSH a cada minuto. Disco cujo adaptador travou com o SMART (decisão 46) não
-    recebe nem o "dormindo/acordado" (o `hdparm -C` passa pelo mesmo adaptador). A Linha do tempo fica em
-    `/data/disk-events.json` (o `disks.json` já era do Arquivos). Explicações dos atributos ficam na
-    interface (tabela por número ATA e campo NVMe), para o backend continuar enxuto.
-57. **Container que não acompanha montagens: reiniciar o BrunOS e procurar o disco em todos os
-    containers** (0.16.0). O JSON dinâmico do Runtipi não aceita `bind propagation`, então o container do
-    BrunOS (e de qualquer app com pasta de um disco) guarda a montagem que existia quando ligou, mesmo
-    depois de o servidor desmontar; o `lsblk` do servidor diz "nada montado" e o disco continua em uso.
-    Por isso: (a) depois de montar ou desmontar, a interface oferece reiniciar o próprio BrunOS (rota de
-    restart que o proxy já libera, só o próprio container, id lido do mountinfo); (b) antes de ejetar ou
-    formatar, o script procura o número do dispositivo em todos os `/proc/*/mountinfo` e recusa dizendo
-    quais programas ainda seguram o disco; (c) antes de desmontar, o Arquivos solta a pasta do disco
-    (senão o próprio BrunOS apareceria como "em uso"). Alternativa recusada: montar `/mnt` com propagação
-    fora do Runtipi (quebraria a instalação pela loja).
-58. **Janela de app é um iframe direto, com checagem dos cabeçalhos, sem proxy** (0.17.0, opção A do
-    Bruno, combinado em 13/11/2026). Cada app decide se aceita ser mostrado dentro de outra página
-    (`X-Frame-Options`, CSP `frame-ancestors`), e o navegador não conta à página quando um iframe foi
-    recusado. Em vez de reescrever as respostas dos apps por um proxy no BrunOS (pesado, quebra login,
-    cookies e WebSocket dos apps, e abre brecha de segurança), o vigia de apps, que já pede a página de
-    cada app a cada minuto, passa a ler esses cabeçalhos: app que recusa vira **Só em aba** e abre em nova
-    aba como antes; o que não deu para testar tenta a janela, com o botão "abrir em nova aba" sempre na
-    barra. O peso fica no navegador (cada app aberto é uma página), não no servidor; por isso há um
-    limite configurável de apps abertos. Alternativas recusadas: marcar à mão (o Bruno descobriria pela
-    tela branca) e tentar sempre (experiência feia nos apps que recusam).
-59. **Loja: vitrine do BrunOS, instalação e gerência com o Runtipi** (0.18.0, combinado em 16/11/2026).
-    O Bruno queria uma loja bonita dentro do BrunOS e mais apps do que a loja oficial do Runtipi tem.
-    (a) O catálogo sai do disco: o Runtipi já baixa todas as lojas para `repos/<loja>/apps/`, dentro da
-    pasta que o BrunOS monta só para leitura; a Loja não usa internet nem permissão nova, e o código dela
-    só carrega quando a janela abre. (b) Instalar continua na tela do Runtipi (aberta em Janela de app ou
-    nova aba): o `runtipi-cli` não tem comando de instalar, porque a instalação tem formulário.
-    Alternativas recusadas: o BrunOS instalar containers por conta própria (quebra a regra do container
-    sem privilégios e o Runtipi não saberia dos apps: sem atualização nem backup) e preencher o formulário
-    chamando a API interna do Runtipi (não documentada, quebra a cada versão dele). (c) Parar, iniciar,
-    desinstalar e adicionar/remover lojas vão pelo script do servidor, que chama o `runtipi-cli` (o
-    Runtipi fica sabendo, ao contrário do ligar/parar pelo Docker). Desinstalar apaga os dados do app,
-    então pede a Senha de formatação (pedido do Bruno em 17/11/2026: uma credencial só para as ações
-    sensíveis do servidor, separada da senha do BrunOS), conferida pelo servidor como no Formatar, com a
-    mesma trava; o próprio BrunOS não pode ser parado nem desinstalado por ali. (d) As lojas são
-    repositórios de terceiros: o catálogo não segue atalhos (symlink) dentro delas, a descrição passa por
-    um Markdown mínimo que descarta HTML e imagens de fora, e o endereço de loja nova só pode ser https
-    sem usuário, senha ou porta. (e) Mais apps vêm por lojas extras do Runtipi; apps de outros sistemas
-    (CasaOS/ZimaOS, Umbrel) entram por um conversor que roda fora do servidor e publica uma loja no
-    formato do Runtipi (próxima versão), não por instalação paralela. (f) A Loja é a primeira janela do
-    sistema no gerenciador de Janelas, e o desenho dela segue a largura da janela (container query), não
-    a da tela: janela estreita e celular usam o mesmo arranjo.
-60. **Garimpo: lojas do CasaOS convertidas fora do servidor, um ramo por loja de origem** (0.19.0,
-    combinado em 17/11/2026). (a) O conversor mora num repositório próprio (`BrunnoFe/Garimpo`), em
-    Python com PyYAML, e roda no GitHub Actions todo dia: nada roda no servidor e o BrunOS continua só
-    com a biblioteca padrão do Go. (b) Cada loja de origem vira um **ramo** do repositório (`casaos`,
-    `linuxserver`), porque o Runtipi aceita loja no formato `.../tree/<ramo>`. Ideia do Bruno: em vez de
-    uma loja única "Garimpo", cada loja aparece com o nome da origem, num cartão próprio, além do
-    "Todas". O nome técnico é o da origem, que não muda (ele fica gravado nos caminhos dos apps
-    instalados). Um repositório só evita outro agendamento e outra chave para publicar. (c) Um
-    `garimpo.json` na raiz de cada ramo diz o nome, o selo ("via CasaOS"), a origem e a licença; o
-    catálogo do BrunOS lê esse arquivo (só textos curtos e endereço http) e mostra o selo nos apps.
-    (d) Recusa por segurança, com o motivo no README do ramo: `privileged`, socket do Docker, rede do
-    servidor, `pid`/`ipc`/`userns` do servidor, poderes de administrador do Linux (`SYS_ADMIN`,
-    `NET_ADMIN`, `ALL`...), pastas do sistema e aparelhos (só `/dev/dri`, a placa de vídeo, passa). Uma
-    segunda conferência independente (`confere.py`) relê a loja pronta, e os testes oficiais da loja do
-    Runtipi rodam sobre ela; qualquer falha impede a publicação. (e) Apps que já existem na loja
-    oficial do Runtipi ficam de fora (ela é mais bem cuidada para o Runtipi). (f) Dados do app vão para
-    a pasta do app no Runtipi (entram no backup); `/DATA/Media`, `/DATA/Downloads` e afins, para a pasta
-    de mídia do Runtipi. (g) Origens: CasaOS (Apache-2.0) e LinuxServer-AppStore (GPL-3.0); a loja Play
-    ficou de fora por não ter licença; a Umbrel, para depois, conferindo a licença. Alternativa
-    recusada: uma loja única com cartões "virtuais" por origem no BrunOS (o Runtipi mostraria tudo como
-    uma loja só e não daria para adicionar só uma origem).
-61. **Instalar, editar a instalação e Ajustes dentro do BrunOS** (0.20.0, combinado em 17/11/2026; revê
-    a decisão 59 b). (a) Instalar e editar vão pela **API do Runtipi**, chamada pelo script do servidor
-    com a chave do `runtipi-cli` (JWT HS256, `sub: "cli"`, 5 min): no Runtipi 4.12+ a chave fica dentro
-    do container (lida com `docker exec`), antes era o `JWT_SECRET` do `.env`. A chave e o token nunca
-    saem do servidor nem aparecem na linha de comando. O Runtipi continua dono do app (banco,
-    atualização, backup); gravar arquivos não bastaria, porque o estado fica no banco dele. Se o script
-    do servidor for antigo, instalar volta a abrir a tela do Runtipi. (b) O BrunOS confere o formulário
-    antes de mandar (obrigatórias, tipos, opções, mínimo/máximo, porta, domínio); as perguntas "random"
-    o Runtipi gera, e nenhuma senha volta para o navegador (editar sem digitar mantém a guardada).
-    Instalar não pede a Senha de configuração (não apaga nada; P17). (c) **Ajustes** = o arquivo
-    `user-config/<loja>/<app>/docker-compose.yml` que o Runtipi junta ao compose em todo início e que
-    sobrevive às atualizações. O Runtipi não confere nada nele, então o BrunOS confere: pastas novas só
-    de `/mnt`, `/home` e da mídia do Runtipi; nada de privileged, rede do servidor, socket do Docker,
-    poderes do Linux ou aparelhos além da placa de vídeo. Gravar pede a Senha de configuração, guarda
-    as 5 últimas cópias do arquivo anterior e oferece reiniciar o app. (d) Para respeitar os ajustes já
-    feitos à mão no Runtipi (pedido do Bruno: "Tome sempre cuidado com os ajustes que já fiz"), o BrunOS
-    edita a árvore do YAML com `gopkg.in/yaml.v3` (P15 b): só o que a tela mostra muda; comentários,
-    ordem e o resto do arquivo ficam. O que já estava escrito à mão, mesmo perigoso, continua (é do
-    Bruno), mas os Ajustes não podem acrescentar nada parecido. A biblioteca é a segunda dependência
-    (vendorizada e conferida no CI); só gasta processador quando os Ajustes de um app abrem ou salvam.
-    (e) Listas prontas com o recomendado marcado: discos e pastas (com as subpastas sugeridas pelo
-    Arquivos), memória e núcleos em degraus, placa de vídeo, variáveis comuns. Alternativa recusada:
-    texto livre sem conferência (P15 a ficava sem ler os ajustes feitos à mão).
-    (f) Senha de configuração (pedido do Bruno): linha em Configurações → Sistema com "Criar agora", que
-    abre o Terminal com o comando digitado (criar continua só no servidor, com sudo).
-62. **Apps que requerem privilégios: avisar e deixar escolher, em vez de esconder** (etapa 14, 0.21.0 e
-    0.22.0, combinado em 17/11/2026; revê as decisões 60 d e 61 c). O Bruno quer saber quais apps foram
-    deixados de fora por segurança e poder instalá-los assumindo os riscos. (a) O BrunOS lê a receita de
-    **todo** app, de qualquer loja (`docker-compose.json` ou `.yml`), com a mesma régua do Garimpo
-    (privileged, rede/pid/ipc do servidor, socket do Docker, poderes do Linux, pastas do sistema,
-    aparelhos além da placa de vídeo), e mostra o selo **Requer privilégios** com a lista em português. A
-    loja oficial do Runtipi já tinha apps assim e o BrunOS os instalava sem aviso. (b) Instalar um desses
-    apps pede "Entendo os riscos" + Senha de configuração. (c) O Garimpo passa a publicar esses apps na
-    loja normal da origem (ideia do Bruno, em vez de um ramo separado por origem), inclusive os que usam
-    o socket do Docker; continuam de fora só as receitas que não funcionariam. Na tela do próprio Runtipi
-    eles aparecem sem selo, como já acontecia com os da loja oficial. (d) Os Ajustes continuam sem botões
-    para privilégios; a partir da 0.22.0 dá para escrevê-los no editor de texto do Avançado, com a mesma
-    confirmação, registro nos Eventos e o selo no app. (e) Instalação e Ajustes viram uma janela só, e os
-    Ajustes podem ir junto da instalação: o arquivo é gravado pelo script antes de pedir a instalação ao
-    Runtipi (ele lê o arquivo já no primeiro início) e, se a instalação falhar, o BrunOS tira o arquivo e
-    guarda uma cópia. Alternativa recusada: instalar com `skipRun`, gravar depois e ligar o app (o BrunOS
-    teria de guardar a Senha de configuração na memória durante minutos, até a instalação terminar).
-    (f) Perguntas novas nos apps convertidos: regra automática (senha com valor padrão conhecido, campo
-    marcado pelo CasaOS) + arquivo de exceções app a app no Garimpo, porque nem toda variável precisa ser
-    perguntada na instalação (pedido do Bruno).
+16. **Uma versão por etapa** (07/11/2026, escolha do Bruno). Nada de celular por enquanto (C2, A3, F6).
+17. **Avisos da central pelo mesmo SSE das estatísticas** (`event: notify`): o navegador limita conexões
+    por host. A cada reconexão a interface relê a lista.
+
+## Energia, discos, segurança
+
+18. **Desligamento seguro começa em simulação** e só sai dela depois de um teste de conexão; 1 minuto
+    para cancelar. **0.8.1:** uma trava (inhibitor) do systemd recusava o desligamento até a bateria
+    acabar; o comando passou a ignorá-la, o BrunOS tenta a cada minuto na bateria e tudo virou um script
+    no servidor com chave nova (servidor desatualizado nunca recebe pedido que interpretaria errado).
+19. **Temperatura de HD sem acordar o disco** (0.5.0): o `drivetemp` acorda HD parado; só mede de novo
+    quando o contador de E/S muda. Carregar o módulo exige root: a interface só mostra os comandos.
+20. **"Lugar" do login novo = rede, não IP exato** (0.5.0): IP local/Tailscale = "rede local"; na
+    internet, /24 (IPv4) ou /48 (IPv6). Se incomodar no 4G, afrouxar para /16.
+21. **Etapa 3 (dois passos, sessões ativas, link público) adiada** (08/11/2026, pedido do Bruno). Ver
+    `ideias-futuras.md`.
+27. **Internet medida por TCP, não ICMP** (0.8.0): ICMP pede `CAP_NET_RAW`. Porta 443 de três provedores
+    (vale o mais rápido); queda só depois de 2 minutos sem resposta.
+28. **`/etc/passwd` montado só leitura** (0.8.0) para mostrar o dono dos processos (sem senhas).
+30. **Limite de carga detectado uma vez por início** (0.8.1): trocar de notebook não exige mexer em nada;
+    sem suporte, o vigia não faz nada até reiniciar; com limite pedido, relê um arquivo a cada 10 min.
+39. **Bloqueio vale no servidor, por Sessão** (0.10.0): a Sessão ganha a marca "bloqueada" e o middleware
+    recusa tudo (423) menos desbloquear, sair e ler o estado; só esconder a tela seria burlável (há
+    Terminal e Arquivos). O modo só visual existe porque sai quase de graça.
+40. **Chave do Terminal própria, trancada pela senha do BrunOS** (0.10.0). Recusado: guardar a chave
+    pessoal do Bruno e cifrar com a chave de arquivo das integrações. Esquecer a senha perde a chave (basta
+    criar outra). Detalhes: `docs/privado/seguranca.md`.
+41. **"Ainda está rodando?" por um canal SSH extra** (0.10.0): um `ps` curto na mesma conexão, só ao fechar
+    e nos intervalos de ociosidade; nada instalado no servidor. Falhou → "não sei" → pergunta.
+45. **Preferências protegidas em três camadas** (0.11.1): (1) a tela nunca entra nem salva sem ler do
+    servidor; (2) o servidor recusa (409) gravar sem `welcomed` por cima de com `welcomed`; (3) uma cópia
+    por dia, 14 dias, em `/data/settings-backup`. Tomada Tuya: uma conexão por vez por tomada.
+49. **O script do servidor se atualiza sozinho, só com assinatura do CI** (0.12.1): só instala script
+    assinado, de versão maior e sintaxe válida. O preço é confiar no repositório do GitHub. Sem assinatura
+    (compilação local), caminho manual pelo Terminal. Teste: `tests/script-selfupdate.sh`.
+50. **Backup do Runtipi antes de atualizar app, caixinha sempre marcada** (0.12.1): é o mesmo backup do
+    painel do Runtipi; se falhar, nada é atualizado. "Só o essencial" foi descartado (a restauração
+    apagaria o que ficou de fora).
+51. **Acesso de diagnóstico só de leitura para o Claude** (0.12.1): usuário próprio, chave presa a uma
+    lista fixa de leituras. Desenho em `docs/privado/`.
+54. **Formatar só com a Senha de configuração conferida pelo servidor** (0.16.0): quem confere é o
+    servidor, fora do container, com trava após erros e nova conferência do disco antes de apagar; o
+    cadastro é feito uma vez, direto no servidor (um invasor não cadastra a dele). Depois (0.19.0) a senha
+    virou "Senha de configuração" e vale para todas as ações sensíveis. Detalhes em `docs/privado/`.
+
+## Apps, widgets, arquivos
+
+22. **Editor com CodeMirror 6 vendorizado** (0.6.0): um arquivo só (`web/static/vendor/codemirror/`,
+    ~650 KB), gerado por `tools/codemirror` (esbuild, versões fixas), carregado só ao abrir o editor.
+    Atualizar: `npm ci && npm run build` lá dentro.
+23. **Tipos de mídia próprios** (0.6.0): a imagem `scratch` não tem `/etc/mime.types`.
+24. **Desinstalar pelo painel do Runtipi** (0.7.0): quem sabe o que está instalado é o banco dele.
+    Revisto na 59 (c): hoje vai pelo `runtipi-cli` no script.
+25. **Ligar/parar pelo Docker** (0.7.0): funciona sem nada novo, mas o Runtipi não fica sabendo; a
+    interface avisa. (A Loja, na 59 c, passou a ligar/parar pelo `runtipi-cli`.)
+26. **Disponibilidade de apps** (0.7.0): 24 h × 1 ponto/minuto em memória; aviso só depois de 2 minutos
+    fora; app parado de propósito não conta. A partir da 0.14.0 os dados vêm do tsdb (53).
+29. **Tokens de integrações decididos uma vez só** (etapa 7), junto com Immich/AdGuard/Plex/Tailscale.
+31. **Widgets = Integração → Métricas → Widget com Formatos** (etapa 7; termos em `CONTEXT.md`): cada Tipo
+    de integração traduz a API em Métricas em pt-BR; o Widget só preenche os Espaços de um Formato
+    (Destaque, Grade, Lista, Gráfico, Mídia, Atalhos), cada um desenhado para os 5 Tamanhos. Recusados:
+    catálogo fixo por app e "API crua" com caminho JSON.
+32. **Coleta híbrida das integrações**: só busca Métricas que algum Widget usa e só com alguém conectado;
+    em segundo plano (5 min) só o que está num gráfico sem histórico próprio ou tem Aviso ligado.
+33. **Credenciais das integrações cifradas** (AES-GCM, chave aleatória em arquivo 0600) em
+    `/data/integrations.json`; nunca vão ao navegador (`hasSecret`). Recusado: chave derivada da senha
+    (pararia a coleta depois de reiniciar).
+34. **Fotos do Immich só em Widget** (formato Mídia, tamanho "prévia"); Tailscale entra por SSH restrito.
+35. **Grade de widgets com encaixe** (0.9.1; superada pela 48 na tela inicial): colunas por Página,
+    ordem + `grid-auto-flow: dense`. Apps têm Página própria (`appPlace`); soltos vão para a última Página
+    com apps e são "fixados" antes de mover algo; numeração compacta quando uma Página esvazia.
+36. **Script do servidor com versão própria** (0.9.2, `ScriptVersion`), separada da `SetupVersion`
+    (usuário/chave), para servidores já configurados continuarem desligando. Script antigo responde
+    "pedido inválido" → "copie os comandos de atualização".
+37. **Mídia e avisos sem estado no BrunOS** (0.9.2): fotos do Immich vêm numa lista do dia (até 24) e a
+    troca acontece no navegador (padrão 30 min); cache de 60 imagens em `/data/img-cache`; aparelho novo usa
+    o "conhecido" do WatchYourLAN (um aviso por MAC).
+38. **Integrações só de leitura, com a credencial mais fraca que serve** (0.9.3): Transmission
+    (`session-stats`, `torrent-get`), Syncthing (GETs em `/rest`), Nextcloud (token do app serverinfo).
+    Vaultwarden fora (exigiria o `ADMIN_TOKEN`).
+42. **Medidor com Automático** (0.11.0): tomada → bateria → estimativa. Tomada Tuya pelo protocolo local
+    (sem nuvem), chave local cifrada como as outras credenciais. RAPL só pelo script (exige root).
+    Estimativa calibrada aprende o "resto da máquina" nas quedas.
+43. **SMART pelo smartctl, sem Scrutiny** (0.11.0): o Scrutiny seria outro container com banco. `-n
+    standby` não acorda HD parado.
+44. **Atualizações: como se descobre**: apps pela cópia instalada (`apps/`) contra a loja (`repos/`) pelo
+    `tipi_version`, sem tocar no Postgres; Linux por `apt-check` e `reboot-required` pelo script. (A parte
+    "só avisam" foi substituída pela 47.)
+46. **SMART um disco por vez, SATA primeiro nos USB, "basta uma vez"** (0.11.2): num case USB o `smartctl`
+    adivinhava NVMe, o kernel reiniciava o USB do disco montado e tudo estourava o tempo. Disco USB tenta
+    `-d sat`, depois o automático; o modo que funcionou fica guardado pelo número de série. Travou uma vez
+    → "sem SMART" e nunca mais é lido sozinho; "Tentar de novo" testa o outro modo. Limite de tempo não
+    interrompe o `smartctl`, então a regra é não insistir.
+47. **Atualizar Linux e apps pela interface** (0.12.0): `apt-get update && upgrade` sem perguntas e
+    `runtipi-cli app update` com nome validado, soltos da conexão SSH (`systemd-run`); o BrunOS retoma o
+    andamento. Sempre com confirmação, um por vez; reiniciar o servidor continua manual. Revisão de
+    segurança do script anotada (`ideias-futuras.md`, H5).
+48. **Widgets com posição livre, apps em fila, Áreas nunca misturadas** (0.13.0): cada Página tem
+    Disposição e uma Medida por Área. Widgets guardam (coluna, linha) e Tamanho em Quadros, com buracos
+    permitidos; apps ficam em fila (buraco numa grade de ícones parece erro). Misturar ícones e widgets
+    numa grade só foi descartado. Tela estreita: Área compacta sem mudar o que está guardado.
+52. **Tamanho do ícone em degraus medidos pela Régua** (0.13.1): 4 tamanhos (Grande = o maior em que 16
+    colunas cabem na largura dos widgets com 6 colunas), piso em px no celular; Medida que não cabe vira
+    Área compacta, nunca ícone menor. Espaço entre ícones é escolha (Fixo padrão, Elástico, Preencher).
+53. **Históricos guardados pelo próprio BrunOS, em três camadas** (0.14.0; substitui a 26): 1 min × 48 h,
+    5 min × 7 dias, 20 min × 30 dias (média + pico nas duas últimas); ~4,5 MB para ~100 séries em
+    `/data/tsdb/`. Foto completa a cada 6 h e no desligamento + diário só com pontos novos a cada 5 min
+    (reescrever 4,5 MB a cada 5 min seria ~1,3 GB/dia no SSD). Recusados: banco do Beszel e
+    Prometheus/InfluxDB.
+55. **Área útil e escala única** (0.13.2): a Medida decide e o Quadro estica (150 a 340 px) para encher a
+    largura; no computador os ícones acompanham a escala (até 60 %), só o celular tem piso fixo; a Régua
+    depende só da largura da tela. Escolhas de gosto viraram opções (última fileira, encolher widgets ou
+    mandar apps para a próxima tela).
+56. **Janela Discos só lê, com três ações que não apagam** (0.15.0): teste do próprio disco, teste de
+    velocidade (lê 1 GB para `/dev/null`) e ejetar (USB, nada montado). Lista detalhada pelo `lsblk` a cada
+    10 min e quando o `/proc/diskstats` muda. Disco travado pelo SMART (46) não recebe nem `hdparm -C`.
+    Linha do tempo em `/data/disk-events.json`.
+57. **Container não acompanha montagens** (0.16.0): o JSON do Runtipi não aceita `bind propagation`, então
+    o container guarda a montagem de quando ligou. Por isso: (a) depois de montar/desmontar, a interface
+    oferece reiniciar o BrunOS; (b) antes de ejetar/formatar, o script procura o disco em todos os
+    `/proc/*/mountinfo` e diz quem segura; (c) antes de desmontar, o Arquivos solta a pasta do disco.
+    Recusado: montar `/mnt` com propagação fora do Runtipi.
+58. **Janela de app = iframe direto, com checagem de cabeçalhos, sem proxy** (0.17.0): o vigia de apps lê
+    `X-Frame-Options` e `frame-ancestors`; app que recusa vira **Só em aba**; o que não deu para testar
+    tenta a janela. Proxy reescrevendo respostas foi recusado (pesado, quebra login/cookies/WebSocket,
+    abre brecha). O peso fica no navegador, por isso há limite de apps abertos.
+
+## Loja, Garimpo, instalação
+
+59. **Loja: vitrine do BrunOS, gerência com o Runtipi** (0.18.0): (a) o catálogo sai do disco
+    (`repos/<loja>/apps/`, montado só leitura; sem internet nem permissão nova); (b) instalar foi para o
+    BrunOS na 61; (c) parar, iniciar, desinstalar e lojas vão pelo script (`runtipi-cli`); desinstalar
+    pede a Senha de configuração; o próprio BrunOS não pode ser parado nem desinstalado por ali; (d) lojas
+    são de terceiros: sem seguir symlink, Markdown mínimo sem HTML/imagens externas, endereço de loja nova só
+    https sem usuário/senha/porta; (e) mais apps vêm por lojas extras (conversor fora do servidor, 60);
+    (f) a Loja é a primeira janela do sistema e o desenho segue a largura da janela (container query).
+    Recusado: o BrunOS instalar containers por conta própria.
+60. **Garimpo: lojas do CasaOS convertidas fora do servidor, um ramo por loja** (0.19.0): repositório
+    `BrunnoFe/Garimpo`, conversor em Python no GitHub Actions todo dia (nada roda no servidor). Cada
+    origem é um ramo (`casaos`, `linuxserver`) = uma loja do Runtipi com o nome da origem; `garimpo.json`
+    dá nome, selo, origem e licença. Recusa por segurança (privileged, socket do Docker, rede/pid/ipc do
+    servidor, poderes do Linux, pastas do sistema, aparelhos além de `/dev/dri`), com segunda conferência
+    (`confere.py`) e os testes oficiais da loja; apps que já existem na loja oficial ficam de fora. Origens:
+    CasaOS (Apache-2.0), LinuxServer (GPL-3.0); Play fora (sem licença); Umbrel para depois. (d) foi
+    revista na 62.
+61. **Instalar, editar e Ajustes dentro do BrunOS** (0.20.0; revê 59 b): (a) instalar/editar vão pela API
+    do Runtipi, chamada pelo script com a chave do `runtipi-cli` (JWT HS256, `sub: "cli"`, 5 min), que
+    nunca sai do servidor nem aparece na linha de comando; o Runtipi continua dono do app. Script antigo →
+    abre a tela do Runtipi. (b) o BrunOS confere o formulário antes; nenhuma senha volta ao navegador.
+    Instalar comum não pede a Senha de configuração. (c) **Ajustes** = `user-config/<loja>/<app>/
+    docker-compose.yml`; o Runtipi não confere, então o BrunOS confere (pastas novas só de `/mnt`, `/home`
+    e mídia; nada de privileged, rede do servidor, socket, poderes do Linux, aparelhos além da GPU); gravar
+    pede a Senha de configuração, guarda 5 cópias e oferece reiniciar. (d) edita a árvore do YAML com
+    `gopkg.in/yaml.v3`, preservando o que o Bruno escreveu à mão ("Tome sempre cuidado com os ajustes que
+    já fiz"): o que já era perigoso continua, mas os Ajustes não acrescentam nada parecido. (e) listas
+    prontas com o recomendado marcado. (f) linha da Senha de configuração em Configurações → Sistema, com
+    "Criar agora" abrindo o Terminal com o comando digitado.
+62. **Apps que requerem privilégios: avisar e deixar escolher** (0.21.0 e 0.22.0; revê 60 d e 61 c): (a) o
+    BrunOS lê a receita de **todo** app, de qualquer loja, com a régua do Garimpo, e mostra o selo
+    **Requer privilégios** com a lista em português (a loja oficial já tinha apps assim); (b) instalar um
+    deles pede "Entendo os riscos" + Senha de configuração; (c) o Garimpo passa a publicar esses apps na
+    loja normal da origem (inclusive os do socket do Docker); (d) os Ajustes não têm botões de privilégio,
+    mas o editor do Avançado (0.22.0) aceita, com a mesma confirmação, registro nos Eventos e selo;
+    (e) Instalação e Ajustes viram uma janela só, e os Ajustes podem ir junto da instalação (gravados
+    antes de pedir a instalação; se ela falhar, o BrunOS tira o arquivo e guarda cópia; recusado: instalar
+    com `skipRun`); (f) perguntas novas nos apps convertidos por regra automática (senha com valor padrão
+    conhecido, campo marcado pelo CasaOS) + `perguntas.json` de exceções no Garimpo.
