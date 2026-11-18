@@ -287,6 +287,15 @@ trabalho do LinuxServer); o Garimpo põe `shm_size: 1gb` nesses apps (31 na loja
 tipi_version e aparece como atualização. O aviso "--no-sandbox" dentro do Brave é normal no container
 (tirar exigiria desligar uma proteção do Docker, seccomp: o app passaria a requerer privilégios).
 
+## 0.22.0 (17/11): editor do Avançado (fecha a etapa 14)
+Em Configurar → Avançado, "Editar o arquivo" abre o CodeMirror (carregado só nessa hora) com o arquivo de
+Ajustes, para opções sem botão (command, labels, healthcheck, sysctls...). `POST /api/store/settings/raw`:
+o BrunOS confere (`appcfg.CheckRaw`: compose válido, cada serviço um mapa, sem `build`) e calcula os
+privilégios novos em relação ao arquivo de hoje; com algum, devolve 409 com a lista e a janela pede
+"Entendo os riscos". Gravar pede a Senha de configuração, guarda cópia, avisa no sino (nível aviso quando
+há privilégio novo). O selo "Requer privilégios" do app instalado passa a olhar também o arquivo de Ajustes.
+Enquanto edita o texto, os botões de Pastas e recursos e Opcionais ficam parados (os dois não se misturam).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app);
   para saber que o app foi tocado, o BrunOS usa o `blur` da página.

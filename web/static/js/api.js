@@ -249,6 +249,8 @@ const real = {
     status: (urn) => call('GET', `/api/store/status?${q({ urn })}`),
     settings: (urn) => call('GET', `/api/store/settings?${q({ urn })}`),
     saveSettings: (b) => call('POST', '/api/store/settings', b),
+    // 0.22.0: arquivo de Ajustes escrito no editor do Avançado ({urn, raw, password, restart, acceptRisks})
+    saveSettingsRaw: (b) => call('POST', '/api/store/settings/raw', b),
   },
   app: {
     start: (urn) => call('POST', '/api/apps/start', { urn }),
@@ -1150,6 +1152,16 @@ function makeDemo() {
           demoSettingsState[b.urn] = { exists: true, manual: b.urn.startsWith('plex') ? ['labels'] : [], risks: [], ...b.settings };
           demoSettingsRaw[b.urn] = '# (demonstração)\n';
           return wait({ ok: true, state: demoSettingsState[b.urn], raw: '# (demonstração)\n', restartErr: '' }, 1200);
+        },
+        saveSettingsRaw: (b) => {
+          if (!b.password) return fail('digite a Senha de configuração');
+          if (/\bbuild:/.test(b.raw)) return fail('o serviço usa build (montar uma imagem com arquivos do servidor): isso não é aceito nos Ajustes');
+          const risks = [];
+          if (/privileged:\s*true/.test(b.raw) && !/privileged:\s*true/.test(demoSettingsRaw[b.urn] || '')) risks.push('Controle total do servidor (privileged)');
+          if (/network_mode:\s*host/.test(b.raw) && !/network_mode:\s*host/.test(demoSettingsRaw[b.urn] || '')) risks.push('Usa a rede do servidor direto, sem isolamento (network_mode: host)');
+          if (risks.length && !b.acceptRisks) return new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('o arquivo novo dá privilégios ao app: leia a lista e marque "Entendo os riscos"'), { status: 409, data: { risks } })), 300));
+          demoSettingsRaw[b.urn] = b.raw;
+          return wait({ ok: true, risks, restartErr: '' }, 900);
         },
       };
     })(),

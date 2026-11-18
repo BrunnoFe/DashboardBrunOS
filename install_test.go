@@ -248,6 +248,53 @@ func TestOcupadoEnquantoInstala(t *testing.T) {
 	}
 }
 
+// 0.22.0: editor do Avançado. Privilégio novo só com "Entendo os riscos"; o que já estava no arquivo não conta.
+func TestSettingsRaw(t *testing.T) {
+	s, f := installServer(t)
+	f.resp["ajustes-ler"] = "services:\n  plex:\n    network_mode: host\n"
+	base := map[string]any{"urn": "plex:migrated", "password": "certa-123"}
+	with := func(kv map[string]any) map[string]any {
+		m := map[string]any{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for k, v := range kv {
+			m[k] = v
+		}
+		return m
+	}
+	// o privilégio que já estava (rede do servidor) continua sem pedir nada
+	if code, out := call(t, s.hStoreSettingsRaw, "POST", "/api/store/settings/raw", with(map[string]any{"raw": "services:\n  plex:\n    network_mode: host\n    shm_size: 1gb\n"})); code != 200 {
+		t.Fatalf("sem privilégio novo: %d %v", code, out)
+	}
+	f.calls = nil
+	novo := with(map[string]any{"raw": "services:\n  plex:\n    network_mode: host\n    privileged: true\n"})
+	code, out := call(t, s.hStoreSettingsRaw, "POST", "/api/store/settings/raw", novo)
+	if code != 409 || len(out["risks"].([]any)) != 1 || !strings.Contains(out["risks"].([]any)[0].(string), "privileged") {
+		t.Fatalf("privilégio novo sem aceitar: %d %v", code, out)
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "ajustes-gravar") {
+			t.Fatal("gravou sem aceitar os riscos")
+		}
+	}
+	novo["acceptRisks"] = true
+	if code, out := call(t, s.hStoreSettingsRaw, "POST", "/api/store/settings/raw", novo); code != 200 {
+		t.Fatalf("aceitando: %d %v", code, out)
+	}
+	if in := string(f.ins["ajustes-gravar"]); !strings.HasPrefix(in, "certa-123\n") || !strings.Contains(in, "privileged: true") {
+		t.Fatalf("gravado:\n%s", in)
+	}
+	for _, raw := range []string{"services: [a, b]\n", "services:\n  plex:\n    build: .\n", "services:\n  plex: x\n", "a: b: c\n"} {
+		if code, _ := call(t, s.hStoreSettingsRaw, "POST", "/api/store/settings/raw", with(map[string]any{"raw": raw, "acceptRisks": true})); code != 400 {
+			t.Errorf("deveria recusar %q: %d", raw, code)
+		}
+	}
+	if code, _ := call(t, s.hStoreSettingsRaw, "POST", "/api/store/settings/raw", map[string]any{"urn": "plex:migrated", "raw": ""}); code != 400 {
+		t.Error("sem senha deveria dar 400")
+	}
+}
+
 func TestSettingsPreservaManual(t *testing.T) {
 	s, f := installServer(t)
 	f.resp["ajustes-ler"] = "services:\n  plex:\n    volumes:\n      - /mnt/disco1/Filmes:/movies # feito à mão\n    labels:\n      x: \"1\"\n"

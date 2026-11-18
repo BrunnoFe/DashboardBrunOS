@@ -577,6 +577,91 @@ func (s *server) hStoreInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// hStoreSettingsRaw: POST /api/store/settings/raw {urn, raw, password, restart, acceptRisks} — grava o
+// arquivo de Ajustes escrito no editor do Avançado (0.22.0, decisão 62 d). É o único caminho para
+// acrescentar privilégios: se o texto novo pede algum que o arquivo de hoje não tinha, sem "Entendo os
+// riscos" volta 409 com a lista (a tela mostra e pede para marcar); com, grava e avisa no sino.
+func (s *server) hStoreSettingsRaw(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URN         string `json:"urn"`
+		Raw         string `json:"raw"`
+		Password    string `json:"password"`
+		Restart     bool   `json:"restart"`
+		AcceptRisks bool   `json:"acceptRisks"`
+	}
+	if err := decode(r, &req, 96<<10); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	a, ok := s.installedApp(req.URN)
+	if !ok {
+		writeJSON(w, 404, map[string]string{"error": "esse app não está instalado"})
+		return
+	}
+	if a.ID == selfApp {
+		writeJSON(w, 400, map[string]string{"error": "este é o próprio BrunOS: os ajustes dele ficam no painel do Runtipi"})
+		return
+	}
+	if len(req.Raw) > appcfg.MaxFile {
+		writeJSON(w, 400, map[string]string{"error": "o arquivo de ajustes é grande demais"})
+		return
+	}
+	if req.Password == "" || len(req.Password) > 200 || strings.ContainsAny(req.Password, "\r\n") {
+		writeJSON(w, 400, map[string]string{"error": "digite a Senha de configuração"})
+		return
+	}
+	if !s.storeMu.TryLock() {
+		writeJSON(w, 409, map[string]string{"error": "a Loja já está fazendo outra coisa no servidor: espere terminar"})
+		return
+	}
+	defer s.storeMu.Unlock()
+	if st, busy := s.tipiBusy(r.Context(), req.URN); busy {
+		writeJSON(w, 409, map[string]string{"error": busyMsg(st), "busy": st})
+		return
+	}
+	old, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgRead+" "+req.URN, nil)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	raw := []byte(strings.ReplaceAll(req.Raw, "\r\n", "\n"))
+	risks, err := appcfg.CheckRaw(old, raw)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(risks) > 0 && !req.AcceptRisks {
+		writeJSON(w, 409, map[string]any{"error": "o arquivo novo dá privilégios ao app: leia a lista e marque \"Entendo os riscos\"", "risks": risks})
+		return
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		raw = nil // vazio: o script apaga o arquivo (fica a cópia)
+	} else if raw[len(raw)-1] != '\n' {
+		raw = append(raw, '\n')
+	}
+	in := append([]byte(req.Password+"\n"), raw...)
+	if _, err := s.storeRun(r.Context(), hostcmd.CmdAppCfgWrite+" "+req.URN, in); err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	body := "Arquivo de Ajustes editado à mão pela Loja do BrunOS (cópia do anterior guardada no servidor)."
+	lvl := events.Info
+	if len(risks) > 0 {
+		lvl = events.Aviso
+		body = "Arquivo de Ajustes editado pela Loja do BrunOS, com privilégios novos aceitos: " + strings.Join(risks, "; ") + ". Cópia do anterior guardada no servidor."
+	}
+	s.events.Emit(events.Event{Kind: "store", Level: lvl, Title: a.Name + ": ajustes editados", Body: body})
+	s.tipi.Invalidate()
+	restarted := ""
+	if req.Restart {
+		s.snapshotLogs(r.Context(), req.URN, "reiniciar com os Ajustes novos")
+		if _, err := s.storeRun(r.Context(), hostcmd.CmdAppRestart+" "+req.URN, nil); err != nil {
+			restarted = tipiError(err).Error()
+		}
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "risks": risks, "restartErr": restarted})
+}
+
 // undoSettingsIfFailed acompanha uma instalação que levou Ajustes: se o Runtipi desistir (ele apaga o app
 // quando a instalação falha), o arquivo de Ajustes sai e fica uma cópia, para tentar de novo começar limpo
 // (decisão 62 e). Roda solta, mesmo que a janela seja fechada.

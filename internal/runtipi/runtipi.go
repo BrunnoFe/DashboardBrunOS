@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"brunos/internal/appcfg"
 )
 
 var allowedEnv = map[string]bool{
@@ -201,6 +203,12 @@ func (d *Discoverer) scan() ([]App, Info) {
 		}
 		if r, ok := readRecipe(dir, id); ok {
 			a.Priv, a.recipeOK = len(r.Privileges) > 0, true
+		}
+		// privilégio acrescentado nos Ajustes (editor do Avançado, 0.22.0) também acende o selo
+		if uc := filepath.Join(d.dir, "user-config", store, id, "docker-compose.yml"); !a.Priv && isFile(uc, appcfg.MaxFile) {
+			if b, ok := readLimited(uc, appcfg.MaxFile); ok && len(appcfg.FilePrivileges(b)) > 0 {
+				a.Priv = true
+			}
 		}
 		apps = append(apps, a)
 	}

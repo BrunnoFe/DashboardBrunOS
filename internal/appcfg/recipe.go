@@ -155,6 +155,51 @@ func Privileges(root *yaml.Node) []string {
 	return out
 }
 
+// FilePrivileges lista os privilégios de um arquivo de Ajustes (para o selo do app instalado: um privilégio
+// acrescentado nos Ajustes também conta). Arquivo com erro: nenhum.
+func FilePrivileges(raw []byte) []string {
+	_, root, err := parse(raw)
+	if err != nil {
+		return nil
+	}
+	return Privileges(root)
+}
+
+// CheckRaw confere um arquivo de Ajustes escrito à mão no editor do Avançado (0.22.0, decisão 62 d): tem
+// que ser um docker-compose válido, sem `build` (montar imagem com arquivos do servidor) e com cada serviço
+// um mapa. Devolve os privilégios NOVOS em relação ao arquivo de hoje: a tela pede "Entendo os riscos" e a
+// Senha de configuração antes de gravar.
+func CheckRaw(oldRaw, newRaw []byte) ([]string, error) {
+	_, root, err := parse(newRaw)
+	if err != nil {
+		return nil, err
+	}
+	svcs := mapGet(root, "services")
+	if svcs != nil && svcs.Kind != yaml.MappingNode {
+		return nil, errors.New("\"services\" precisa ser uma lista de serviços com nome (services: nome: ...)")
+	}
+	for _, name := range mapKeys(svcs) {
+		s := mapGet(svcs, name)
+		if s.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("o serviço %s não tem o formato de um serviço do docker-compose", name)
+		}
+		if mapGet(s, "build") != nil {
+			return nil, fmt.Errorf("o serviço %s usa build (montar uma imagem com arquivos do servidor): isso não é aceito nos Ajustes", name)
+		}
+	}
+	had := map[string]bool{}
+	for _, p := range FilePrivileges(oldRaw) {
+		had[p] = true
+	}
+	out := []string{}
+	for _, p := range Privileges(root) {
+		if !had[p] {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 // volumeHost devolve a origem de um item de volumes ("" = volume anônimo ou tmpfs).
 func volumeHost(it *yaml.Node) string {
 	switch it.Kind {

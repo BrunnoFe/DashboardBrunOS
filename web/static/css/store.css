@@ -276,6 +276,13 @@
 .sf-env.rec [data-k] { opacity: .7; }
 .sf-add { align-self: flex-start; margin-top: 2px; }
 .sf-pw .text-input { max-width: 320px; }
+/* editor do texto do arquivo de Ajustes (0.22.0) */
+.sf-rawbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sf-rawbar small { font-size: 11.5px; opacity: .65; display: inline-flex; align-items: center; gap: 6px; }
+.sf-rawed { height: min(46vh, 380px); border-radius: 10px; overflow: hidden; background: rgba(0,0,0,.3); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.sf-rawed .cm-editor { height: 100%; font-size: 12.5px; }
+.raw-mode [data-sec="res"] .sf-body, .raw-mode [data-sec="opt"] .sf-body { opacity: .45; pointer-events: none; }
+.sf-rawrisks { margin: 0; }
 .sf-folder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; flex: 1; min-width: 0; }
 .sf-mounts, .sf-envs { display: flex; flex-direction: column; gap: 8px; }
 .sf-mount { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 12px; background: rgba(255,255,255,.04); }

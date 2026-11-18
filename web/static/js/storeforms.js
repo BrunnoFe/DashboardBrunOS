@@ -210,7 +210,9 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
       ${rec.ports.length ? field('Portas extras da receita', `<div class="sf-locks">${rec.ports.map((p) => `<div class="sf-lock"><span class="sf-lico">${svg('lock')}</span><span class="sf-ltxt"><b>${esc(p)}</b><small>servidor : app</small></span></div>`).join('')}</div>`, { help: 'Portas que o app abre no servidor além da principal (para descoberta na rede, streaming…). Vêm da receita.' }) : ''}`;
     const advHTML = `${st0.manual.length ? `<p class="st-note">${svg('info')}<span>Feito à mão no Runtipi, fica como está: ${st0.manual.map(esc).join(', ')}.</span></p>` : ''}
       ${st0.risks.length ? `<p class="st-note sf-warn">${svg('alert')}<span>O arquivo já tinha, escrito à mão: ${st0.risks.map(esc).join(', ')}. O BrunOS mantém, mas não acrescenta nada parecido.</span></p>` : ''}
-      ${field('Arquivo de Ajustes', `<pre class="sf-raw">${esc(F.settingsRaw || '(ainda não existe: o BrunOS cria ao salvar, se você mudar algo)')}</pre>`, { help: 'O arquivo user-config do Runtipi onde ficam os Ajustes. Ele vale depois das atualizações do app. Escrever direto nele pelo BrunOS chega na próxima versão.' })}`;
+      ${field('Arquivo de Ajustes', `${edit ? `<div class="sf-rawbar"><button type="button" class="pill-btn sm" data-c="raw-edit">${svg('edit')}Editar o arquivo</button><small>Para opções que não têm botão (command, labels, healthcheck, sysctls...).</small></div>` : ''}
+        <div class="sf-rawed" data-rawed hidden></div><pre class="sf-raw" data-rawpre>${esc(F.settingsRaw || '(ainda não existe: o BrunOS cria ao salvar, se você mudar algo)')}</pre>`,
+        { help: `O arquivo user-config do Runtipi onde ficam os Ajustes, no formato do docker-compose. O Runtipi junta ele à receita do app em todo início, e ele vale depois das atualizações.${edit ? ' Editando o texto, os botões de Pastas e recursos e Opcionais ficam parados até salvar. Se o texto der privilégios novos ao app (privileged, rede do servidor, aparelhos, pastas do sistema...), o BrunOS mostra a lista e só grava depois de “Entendo os riscos”.' : ' Depois de instalar, dá para editar o texto em Configurar.'}` })}`;
     ajBox.innerHTML = section('res', 'folder', 'Pastas e recursos', openSecs.has('res'), resHTML) + section('opt', 'sliders', 'Opcionais', openSecs.has('opt'), optHTML)
       + section('adv', 'code', 'Avançado', openSecs.has('adv'), advHTML);
     wireFolders(ajBox, folders);
@@ -245,7 +247,25 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
   };
   const inst0 = JSON.stringify(instBody());
   const aj0 = ajOK ? JSON.stringify(settingsOut()) : '';
-  const ajDirty = () => ajOK && JSON.stringify(settingsOut()) !== aj0;
+  // 0.22.0: editor do texto do arquivo de Ajustes (CodeMirror, carregado só ao clicar em "Editar o arquivo")
+  let rawEd = null;
+  const raw0 = F.settingsRaw || '';
+  const rawDirty = () => !!rawEd && rawEd.text() !== raw0;
+  const ajDirty = () => (rawEd ? rawDirty() : ajOK && JSON.stringify(settingsOut()) !== aj0);
+  async function openRawEditor() {
+    if (rawEd || !ajBox) return;
+    const btn = $('[data-c="raw-edit"]', box);
+    btn.disabled = true; btn.innerHTML = '<span class="upd-spin"></span>Abrindo o editor…';
+    let cm;
+    try { cm = await import('../vendor/codemirror/codemirror.mjs'); } catch { btn.disabled = false; btn.textContent = 'Não deu para abrir o editor'; return; }
+    const host = $('[data-rawed]', box);
+    host.hidden = false; $('[data-rawpre]', box).hidden = true;
+    rawEd = cm.createEditor({ parent: host, doc: raw0, name: 'docker-compose.yml', onChange: () => refresh() });
+    ajBox.classList.add('raw-mode');
+    btn.closest('.sf-rawbar').innerHTML = `<small>${svg('info')} Editando o texto: os botões de Pastas e recursos e Opcionais ficam parados até salvar.</small>`;
+    rawEd.focus();
+    refresh();
+  }
   const needPw = () => ajDirty() || (!edit && privs.length > 0);
 
   // resumo das seções fechadas e o campo de senha, conforme o que está escolhido
@@ -295,7 +315,8 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
       syncAj();
       for (const [k, v] of PRONTAS[+el.dataset.preset].vars) { const x = M.env.find((y) => y.key === k); if (x) x.value = v; else M.env.push({ key: k, value: v, rec: null }); }
       drawAj();
-    } else if (t('[data-c="term"]')) { d.close(); ctx.openTerminal?.({ typeCmd: CMD_SENHA }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); return; }
+    } else if (t('[data-c="raw-edit"]')) { openRawEditor(); return; }
+    else if (t('[data-c="term"]')) { d.close(); ctx.openTerminal?.({ typeCmd: CMD_SENHA }); toast('Comando digitado no Terminal', 'Confira e aperte Enter.'); return; }
     else if (t('[data-c="runtipi"]')) { d.close(); ctx.runtipi(); return; }
     else if (t('[data-c="close"]')) { d.close(); return; }
     else return;
@@ -326,7 +347,12 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     let savedSettings = false;
     try {
       if (edit) {
-        if (setDirty) { const r = await api.store.saveSettings({ urn: a.urn, password, restart: !instDirty, settings }); savedSettings = true; if (r.restartErr) toast(`Ajustes de ${a.name} salvos`, `Mas o app não reiniciou: ${r.restartErr}`, null, { error: true }); }
+        if (setDirty && rawEd) {
+          const r = await api.store.saveSettingsRaw({ urn: a.urn, password, restart: !instDirty, raw: rawEd.text(), acceptRisks: !!$('[name="rawrisks"]', box)?.checked });
+          savedSettings = true;
+          if (r.restartErr) toast(`Ajustes de ${a.name} salvos`, `Mas o app não reiniciou: ${r.restartErr}`, null, { error: true });
+          if (r.risks?.length) toast(`${a.name} agora requer privilégios`, r.risks.join('; '));
+        } else if (setDirty) { const r = await api.store.saveSettings({ urn: a.urn, password, restart: !instDirty, settings }); savedSettings = true; if (r.restartErr) toast(`Ajustes de ${a.name} salvos`, `Mas o app não reiniciou: ${r.restartErr}`, null, { error: true }); }
         if (instDirty) await api.store.reconfig(body);
       } else {
         await api.store.install({ ...body, ...(ajOK && newScript ? { settings } : {}), password: needPw() ? password : '', acceptRisks: !!$('[name="risks"]', box)?.checked });
@@ -334,6 +360,14 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     } catch (ex) {
       busy = false; go.disabled = false; go.textContent = edit ? 'Salvar' : 'Instalar';
       const m = ex.message || String(ex);
+      if (ex.data?.risks?.length) { // texto novo dá privilégios: mostra a lista e pede "Entendo os riscos"
+        let rb = $('.sf-rawrisks', box);
+        if (!rb) { rb = document.createElement('div'); rb.className = 'sf-priv sf-rawrisks'; err.before(rb); }
+        rb.innerHTML = `<div class="sf-privh">${svg('alert')}<b>O texto novo dá privilégios ao app</b></div><p>Com eles, um app com defeito ou malicioso pode mexer no servidor inteiro:</p>
+          <ul>${ex.data.risks.map((p) => `<li>${esc(p)}</li>`).join('')}</ul><label class="sf-check"><input type="checkbox" name="rawrisks"> Entendo os riscos e quero dar esses privilégios</label>`;
+        showErr('Leia a lista acima, marque “Entendo os riscos” e salve de novo.');
+        return;
+      }
       if (/ainda não existe Senha de (configuração|formatação)/.test(m)) {
         showErr(`Ainda não existe Senha de configuração. Ela é criada uma vez, no Terminal do servidor: <code>${CMD_SENHA}</code>${ctx.openTerminal ? ` <button type="button" class="pill-btn sm" data-c="term">${svg('terminal')}Criar agora</button>` : ''}`, true);
       } else showErr(savedSettings ? `Os Ajustes foram salvos, mas a instalação não mudou: ${m}` : m);

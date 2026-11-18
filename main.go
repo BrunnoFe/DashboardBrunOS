@@ -386,6 +386,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/apps/logs", a(s.hAppLogs))
 	mux.HandleFunc("GET /api/apps/logs/stream", a(s.hAppLogsStream))
 	mux.HandleFunc("GET /api/apps/logs/prev", a(s.hAppLogsPrev))
+	mux.HandleFunc("POST /api/store/settings/raw", a(s.hStoreSettingsRaw))
 	// janela Loja (0.18.0): catálogo das lojas do Runtipi e gerenciamento pelo script do servidor
 	mux.HandleFunc("GET /api/store", a(s.hStore))
 	mux.HandleFunc("GET /api/store/app", a(s.hStoreApp))
