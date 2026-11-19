@@ -685,6 +685,9 @@ func (s *Service) Paste(srcRoot string, rels []string, dstRoot, dstRel string, c
 		if !copyMode && filepath.Dir(src) == dstDir {
 			continue // mover para a mesma pasta: nada a fazer
 		}
+		if filepath.Base(src) == trashDirName {
+			return ErrBadName // uma ".brunos-trash" de outra pasta viraria a lixeira de verdade no destino
+		}
 		dst := filepath.Join(dstDir, uniqueName(dstDir, filepath.Base(src)))
 		if copyMode {
 			if err := copyTree(src, dst); err != nil {

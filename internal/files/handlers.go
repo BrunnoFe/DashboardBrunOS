@@ -187,7 +187,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, ErrBadName), errors.Is(err, ErrBadPath), errors.Is(err, ErrIntoItself):
 		code, msg = http.StatusBadRequest, err.Error()
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrBadTrash):
 		code, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, ErrTooBig):
 		code, msg = http.StatusRequestEntityTooLarge, err.Error()

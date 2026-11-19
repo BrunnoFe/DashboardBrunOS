@@ -145,7 +145,7 @@ func (s *server) hStoreLogo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	http.ServeFile(w, r, p)
+	serveNoFollow(w, r, p, 2<<20)
 }
 
 // hStoreAppAction: {"urn": "immich:migrated", "action": "start"|"stop"|"uninstall"}.

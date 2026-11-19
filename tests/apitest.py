@@ -76,6 +76,8 @@ d=json.loads(b); check('porta e loja', any(a['urn']=='syncthing:migrated' and a[
 check('Formas de acesso: porta https do Traefik e situação do Domínio', d['runtipi'].get('sslPort')==443 and all('domain' in a for a in d['apps']), d['runtipi'])
 s,b,h=req('GET','/api/apps/logo?urn=syncthing:migrated'); check('logo', s==200 and b[:2]==b'\xff\xd8')
 s,b,_=req('GET','/api/apps/logo?urn=../../etc'); check('logo de urn inválida → 404', s==404)
+s,b,_=req('GET','/api/apps/logo?urn=dashdot-lite:personal-store'); check('logo de app instalado que é atalho para fora → 404 sem o conteúdo', s==404 and b'segredo' not in b, (s,b[:40]))
+check('app com logo-atalho não diz que tem logo', not any(a['urn']=='dashdot-lite:personal-store' and a['hasLogo'] for a in d['apps']), d)
 s,b,_=req('GET','/api/stats'); st=json.loads(b); check('stats', st['snapshot']['mem']['total']>0, b[:200])
 s,b,_=req('GET','/api/stats/history?range=24h'); h=json.loads(b); check('histórico longo 24 h', s==200 and h['step']==60 and h['range']=='24h' and isinstance(h['points'],list), b[:200])
 s,b,_=req('GET','/api/stats/history?range=7d'); h=json.loads(b); check('histórico longo 7 dias', s==200 and h['step']==300, b[:200])

@@ -141,6 +141,9 @@ func (s *Service) Extract(rootID, rel string) (string, error) {
 	if kind == "" {
 		return "", archiveErr("só dá para extrair .zip, .tar e .tar.gz")
 	}
+	if validName(base) != nil {
+		return "", ErrBadName // ex.: ".brunos-trash.zip" criaria uma lixeira falsa
+	}
 	src, st, err := s.Open(rootID, rel)
 	if err != nil {
 		return "", err

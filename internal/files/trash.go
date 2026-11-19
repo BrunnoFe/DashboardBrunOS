@@ -39,6 +39,31 @@ func newTrashID() string {
 
 func (r *Root) trashDir() string { return filepath.Join(r.real, trashDirName) }
 
+// ErrBadTrash: a lixeira (ou um item dela) foi trocada por um atalho. Esvaziar seguiria o atalho e
+// apagaria a pasta de destino; restaurar traria para cá um arquivo de fora.
+var ErrBadTrash = errors.New("a lixeira desta pasta foi trocada por um atalho: confira a pasta .brunos-trash pelo Terminal")
+
+// notLink confere que p não é um atalho (link simbólico). Não existir não é erro.
+func notLink(p string, wantDir bool) error {
+	st, err := os.Lstat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return mapErr(err)
+	}
+	if st.Mode()&fs.ModeSymlink != 0 || (wantDir && !st.IsDir()) {
+		return ErrBadTrash
+	}
+	return nil
+}
+
+// safeTrashDir devolve a pasta da lixeira só se ela for uma pasta de verdade (ou ainda não existir).
+func (r *Root) safeTrashDir() (string, error) {
+	p := r.trashDir()
+	return p, notLink(p, true)
+}
+
 // Trash move os itens para a lixeira da raiz.
 func (s *Service) Trash(rootID string, rels []string) error {
 	r, err := s.root(rootID)
@@ -46,6 +71,9 @@ func (s *Service) Trash(rootID string, rels []string) error {
 		return err
 	}
 	if err := r.writable(); err != nil {
+		return err
+	}
+	if _, err := r.safeTrashDir(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(r.trashDir(), 0o700); err != nil {
@@ -92,6 +120,9 @@ func isCrossDevice(err error) bool { return errors.Is(err, syscall.EXDEV) }
 func (s *Service) TrashList() []TrashItem {
 	items := []TrashItem{}
 	for _, r := range s.Roots() {
+		if _, err := r.safeTrashDir(); err != nil {
+			continue // lixeira que é atalho: não mostra itens de fora como se fossem desta pasta
+		}
 		matches, _ := filepath.Glob(filepath.Join(r.trashDir(), "*.json"))
 		for _, m := range matches {
 			var it TrashItem
@@ -113,6 +144,15 @@ func (s *Service) trashItem(rootID, id string) (*Root, TrashItem, error) {
 	}
 	if !trashIDRe.MatchString(id) {
 		return nil, TrashItem{}, ErrBadPath
+	}
+	if _, err := r.safeTrashDir(); err != nil {
+		return nil, TrashItem{}, err
+	}
+	if err := notLink(filepath.Join(r.trashDir(), id), true); err != nil {
+		return nil, TrashItem{}, err
+	}
+	if err := notLink(filepath.Join(r.trashDir(), id+".json"), false); err != nil {
+		return nil, TrashItem{}, err
 	}
 	var it TrashItem
 	ok, err := store.ReadJSON(filepath.Join(r.trashDir(), id+".json"), &it)
@@ -177,6 +217,9 @@ func (s *Service) TrashEmpty(rootID string) error {
 		}
 		if r.ReadOnly {
 			continue
+		}
+		if _, err := r.safeTrashDir(); err != nil {
+			return err // não segue o atalho (apagaria a pasta para onde ele aponta)
 		}
 		entries, err := os.ReadDir(r.trashDir())
 		if err != nil {

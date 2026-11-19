@@ -1224,7 +1224,25 @@ func (s *server) hAppLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Content-Type", "image/jpeg")
-	http.ServeFile(w, r, p)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	serveNoFollow(w, r, p, 2<<20)
+}
+
+// serveNoFollow serve um arquivo da loja sem seguir atalho (O_NOFOLLOW) e só se for arquivo comum de
+// até max bytes: entre conferir e abrir, a loja não consegue trocar o arquivo por um atalho para /data.
+func serveNoFollow(w http.ResponseWriter, r *http.Request, p string, max int64) {
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() || st.Size() > max {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeContent(w, r, "", st.ModTime(), f)
 }
 
 type appUsage struct {

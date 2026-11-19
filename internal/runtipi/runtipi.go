@@ -85,7 +85,7 @@ func (d *Discoverer) LogoPath(urn string) (string, bool) {
 	apps, _ := d.Apps()
 	for _, a := range apps {
 		if a.URN == urn && a.HasLogo {
-			return a.logoPath, true
+			return a.logoPath, isFile(a.logoPath, maxLogo) // confere de novo: pode ter mudado desde a leitura
 		}
 	}
 	return "", false
@@ -119,10 +119,12 @@ func (d *Discoverer) CheckUpdates() []Update {
 	if d.dir == "" {
 		return out
 	}
+	// sem seguir atalho e com tamanho limitado: o config.json da loja vem do repositório de terceiros
+	// (um atalho para /dev/zero estouraria a memória a cada conferência)
 	read := func(p string) (configJSON, bool) {
 		var c configJSON
-		b, err := os.ReadFile(p)
-		return c, err == nil && json.Unmarshal(b, &c) == nil
+		b, ok := readLimited(p, maxConfig)
+		return c, ok && json.Unmarshal(b, &c) == nil
 	}
 	stores, _ := os.ReadDir(filepath.Join(d.dir, "apps"))
 	for _, s := range stores {
@@ -168,8 +170,8 @@ func (d *Discoverer) scan() ([]App, Info) {
 	var apps []App
 	add := func(store, id, dir string) {
 		var cfg configJSON
-		data, err := os.ReadFile(filepath.Join(dir, "config.json"))
-		if err != nil || json.Unmarshal(data, &cfg) != nil {
+		data, ok := readLimited(filepath.Join(dir, "config.json"), maxConfig)
+		if !ok || json.Unmarshal(data, &cfg) != nil {
 			return
 		}
 		a := App{ID: id, Store: store, Name: cfg.Name, ShortDesc: cfg.ShortDesc, Categories: cfg.Categories, Version: cfg.Version, Port: cfg.Port, Protocol: "http"}
@@ -199,8 +201,9 @@ func (d *Discoverer) scan() ([]App, Info) {
 		if info.InternalIP == "" && env["INTERNAL_IP"] != "" {
 			info.InternalIP = env["INTERNAL_IP"]
 		}
+		// o logo vem da loja: sem seguir atalho (um logo.jpg que aponta para /data entregaria as chaves)
 		logo := filepath.Join(dir, "metadata", "logo.jpg")
-		if st, err := os.Stat(logo); err == nil && st.Mode().IsRegular() {
+		if isFile(logo, maxLogo) {
 			a.HasLogo, a.logoPath = true, logo
 		}
 		if r, ok := readRecipe(dir, id); ok {
