@@ -44,7 +44,8 @@ limpeza de 12/11/2026.
 
 ## Regras de engenharia (não quebre sem combinar)
 
-1. **Leveza**: backend em **Go 1.24 só com a biblioteca padrão**. As dependências externas são
+1. **Leveza**: backend em **Go 1.27 só com a biblioteca padrão** (desde 19/11/2026; o 1.24 saiu do suporte de
+   segurança: manter sempre uma versão do Go com suporte e o `govulncheck` do CI verde). As dependências externas são
    `golang.org/x/crypto` (+ `x/sys`) e, desde a 0.20.0, `gopkg.in/yaml.v3` (só para os Ajustes dos
    apps, decisão 61), **vendorizadas** em `vendor/` e conferidas no CI contra o sum.golang.org. Não adicione dependências sem necessidade forte; se adicionar, vendorize e inclua na
    checagem do CI (`.github/workflows/docker.yml`).
@@ -98,7 +99,7 @@ cd web/static && python3 -m http.server 8765                  # interface em mod
 docker build -t brunos:teste . && FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste
 ```
 
-Na máquina do Bruno (Windows) tudo roda pelo **WSL** (Ubuntu-24.04, Go 1.24, gcc, Python 3), chamado do
+Na máquina do Bruno (Windows) tudo roda pelo **WSL** (Ubuntu-24.04, Go do sistema 1.24 que baixa o 1.27 sozinho pelo `go.mod`, gcc, Python 3), chamado do
 PowerShell (o Git Bash quebra lá): `wsl -d Ubuntu-24.04 -e bash -lc "cd /mnt/c/Users/<usuário do Windows>/Documents/GitHub/DashboardBrunOS && go test -race -count=1 ./..."`.
 O mesmo vale para o build, `tests/fixture.sh` + servidor + `tests/apitest.py`. O `tests/smoke.sh` precisa
 da integração do Docker Desktop com o Ubuntu-24.04 ligada (Settings → Resources → WSL integration).

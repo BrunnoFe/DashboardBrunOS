@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Imagem final: só o binário estático (~9 MB) sobre "scratch" — sem shell, sem pacotes.
 
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -20,7 +20,8 @@ COPY --from=build /out/brunos /brunos
 # (Clima/Open-Meteo, integrações em https://)
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=1000:1000 /out/data /data
-ENV BRUNOS_DATA=/data BRUNOS_ADDR=:8080
+# GOMEMLIMIT: o coletor de lixo do Go trabalha mais cedo para o painel não passar do limite de 128 MB do container
+ENV BRUNOS_DATA=/data BRUNOS_ADDR=:8080 GOMEMLIMIT=100MiB
 EXPOSE 8080
 USER 1000:1000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["/brunos", "healthcheck"]

@@ -15,7 +15,7 @@ navegador ──HTTP(S)──> Traefik do Runtipi ──> container "brunos" (Go
 
 Um único binário estático serve a API (`/api/*`) e a interface (`/`, embutida com `go:embed`).
 
-## Backend (Go 1.24)
+## Backend (Go 1.27)
 
 ### Configuração por variáveis de ambiente (`main.go`)
 

@@ -21,12 +21,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
+          go-version: "1.27"
       - name: Confere o vendor/ com os módulos oficiais (verificados no sum.golang.org)
         run: |
           set -euo pipefail
           declare -A dirs
-          for m in golang.org/x/crypto@v0.48.0 golang.org/x/sys@v0.41.0 gopkg.in/yaml.v3@v3.0.1; do
+          for m in golang.org/x/crypto@v0.59.0 golang.org/x/sys@v0.50.0 gopkg.in/yaml.v3@v3.0.1; do
             d=$(cd "$(mktemp -d)" && go mod download -json "$m" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Dir"])')
             dirs[${m%@*}]=$d
           done
@@ -42,6 +42,8 @@ jobs:
           echo "vendor confere com os módulos oficiais ($n arquivos)"
       - name: go vet, testes e build
         run: go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...
+      - name: Falhas de segurança conhecidas no Go e nas dependências (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: testes do encaixe dos widgets e das janelas (JS, Node da própria máquina do CI)
         run: node --version && node --experimental-detect-module --test tests/layout.test.mjs tests/windows.test.mjs tests/icons.test.mjs tests/notifdetails.test.mjs tests/access.test.mjs
       - name: gofmt
@@ -99,7 +101,7 @@ jobs:
       - if: steps.ver.outputs.skip != 'true'
         uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
+          go-version: "1.27"
       # Assina o script do servidor (decisão 49): o brunos-host instalado só se troca por um script
       # assinado por esta chave. A chave privada fica só no segredo BRUNOS_SCRIPT_KEY.
       - name: Assina o script do servidor
