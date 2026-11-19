@@ -18,8 +18,8 @@ jobs:
     name: teste com Docker de verdade
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.24"
       - name: Confere o vendor/ com os módulos oficiais (verificados no sum.golang.org)
@@ -70,7 +70,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: ver
         name: Decide a versão
         env:
@@ -85,17 +85,17 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"; echo "publicando $img"
           fi
       - if: steps.ver.outputs.skip != 'true'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - if: steps.ver.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - if: steps.ver.outputs.skip != 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.ver.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.24"
       # Assina o script do servidor (decisão 49): o brunos-host instalado só se troca por um script
@@ -125,14 +125,14 @@ jobs:
           echo "script do servidor assinado"
       - id: meta
         if: steps.ver.outputs.skip != 'true'
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/brunos
           tags: |
             type=raw,value=${{ steps.ver.outputs.version }}
             type=raw,value=latest
       - if: steps.ver.outputs.skip != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
