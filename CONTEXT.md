@@ -123,6 +123,18 @@ _Evite_: sheet, painel, modal
 Janela que mostra um app (do Runtipi ou um link) dentro do BrunOS, sem abrir outra aba.
 _Evite_: navegador embutido, iframe, visualizador
 
+**Forma de acesso** (de um app):
+Caminho pelo qual um app do Runtipi é aberto. São duas: **Domínio** (o subdomínio do app no domínio
+local, como `app.server.lan`) e **Porta** (o mesmo nome de servidor usado para abrir o BrunOS, seja IP
+ou nome, mais a porta do app). Usar `server.lan:porta` ou `IP:porta` é a mesma Forma de acesso, Porta.
+No automático, o app segue a Forma de acesso usada para abrir o BrunOS.
+_Evite_: modo de URL, tipo de endereço, link
+
+**Ícone guardado**:
+Ícone de app que fica salvo no servidor e aparece mesmo sem internet: um que você enviou ou um do
+catálogo do dashboardicons.com, baixado uma vez quando foi escolhido.
+_Evite_: cache de ícones, upload
+
 **Minimizar**:
 Esconder uma Janela sem fechá-la: o que está nela continua carregado e ela fica na dock até voltar.
 Fechar descarta.

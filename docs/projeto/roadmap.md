@@ -12,7 +12,24 @@ celular.
 - Entregue e testada no servidor: tudo até a 0.21.2 (inclusive 0.23.0, cujo retorno virou a 0.23.1).
 - **Aguardando teste do Bruno**: 0.23.1 (guias no Arquivos; duas janelas independentes) e a 0.22.0 (editor
   do arquivo de Ajustes em Configurar → Avançado), que não tem confirmação explícita.
-- O Bruno vai trazer um retorno com melhorias; ele entra aqui com versão.
+
+## Melhorias de 18/11/2026 (combinadas com o Bruno, três versões)
+
+1. **0.24.0: Ícones** (feita, ainda não lançada): bug do link colado no campo (virava um nome
+   impossível) e do `onerror` inline barrado pela CSP (atalho sem nem a inicial); campo Catálogo aceita
+   nome ou link, com prévia; Enviar arquivo (svg/png/ico/jpg, até 1 MB); Ícones guardados no servidor
+   (decisão 63).
+2. **0.25.0: Energia e avisos**: botão de energia no canto (depois do sino) com Bloquear, Sair, Reiniciar e
+   Desligar; os mesmos botões ao lado de "Sair" nas Configurações; Desligar/Reiniciar pedem a senha do
+   BrunOS e esperam 1 min com Cancelar no sino; sem chave SSH, levam à janela Energia; pedido novo
+   `reiniciar` no script (troca assinada, sem colar nada); "Reiniciar agora" no painel de Atualizações
+   quando o Ubuntu pedir. Avisos de nível Aviso/Importante expandem no painel (explicação, o que fazer,
+   dados e botão de atalho); clicar no balão abre o sino no aviso.
+3. **0.26.0: Formas de acesso**: o Automático segue a Forma de acesso usada para abrir o BrunOS
+   (`brunos.server.lan` → `https://app.server.lan`; `IP:porta` ou `server.lan:porta` → mesmo nome com a
+   porta do app), com troca para a outra se a escolhida não funcionar; o vigia testa a porta (já faz) e, a
+   cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão
+   direito ("Abrir por…"), em Personalizar e no Monitor de apps.
 
 ## Em aberto
 
