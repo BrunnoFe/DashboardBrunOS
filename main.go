@@ -254,6 +254,11 @@ func main() {
 		integrations.NewSeriesStore(filepath.Join(cfg.DataDir, "metric-history.json")), s.events)
 	s.integ.SetUsage(s.readSettings())
 	s.integ.ImageDir = filepath.Join(cfg.DataDir, "img-cache") // fotos do Immich e capas do Plex já mostradas
+	// as integrações nunca falam com o proxy do Docker (por ele dá para parar e ligar containers)
+	if u, err := url.Parse(cfg.DockerHost); err == nil && u.Scheme == "tcp" && u.Hostname() != "" {
+		proxyHost := u.Hostname()
+		integrations.BlockedHosts = func() []string { return []string{proxyHost} }
+	}
 	// Tailscale: lê pelo script do servidor, pela conexão SSH do desligamento seguro (só este pedido)
 	integrations.HostQuery = func(ctx context.Context, cmd string) ([]byte, error) {
 		if cmd != hostcmd.CmdTailscale { // integrações só podem pedir o Tailscale

@@ -143,6 +143,19 @@ func (s *Store) Config(it Integration) (Config, error) {
 	return Config{URL: it.URL, User: it.User, Secret: sec, Options: it.Options}, nil
 }
 
+// originOf devolve esquema://host:porta (porta padrão preenchida, tudo minúsculo) de um endereço.
+func originOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.ToLower(raw)
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[strings.ToLower(u.Scheme)]
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Hostname()) + ":" + port
+}
+
 // Validate confere a entrada e devolve a integração pronta (sem id e com o segredo anterior).
 func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 	k := KindByID(in.Kind)
@@ -162,6 +175,9 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 		in.URL = ""
 	} else if u, err := url.Parse(in.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 		return Integration{}, &ErrInput{"endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta"}
+	} else if u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(in.URL, "?#") {
+		// "?" e "#" deixariam escolher o caminho final do pedido (o caminho de cada Tipo seria ignorado)
+		return Integration{}, &ErrInput{"endereço inválido: tire o que vem depois de ? ou #"}
 	}
 	if len(in.User) > 200 {
 		return Integration{}, &ErrInput{"usuário muito longo"}
@@ -204,6 +220,12 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 			}
 			it.Options[f.ID] = v
 		}
+	}
+	// a senha/token guardado vale só para o endereço onde foi digitado: trocar o endereço (ou o IP da
+	// tomada) sem digitar de novo mandaria a credencial para outro servidor
+	if prev != nil && in.Secret == nil && prev.Secret != "" &&
+		(originOf(prev.URL) != originOf(it.URL) || prev.Options["host"] != it.Options["host"]) {
+		return Integration{}, &ErrInput{"o endereço mudou: digite a senha/token de novo"}
 	}
 	known := map[string]AlertDef{}
 	for _, a := range info.Alerts {

@@ -65,7 +65,7 @@ type Hub struct {
 func NewHub(st *Store, series *SeriesStore, ev *events.Store) *Hub {
 	return &Hub{
 		Store: st, Series: series, Events: ev, Now: time.Now,
-		Client: &http.Client{Timeout: fetchTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		Client: &http.Client{Timeout: fetchTimeout, Transport: safeTransport(), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		cache:  map[string]*entry{}, live: map[string]bool{}, bg: map[string]map[string]bool{},
 		subs: map[chan []byte]struct{}{}, wake: make(chan struct{}, 1), sem: make(chan struct{}, maxParallel),
 	}

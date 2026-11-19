@@ -256,6 +256,9 @@ func getJSON(ctx context.Context, c *http.Client, url string, hdr map[string]str
 		}
 		slog.Info("integração: falha ao conectar", "servidor", req.URL.Host, "erro", why)
 		var ue interface{ Timeout() bool }
+		if errors.Is(err, errBlockedAddr) {
+			return 0, ferr("não consegui falar com o app: esse endereço não é permitido para integrações (o próprio BrunOS ou um endereço interno do Docker); use o IP do servidor e a porta do app")
+		}
 		if errors.As(err, &ue) && ue.Timeout() {
 			return 0, ferr("o app demorou demais para responder")
 		}

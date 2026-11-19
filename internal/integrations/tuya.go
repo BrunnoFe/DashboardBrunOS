@@ -253,8 +253,7 @@ func tuyaStatusOnce(ctx context.Context, host, devID, localKey, version string) 
 	if _, _, err := net.SplitHostPort(host); err != nil {
 		addr = net.JoinHostPort(host, tuyaPort) // sem porta: a padrão da Tuya
 	}
-	d := net.Dialer{Timeout: tuyaTimeout}
-	nc, err := d.DialContext(ctx, "tcp", addr)
+	nc, err := safeDialer(tuyaTimeout).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		slog.Warn("tomada tuya: conexão", "erro", err) // o motivo de verdade (recusada, sem resposta...) fica no log
 		if errors.Is(err, syscall.ECONNREFUSED) {
