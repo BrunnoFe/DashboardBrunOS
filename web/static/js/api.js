@@ -1,6 +1,7 @@
 // Cliente da API do BrunOS. Sem backend (ex.: abrindo o HTML direto, ou no artefato
 // de pré-visualização) cai num modo demonstração com dados simulados.
 import { emit } from './ui.js';
+import { demoAllowed } from './safe.js';
 import { cdnIcon, ICON_MAX } from './icons.js';
 
 const H = { 'X-BrunOS': '1' };
@@ -254,7 +255,7 @@ const real = {
     app: (urn) => call('GET', `/api/store/app?${q({ urn })}`),
     logoUrl: (a) => (a.hasLogo ? `/api/store/logo?${q({ urn: a.urn })}` : ''),
     appAction: (urn, action, password) => call('POST', '/api/store/app', { urn, action, password }),
-    stores: (action, name = '', url = '') => call('POST', '/api/store/stores', { action, name, url }),
+    stores: (action, name = '', url = '', password = '') => call('POST', '/api/store/stores', { action, name, url, password }),
     // 0.20.0: instalar, editar a instalação e Ajustes dentro do BrunOS
     form: (urn) => call('GET', `/api/store/form?${q({ urn })}`),
     install: (b) => call('POST', '/api/store/install', b),
@@ -349,10 +350,10 @@ function makeDemo() {
   const GB = 1e9;
   const nowS = Math.floor(Date.now() / 1000);
   const disks = [
-    { name: 'Sistema', device: '/dev/sdc2', total: 312 * GB, used: 33 * GB, system: true, rotational: false, model: 'SSD', temp: 34, tempAt: nowS },
-    { name: 'Disco1', device: '/dev/sdd', total: 984 * GB, used: 463 * GB, rotational: true, model: 'HDD', temp: 41, tempAt: nowS },
-    { name: 'Disco2', device: '/dev/sda', total: 984 * GB, used: 246 * GB, rotational: true, model: 'HDD', temp: 37, tempAt: nowS - 3 * 3600 }, // parado há 3 h
-    { name: 'Disco3', device: '/dev/sdb', total: 984 * GB, used: 462 * GB, rotational: true, model: 'HDD', temp: 52, tempAt: nowS },
+    { name: 'Sistema', device: '/dev/sdc2', total: 250 * GB, used: 40 * GB, system: true, rotational: false, model: 'SSD', temp: 34, tempAt: nowS },
+    { name: 'Disco1', device: '/dev/sdd', total: 1000 * GB, used: 520 * GB, rotational: true, model: 'HDD', temp: 41, tempAt: nowS },
+    { name: 'Disco2', device: '/dev/sda', total: 1000 * GB, used: 180 * GB, rotational: true, model: 'HDD', temp: 37, tempAt: nowS - 3 * 3600 }, // parado há 3 h
+    { name: 'Disco3', device: '/dev/sdb', total: 1000 * GB, used: 710 * GB, rotational: true, model: 'HDD', temp: 52, tempAt: nowS },
   ].map((d) => ({ ...d, free: d.total - d.used }));
   // previsão de disco cheio: 30 dias de histórico simulado (GB por dia de cada disco)
   const growth = { Sistema: 0.15, 'Disco1': 3.6, 'Disco2': 0, 'Disco3': 12.4 };
@@ -369,7 +370,7 @@ function makeDemo() {
     cpu: { percent: Math.round(s.cpu * 10) / 10, cores: 2, model: 'Intel(R) Core(TM) i5 (demonstração)', load: [0.4, 0.3, 0.2] },
     mem: { total: 7.7 * GB, used: s.mem, available: 7.7 * GB - s.mem, swapTotal: 2 * GB, swapUsed: 0.1 * GB },
     temp: Math.round(s.temp * 10) / 10,
-    sensors: [{ chip: 'coretemp', label: 'Package id 0', value: s.temp }, { chip: 'dell_smm', label: 'Ambient', value: 47 }],
+    sensors: [{ chip: 'coretemp', label: 'Package id 0', value: s.temp }, { chip: 'acpitz', label: 'temp1', value: 47 }],
     fanRpm: 2321, battery: { percent: 86, status: 'Charging', ac: true, energyWh: 35.4, fullWh: 41.2, designWh: 48.8, powerW: 7.6, health: 84, cycles: 213, minutesFull: 46, voltage: 12.4, tech: 'Li-ion', manufacturer: 'SMP', model: 'DELL 0X5', chargeLimit: null, history: Array.from({ length: 96 }, (_, i) => ({ t: Math.floor(Date.now() / 1000) - (95 - i) * 300, p: Math.round(i < 40 ? 100 - i * 1.3 : i < 50 ? 48 + (i - 40) * 0.2 : Math.min(86, 50 + (i - 50) * 0.9)), ac: !(i >= 10 && i < 50) })) }, disks,
     net: { rx: s.rx, tx: s.tx, ifaces: ['enp2s0'] }, uptime: 2 * 86400 + 4 * 3600,
     // leitura e escrita de cada disco (janela Discos, ao vivo)
@@ -387,15 +388,15 @@ function makeDemo() {
   history.forEach((p, i) => { p.t -= (history.length - 1 - i) * 2; }); // um ponto a cada 2 s, como no servidor
 
   // Janela de app na demonstração (0.17.0): os apps abrem uma página de exemplo local (demoUrl); Nextcloud
-  // e Vaultwarden fazem o papel de apps que recusam (Só em aba).
+  // e Cloudflare Tunnel fazem o papel de apps que recusam (Só em aba).
   const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', frame: 'ok', health: 'up', domain: 'up', demoUrl: `assets/demo-app.html#${encodeURIComponent(name)}`, ...extra });
   const apps = [
     A('immich', 'migrated', 'Immich', 2283, 'immich'), A('nextcloud-mini', 'migrated', 'Nextcloud', 8083, 'nextcloud', { frame: 'no' }),
     A('plex', 'migrated', 'Plex', 32400, 'plex', { domain: 'down' }), // Formas de acesso (0.26.0): domínio sem resposta A('syncthing', 'migrated', 'Syncthing', 8384, 'syncthing'),
-    A('vaultwarden', 'migrated', 'Vaultwarden', 8107, 'vaultwarden', { frame: 'no' }), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
+    A('cloudflared', 'migrated', 'Cloudflare Tunnel', 8199, 'cloudflare', { frame: 'no' }), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
     A('transmission', 'migrated', 'Transmission', 9091, 'transmission'), A('qbittorrent', 'migrated', 'qBittorrent', 8080, 'qbittorrent'),
     A('speedtest-tracker', 'migrated', 'Speedtest Tracker', 8765, 'speedtest-tracker'), A('watchyourlan', 'migrated', 'WatchYourLAN', 8840, 'watchyourlan', { priv: true }),
-    A('filebrowser', 'migrated', 'File Browser', 8087, 'filebrowser'), A('dashdot-lite', 'personal-store', 'Dashdot', 3001, 'dashdot'),
+    A('filebrowser', 'migrated', 'File Browser', 8087, 'filebrowser'), A('dashdot-lite', 'minha-loja', 'Dashdot', 3001, 'dashdot'),
     A('homarr', 'migrated', 'Homarr', 7575, 'homarr', { state: 'stopped', running: 0, health: 'unknown', domain: '' }), A('tailscale', 'migrated', 'Tailscale', 0, 'tailscale', { localDomain: '', priv: true }),
   ];
 
@@ -405,8 +406,8 @@ function makeDemo() {
   const D = (name, children, ago = 2) => ({ name, dir: true, children, mtime: now - ago * day });
   const tree = {
     home: D('', [D('usuario', [
-      D('Documentos', [D('Mestrado', [F('Dissertação_v12.docx', 3.1e6, 4), F('analise_ERP.py', 18e3, 2), F('figuras_P300.png', 840e3, 2)]), F('Laudo_modelo.docx', 210e3, 30), F('Planilha_correcao.xlsx', 96e3, 3), F('notas.md', 4e3, 0)]),
-      D('Downloads', [F('ubuntu-24.04-live-server-amd64.iso', 2.6e9, 21), F('Neuropsychologia_guide.pdf', 1.4e6, 7)]),
+      D('Documentos', [D('Trabalho', [F('Relatório_v3.docx', 3.1e6, 4), F('analise.py', 18e3, 2), F('grafico.png', 840e3, 2)]), F('Modelo.docx', 210e3, 30), F('Planilha.xlsx', 96e3, 3), F('notas.md', 4e3, 0)]),
+      D('Downloads', [F('ubuntu-live-server-amd64.iso', 2.6e9, 21), F('manual.pdf', 1.4e6, 7)]),
       D('Fotos', [F('IMG_2041.heic', 3.2e6, 7), F('wallpaper-lago.jpg', 2.1e6, 60)]),
       D('runtipi', [D('apps', []), D('app-data', [])], 40),
     ])]),
@@ -414,7 +415,7 @@ function makeDemo() {
     'disco2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
     'disco3': D('', [D('Immich', []), D('Nextcloud', [])]),
   };
-  const rootsMeta = [['home', 'Home', 312, 33], ['disco1', 'Disco1', 984, 463], ['disco2', 'Disco2', 984, 246], ['disco3', 'Disco3', 984, 462], ['ssd', 'SSD', 0, 0], ['ssd-nvme', 'SSD_NVME', 0, 0]];
+  const rootsMeta = [['home', 'Home', 250, 40], ['disco1', 'Disco1', 1000, 520], ['disco2', 'Disco2', 1000, 180], ['disco3', 'Disco3', 1000, 710], ['backup', 'Backup', 0, 0], ['externo', 'Externo', 0, 0]];
   let demoMapped = ['Disco1', 'Disco2', 'Disco3'];
   // Janela Discos (0.15.0): SMART com atributos e testes, e a lista detalhada dos discos
   const at = (id, name, value, worst, thresh, raw, extra = {}) => ({ id, name, value, worst, thresh, raw, ...extra });
@@ -443,15 +444,15 @@ function makeDemo() {
   const P = (name, size, fsType, label, mounts, used, extra = {}) => ({ name, path: `/dev/${name}`, fsType, label, size: size * GB, mounts, ...(used != null ? { used: used * GB, avail: (size * 0.985 - used) * GB } : {}), ...extra });
   const demoDiskList = () => [
     { key: 'D-SDA', dev: 'sda', model: 'HD USB 1TB', vendor: 'Genérico', serial: 'D-SDA', rev: 'AX1P5E', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-Generico_HD_USB_1TB_D-SDA-0:0',
-      parts: [P('sda1', 1000, 'ext4', 'Disco2', ['/mnt/Disco2'], 246, { fstab: '/mnt/Disco2', hist: 'Disco2', root: 'disco2' })], first: now - 86400 * 210,
+      parts: [P('sda1', 1000, 'ext4', 'Disco2', ['/mnt/Disco2'], 180, { fstab: '/mnt/Disco2', hist: 'Disco2', root: 'disco2' })], first: now - 86400 * 210,
       apps: [{ urn: 'syncthing:migrated', name: 'Syncthing', folders: ['/mnt/Disco2/Backups'] }] },
     { key: 'D-SDB', dev: 'sdb', model: 'Case USB', vendor: 'Genérico', serial: 'D-SDB', tran: 'usb', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/usb-Generico_Case_USB_D-SDB-0:0',
-      parts: [P('sdb1', 1000, 'ext4', 'Disco3', ['/mnt/Disco3'], 462, { fstab: '/mnt/Disco3', hist: 'Disco3', root: 'disco3' })], first: now - 86400 * 180,
+      parts: [P('sdb1', 1000, 'ext4', 'Disco3', ['/mnt/Disco3'], 710, { fstab: '/mnt/Disco3', hist: 'Disco3', root: 'disco3' })], first: now - 86400 * 180,
       apps: [{ urn: 'immich:migrated', name: 'Immich', folders: ['/mnt/Disco3/Immich'] }, { urn: 'nextcloud-mini:migrated', name: 'Nextcloud', folders: ['/mnt/Disco3/Nextcloud'] }] },
     { key: 'D-SDC', dev: 'sdc', model: 'SSD SATA 240GB', serial: 'D-SDC', rev: 'S0516A0', tran: 'sata', ptType: 'gpt', size: 360 * GB, rotational: false, system: true, byId: '/dev/disk/by-id/ata-SSD_SATA_240GB_D-SDC',
-      parts: [P('sdc1', 1.1, 'vfat', '', ['/boot/efi'], 0.006), P('sdc2', 312, 'ext4', '', ['/'], 33, { hist: 'Sistema' }), P('sdc3', 46, 'swap', '', ['[SWAP]'])], first: now - 86400 * 240, apps: [] },
+      parts: [P('sdc1', 1.1, 'vfat', '', ['/boot/efi'], 0.006), P('sdc2', 250, 'ext4', '', ['/'], 40, { hist: 'Sistema' }), P('sdc3', 8, 'swap', '', ['[SWAP]'])], first: now - 86400 * 240, apps: [] },
     { key: 'D-SDD', dev: 'sdd', model: 'HD SATA 1TB', vendor: 'ATA', serial: 'D-SDD', rev: '01.01A01', tran: 'sata', ptType: 'gpt', size: 1000 * GB, rotational: true, byId: '/dev/disk/by-id/ata-HD_SATA_1TB_D-SDD',
-      parts: [P('sdd1', 1000, 'ext4', 'Disco1', ['/mnt/Disco1'], 463, { fstab: '/mnt/Disco1', hist: 'Disco1', root: 'disco1' })], first: now - 86400 * 240,
+      parts: [P('sdd1', 1000, 'ext4', 'Disco1', ['/mnt/Disco1'], 520, { fstab: '/mnt/Disco1', hist: 'Disco1', root: 'disco1' })], first: now - 86400 * 240,
       apps: [{ urn: 'plex:migrated', name: 'Plex', folders: ['/mnt/Disco1/Filmes', '/mnt/Disco1/Séries'] }, { urn: 'transmission:migrated', name: 'Transmission', folders: ['/mnt/Disco1/Downloads'] }] },
     { key: 'D-SDE', dev: 'sde', model: 'Ultra Fit', vendor: 'SanDisk', serial: 'D-SDE', rev: '1.00', tran: 'usb', ptType: 'dos', size: 64 * GB, rotational: false, removable: true, byId: '/dev/disk/by-id/usb-SanDisk_Ultra_Fit_D-SDE-0:0',
       parts: [P('sde1', 64, 'exfat', 'PENDRIVE', [], null)], first: now - 3 * 3600, apps: [] },
@@ -614,19 +615,19 @@ function makeDemo() {
     photo_favorite: { l: [photo('24', '1 de jan. de 2024', 'Praia do Rosa'), photo('12', '15 de jul. de 2022', 'Campos do Jordão')] },
     photo_album: { l: [photo('16', '20 de abr. de 2025', 'Viagens · Patagônia'), photo('4', '22 de abr. de 2025', 'Viagens · Patagônia')] } });
   const pxValues = () => ({ sessions: { n: 2 }, transcodes: { n: 1 }, movies: { n: 412 }, shows: { n: 37 }, artists: { n: 128 }, version: { t: '1.41.2' },
-    now_playing: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38 }, { k: 'Um Filme', v: 'Bruno · Celular · pausado', n: 72 }] },
-    now_media: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38, img: '13' }, { k: 'Um Filme', v: 'Bruno · Celular · pausado', n: 72, img: '10' }] } });
+    now_playing: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38 }, { k: 'Um Filme', v: 'Carlos · Celular · pausado', n: 72 }] },
+    now_media: { l: [{ k: 'Minha Série · T2E5 · O Começo', v: 'Ana · TV da sala', n: 38, img: '13' }, { k: 'Um Filme', v: 'Carlos · Celular · pausado', n: 72, img: '10' }] } });
   const dev = (k, v, id) => ({ k, v, id });
   const wyValues = () => ({ online: { n: 14 }, offline: { n: 9 }, total: { n: 23 }, known: { n: 21 }, unknown: { n: 2 },
-    online_list: { l: [dev('Notebook do Bruno', '192.168.1.20 · Dell'), dev('TV da sala', '192.168.1.31 · LG'), dev('iPhone', '192.168.1.40 · Apple'), dev('servidor (servidor)', '192.168.1.50 · Dell'), dev('Chromecast', '192.168.1.61 · Google'), dev('Impressora', '192.168.1.70 · HP')] },
+    online_list: { l: [dev('Notebook', '192.168.1.20 · Lenovo'), dev('TV da sala', '192.168.1.31 · LG'), dev('iPhone', '192.168.1.40 · Apple'), dev('servidor (servidor)', '192.168.1.50 · Intel'), dev('Chromecast', '192.168.1.61 · Google'), dev('Impressora', '192.168.1.70 · HP')] },
     unknown_list: { l: [dev('galaxy-a54', '192.168.1.88 · Samsung', 'bb:bb'), dev('192.168.1.93', 'Espressif (ESP32)', 'cc:cc')] } });
   const tsValues = () => ({ state: { t: 'Conectado' }, state_ok: { n: 1 }, online: { n: 3 }, total: { n: 5 }, self_ip: { t: '100.64.0.1' }, exit_node: { t: 'direto (sem saída por outro aparelho)' }, health: { t: 'nenhum' },
-    peers: { l: [dev('iphone-bruno', 'online · 100.64.0.2 · iOS'), dev('notebook', 'online · 100.64.0.3 · windows'), dev('tablet', 'online · 100.64.0.4 · android'), dev('pc-trabalho', 'há 3 h · 100.64.0.5 · windows'), dev('raspberry', 'há 12 dias · 100.64.0.6 · linux')] } });
+    peers: { l: [dev('iphone', 'online · 100.64.0.2 · iOS'), dev('notebook', 'online · 100.64.0.3 · windows'), dev('tablet', 'online · 100.64.0.4 · android'), dev('pc-trabalho', 'há 3 h · 100.64.0.5 · windows'), dev('raspberry', 'há 12 dias · 100.64.0.6 · linux')] } });
   const trValues = () => ({ down: { n: 2.1e6 + Math.random() * 4e5 }, up: { n: 48e3 }, downloading: { n: 2 }, seeding: { n: 7 }, active: { n: 9 }, paused: { n: 1 }, total: { n: 12 }, errors: { n: 0 }, downloaded: { n: 5.2e11 }, uploaded: { n: 1.9e11 },
     downloading_list: { l: [{ k: 'ubuntu-24.04-live-server-amd64.iso', v: '82% · 1,8 MB/s · falta 2 min' }, { k: 'Documentário (2024) 1080p', v: '38% · 340 KB/s · falta 41 min' }] } });
   const syValues = () => ({ folders: { n: 4 }, synced: { n: 3 }, need: { n: 2.5e9 }, errors: { n: 0 }, devices_online: { n: 2 }, devices: { n: 3 }, version: { t: 'v1.29.0' }, uptime: { n: 3 * 86400 },
     folders_list: { l: [dev('Fotos do celular', 'em dia'), dev('Documentos', 'em dia'), dev('Música', 'sincronizando · falta 2,5 GB'), dev('Backups', 'em dia')] },
-    devices_list: { l: [dev('Celular do Bruno', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
+    devices_list: { l: [dev('Celular', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
   const ncValues = () => ({ users: { n: 4 }, active_5m: { n: 1 }, active_24h: { n: 3 }, files: { n: 120345 }, shares: { n: 17 }, free: { n: 1.5e11 }, free_gb: { n: 150 }, db_size: { n: 5.4e8 }, version: { t: '30.0.2' } });
   // 0.10.0: Clima (Open-Meteo)
   demoKinds.push({ id: 'weather', name: 'Clima', desc: 'Tempo agora e previsão dos próximos dias (Open-Meteo, sem chave)', interval: 900, noUrl: true,
@@ -1073,9 +1074,9 @@ function makeDemo() {
         { slug: 'casaos', name: 'CasaOS', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', about: 'Apps da loja do CasaOS e do ZimaOS, convertidos para o Runtipi. Os que pedem poderes sobre o servidor aparecem com o selo Requer privilégios.' },
         { slug: 'linuxserver', name: 'LinuxServer', url: 'https://github.com/BrunnoFe/Garimpo/tree/linuxserver', about: 'Apps do LinuxServer.io (programas de computador no navegador, mídia, rede), convertidos para o Runtipi.' },
       ];
-      let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'personal-store', url: 'https://github.com/usuario/minha-loja' },
+      let stores = [{ slug: 'migrated', url: 'https://github.com/runtipi/runtipi-appstore' }, { slug: 'minha-loja', url: 'https://github.com/usuario/minha-loja' },
         { slug: 'casaos', url: 'https://github.com/BrunnoFe/Garimpo/tree/casaos', ...GARIMPO.casaos }];
-      const extra = [{ ...C('dashdot-lite', 'Dashdot', 'Resumo do servidor em uma tela', ['utilities'], '6.0', 300, 70), store: 'personal-store' }, { ...C('brunos', 'BrunOS', 'Este painel', ['utilities'], '0.19.0', 60, 1), store: 'personal-store' },
+      const extra = [{ ...C('dashdot-lite', 'Dashdot', 'Resumo do servidor em uma tela', ['utilities'], '6.0', 300, 70), store: 'minha-loja' }, { ...C('brunos', 'BrunOS', 'Este painel', ['utilities'], '0.19.0', 60, 1), store: 'minha-loja' },
         ...[C('alist', 'AList', 'Junta várias nuvens e pastas numa lista só', ['utilities'], 'v3.45', 5, 5), C('chatgpt-next-web', 'NextChat', 'Converse com modelos de IA pela web', ['ai'], 'v2.16', 5, 5),
           C('jdownloader2', 'JDownloader 2', 'Gerenciador de downloads', ['media'], 'v26.02', 5, 2), C('siyuan-note', 'SiYuan', 'Notas e base de conhecimento', ['utilities'], 'v3.3', 5, 5),
           C('gopeed', 'Gopeed', 'Downloads rápidos de vários protocolos', ['utilities'], 'v1.7', 5, 1), C('snapdrop', 'Snapdrop', 'Mande arquivos entre aparelhos da casa', ['utilities'], 'latest', 5, 5)].map((a) => ({ ...a, store: 'casaos' })),
@@ -1251,7 +1252,7 @@ function makeDemo() {
       trashEmpty: async () => { trashItems.length = 0; return wait({ ok: true }); },
       text: async (root, path) => {
         const n = nodeAt(root, path);
-        n.text ??= path.endsWith('.py') ? '# análise dos dados do ERP (demonstração)\nimport numpy as np\n\ndef media(xs):\n    """Média simples."""\n    return sum(xs) / len(xs)\n\nprint(media([1, 2, 3]))\n'
+        n.text ??= path.endsWith('.py') ? '# análise de dados (demonstração)\nimport numpy as np\n\ndef media(xs):\n    """Média simples."""\n    return sum(xs) / len(xs)\n\nprint(media([1, 2, 3]))\n'
           : '# Notas\n\n- [x] Testar o **BrunOS** no servidor\n- [ ] Ligar o `drivetemp`\n\n```yaml\nservices:\n  brunos:\n    image: ghcr.io/brunnofe/brunos:0.6.0\n```\n';
         return wait({ text: n.text, mtime: n.mtime * 1000, size: n.text.length, readOnly: false });
       },
@@ -1287,16 +1288,40 @@ function makeDemo() {
 
 export let api = real;
 
-// Detecta se há backend; sem ele (artefato/arquivo local) usa a demonstração.
+// A demonstração (dados de mentira) só liga onde não existe servidor de verdade (demoAllowed, safe.js).
+// No BrunOS de verdade, se a API não responder (reiniciando, proxy fora do ar), a tela diz "servidor
+// indisponível" e tenta de novo, em vez de mostrar um painel falso (auditoria de 19/11/2026).
+
+function waitNote(show) {
+  let el = document.getElementById('api-wait');
+  if (!show) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'api-wait';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;inset:auto 0 24px 0;margin:auto;width:max-content;max-width:90vw;padding:10px 18px;border-radius:12px;background:rgba(20,20,24,.85);color:#fff;font:14px/1.4 system-ui,sans-serif;z-index:99999;text-align:center';
+    el.textContent = 'O servidor do BrunOS não respondeu. Tentando de novo…';
+    document.body.append(el);
+  }
+}
+
+// Detecta se há backend; sem ele (onde a demonstração é permitida) usa a demonstração.
 export async function initApi() {
-  try {
-    const res = await fetch('/api/public', { headers: H, credentials: 'same-origin' });
-    if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
-      const pub = await res.json();
-      api = real;
-      return pub;
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch('/api/public', { headers: H, credentials: 'same-origin' });
+      if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
+        const pub = await res.json();
+        api = real;
+        waitNote(false);
+        return pub;
+      }
+    } catch { /* sem servidor */ }
+    if (demoAllowed(location)) {
+      api = makeDemo();
+      return api.public();
     }
-  } catch { /* sem servidor */ }
-  api = makeDemo();
-  return api.public();
+    waitNote(true);
+    await new Promise((r) => setTimeout(r, Math.min(10000, 1000 * 2 ** Math.min(i, 4))));
+  }
 }

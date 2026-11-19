@@ -22,6 +22,7 @@ import { brunosForm, portHost, accessUrls, formStatus, pickForm } from './access
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
+  cssVal, safeUrl,
 } from './ui.js';
 
 /* ── Estado ────────────────────────────────────────────────────── */
@@ -67,7 +68,11 @@ function openBattery() {
     loadOutages: async () => outagesHTML((await api.power.get()).outages, 5), openPower,
   });
 }
-function openUrl(href) { const l = document.createElement('a'); l.href = href; l.target = '_blank'; l.rel = 'noopener'; l.click(); }
+function openUrl(href) {
+  href = safeUrl(href); // javascript:, data:... nunca são abertos (mesmo vindos de preferências antigas)
+  if (!href) { toast('Endereço não permitido', 'Use um endereço http:// ou https://.', null, { error: true }); return; }
+  const l = document.createElement('a'); l.href = href; l.target = '_blank'; l.rel = 'noopener'; l.click();
+}
 const S = {
   pub: {}, me: null, settings: structuredClone(DEFAULTS), apps: [], tipi: {}, docker: false, dockerActions: false,
   system: null, snapshot: null, history: [], roots: [], wallpapers: [], localWallpaper: null, stopStream: null,
@@ -270,7 +275,7 @@ document.addEventListener('error', (e) => {
 function tileCss(a, info) {
   const t = a.o.tile || a.tile;
   if (t === 'brand') return 'var(--brand)';
-  if (t) return t;
+  if (t && cssVal(t)) return cssVal(t); // só cor/gradiente (vai dentro de style="...")
   if (!info.src) return 'linear-gradient(160deg, var(--brand-lightest), var(--brand))'; // sem ícone: inicial sobre a cor de destaque
   return info.full ? '#2a2a30' : '#ffffff';
 }
@@ -1740,7 +1745,7 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'grid', title: 'Dividir em páginas', desc: 'Com muitos apps, divide em páginas (deslize para o lado, use as setas ou os pontinhos). Desligado, a tela rola para baixo', ctrl: sw('appPages', 'Páginas na tela inicial') },
     { group: 'Apps', cat: 'apps', icon: 'external', title: 'Abrir apps em', desc: 'No BrunOS: o app abre numa janela aqui dentro, que dá para minimizar para a dock. Apps que não permitem (proteção deles) continuam abrindo em nova aba. Ctrl+clique sempre abre em nova aba',
       ctrl: `<div class="seg">${[['tab', 'Nova aba'], ['same', 'Mesma aba'], ['brunos', 'No BrunOS']].map(([k, l]) => `<button class="${st.openIn === k ? 'on' : ''}" data-openin="${k}">${l}</button>`).join('')}</div>` },
-    { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? hidden.map((a) => a.name).join(', ') : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
+    { group: 'Apps', cat: 'apps', icon: 'eyeOff', title: 'Apps ocultos', desc: hidden.length ? esc(hidden.map((a) => a.name).join(', ')) : 'Nenhum app oculto', ctrl: hidden.length ? `<button class="pill-btn" data-act="unhide">Mostrar todos</button>` : '' },
     { group: 'Apps', cat: 'apps', icon: 'sort', title: 'Ordem dos apps', desc: 'Arraste os ícones na tela inicial para reordenar', ctrl: st.order.length ? `<button class="pill-btn" data-act="reset-order">Ordem alfabética</button>` : '' },
     { group: 'Conta', cat: 'account', icon: 'user', title: 'Nome de exibição', desc: 'Usado na saudação e na tela de login', ctrl: `<input class="text-input" data-input="displayName" value="${esc(displayName())}" aria-label="Nome de exibição">` },
     { group: 'Conta', cat: 'account', icon: 'key', title: 'Trocar senha', desc: `Usuário: ${esc(S.me?.username || '—')}. Ao trocar, as outras sessões abertas são encerradas`, ctrl: `<button class="pill-btn" data-act="password">Trocar</button>` },
@@ -1768,7 +1773,7 @@ function settingsRows() {
     { group: 'Sistema', cat: 'system', icon: 'winMax', title: 'Limite de apps abertos', desc: 'Quantas janelas de app podem ficar abertas ao mesmo tempo (minimizadas contam). Cada app aberto usa memória do seu computador ou celular, não do servidor. Ao passar do limite, o BrunOS pergunta qual fechar',
       ctrl: `<label class="win-lim">Computador <select class="text-input sm" data-select="winLimitPc" aria-label="Limite no computador">${[2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => `<option value="${v}" ${(st.winLimitPc ?? 8) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="win-lim">Celular <select class="text-input sm" data-select="winLimitMobile" aria-label="Limite no celular">${[1, 2, 3, 4, 5, 6, 8].map((v) => `<option value="${v}" ${(st.winLimitMobile ?? 5) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` },
-    { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ') : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? esc(S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ')) : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
     { group: 'Sistema', cat: 'system', icon: 'clock', title: 'Cópias das preferências', desc: 'O servidor guarda uma cópia por dia (últimos 14 dias) de widgets, páginas, dock e aparência. Volte para uma delas se algo se perder', ctrl: `<button class="pill-btn" data-act="backups">Ver cópias</button>` },
@@ -2108,7 +2113,8 @@ function editAppDialog(a) {
     save(); renderApps(); renderDock(); d.close();
   };
 }
-const normalizeUrl = (u) => { u = u.trim(); return /^[a-z]+:\/\//i.test(u) ? u : `http://${u}`; };
+// endereço de atalho: sem esquema vira http://; javascript:, data:... viram "" (ver safeUrl)
+const normalizeUrl = (u) => { u = u.trim(); return safeUrl(/^[a-z]+:\/\//i.test(u) ? u : `http://${u}`); };
 function linkDialog() {
   const d = openDialog(`<h2>${svg('link')}Novo atalho</h2><form class="form-grid">
     <label>Nome<input class="text-input" name="name" placeholder="Roteador" required autofocus></label>

@@ -1,7 +1,7 @@
 // Janela Widgets (etapa 7): Meus widgets · Modelos · Integrações, e o editor com prévia ao vivo.
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
-import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp } from './ui.js';
+import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp, cssVal } from './ui.js';
 import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText, sizeLabel, minSize } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
@@ -218,7 +218,7 @@ function drawEditor() {
       <div class="wed-sec"><span class="wed-lbl">Aparência</span><label class="wsw">Seguir o tema do BrunOS${sw(d.look.follow !== false, 'data-f="follow"')}</label>
         ${d.look.follow === false ? `<label>Transparência do fundo <input type="range" min="0" max="100" value="${d.look.opacity ?? 50}" data-f="opacity" style="--p:${d.look.opacity ?? 50}%"></label>
         <label class="wsw">Cor própria${sw(d.look.hue != null, 'data-f="ownhue"')}</label>
-        ${d.look.hue != null ? `<label>Matiz <input type="range" min="0" max="359" value="${d.look.hue}" data-f="hue" style="--p:${d.look.hue / 3.59}%"></label>` : ''}
+        ${d.look.hue != null ? `<label>Matiz <input type="range" min="0" max="359" value="${clamp(+d.look.hue || 0, 0, 359)}" data-f="hue" style="--p:${clamp(+d.look.hue || 0, 0, 359) / 3.59}%"></label>` : ''}
         <label class="wsw">Esconder o nome embaixo${sw(d.look.hideLabel, 'data-f="hidelabel"')}</label>` : '<small class="hint">Igual aos outros widgets: vidro, cor de destaque do papel de parede e nome embaixo.</small>'}</div>
     </form>
     <aside class="wed-side"><div class="wed-preview">${previewEditor()}</div>
@@ -251,7 +251,7 @@ function foldersHTML() {
   const rootName = (id) => roots.find((r) => r.id === id)?.name || id;
   return `<div class="wed-sec"><span class="wed-lbl">Pastas <small>${d.folders.length || 'favoritas'}</small></span>
     <div class="wslots">${d.folders.length ? d.folders.map((f, i) => `<div class="wslot wfold" data-fold="${i}">
-      <div class="wslot-top"><span class="wfold-ico" style="--fh:${f.color ?? 'var(--bh)'}">${svg(f.icon || 'folder')}</span>
+      <div class="wslot-top"><span class="wfold-ico" style="--fh:${cssVal(f.color) || 'var(--bh)'}">${svg(f.icon || 'folder')}</span>
         <input class="text-input sm" data-fo="name" value="${esc(f.name || '')}" placeholder="${esc(f.path.split('/').pop() || rootName(f.root))}" aria-label="Nome do atalho">
         <button type="button" class="icon-btn" data-foact="up" title="Subir" ${i === 0 ? 'disabled' : ''}>${svg('arrowUp')}</button>
         <button type="button" class="icon-btn" data-foact="down" title="Descer" ${i === d.folders.length - 1 ? 'disabled' : ''}>${svg('arrowDown')}</button>

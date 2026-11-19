@@ -3,6 +3,8 @@
 // Pontos: [{ t, v }] com v = null quando não há dado (a linha quebra ali).
 
 const f1 = (n) => (Math.round(n * 10) / 10).toString();
+// nomes das séries vêm das preferências (rótulo digitado no widget): sempre como texto no balão
+const escT = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // escala com folga: não deixa a linha colada nas bordas e não exagera variações pequenas
 function scale(vals, { min, max, zero = false, minSpan = 1 } = {}) {
@@ -56,7 +58,7 @@ export function initChartTips() {
     const vals = rows.map((row, si) => [names[si], row[i]]).filter(([, v]) => v != null);
     if (!vals.length) { tipEl.hidden = true; return; }
     const span = ts[ts.length - 1] - ts[0];
-    tipEl.innerHTML = `<small>${fmtTime(ts[i], span)}</small>${vals.map(([n, v], si) => `<span><i class="c${si}"></i>${n ? `${n} ` : ''}<b>${v}</b></span>`).join('')}`;
+    tipEl.innerHTML = `<small>${fmtTime(ts[i], span)}</small>${vals.map(([n, v], si) => `<span><i class="c${si}"></i>${n ? `${escT(n)} ` : ''}<b>${escT(v)}</b></span>`).join('')}`;
     tipEl.hidden = false;
     const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
     tipEl.style.left = `${Math.min(innerWidth - tw - 8, Math.max(8, e.clientX - tw / 2))}px`;
@@ -280,7 +282,7 @@ export function mountChart(el, series = [], opts = {}) {
     cursor.hidden = false;
     dots.innerHTML = O.kind === 'bar' ? '' : rows.map(({ s, p }, i) => `<i class="${s.cls || `c${i}`}" style="left:${((p.t - t0) / (t1 - t0)) * 100}%;top:${((H - 2 - ((p.v - lo) / (hi - lo)) * (H - 4)) / H) * 100}%"></i>`).join('');
     const lab = O.tLabel ? O.tLabel(at) : fmtTime(at, t1 - t0);
-    tip.innerHTML = `<small>${lab}</small>${rows.map(({ s, p }, i) => `<span><i class="${s.cls || `c${i}`}"></i>${s.name ? `${s.name} ` : ''}<b>${O.fmt(p.v)}</b>${p.max != null && isFinite(p.max) && Math.abs(p.max - p.v) > 1e-6 ? ` <em>pico ${O.fmt(p.max)}</em>` : ''}</span>`).join('')}`;
+    tip.innerHTML = `<small>${lab}</small>${rows.map(({ s, p }, i) => `<span><i class="${s.cls || `c${i}`}"></i>${s.name ? `${escT(s.name)} ` : ''}<b>${O.fmt(p.v)}</b>${p.max != null && isFinite(p.max) && Math.abs(p.max - p.v) > 1e-6 ? ` <em>pico ${O.fmt(p.max)}</em>` : ''}</span>`).join('')}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, cx = parseFloat(cursor.style.left) / 100 * r.width;
     tip.style.left = `${Math.max(0, Math.min(r.width - tw, cx - tw / 2))}px`;

@@ -4,7 +4,7 @@
 // O desenho segue a largura da JANELA (container query), não a da tela: janela estreita e celular usam
 // o mesmo arranjo. Carregado só quando a Loja abre (este arquivo e o css/store.css).
 import { api } from './api.js';
-import { $, esc, svg, toast, toastError, confirmDialog, openDialog, debounce, timeAgo } from './ui.js';
+import { $, esc, svg, toast, toastError, confirmDialog, promptDialog, openDialog, debounce, timeAgo } from './ui.js';
 
 export const STORE_WIN = 'sys:store';
 const CHUNK = 90; // linhas desenhadas por vez (o resto entra conforme a rolagem)
@@ -496,16 +496,24 @@ function uninstallDialog(a) {
 }
 
 /* ── Lojas ─────────────────────────────────────────────────────── */
+// Adicionar loja pede a Senha de configuração (auditoria de 19/11/2026): os apps de uma loja adicionada
+// pelo BrunOS instalam sem pedir senha, então só quem sabe a senha das ações sensíveis acrescenta uma.
+const storePassword = (name) => promptDialog(`Adicionar a loja ${name}`, {
+  label: 'Senha de configuração', okLabel: 'Adicionar', password: true,
+  text: 'A mesma de formatar discos e desinstalar apps. Os apps desta loja vão poder ser instalados sem pedir senha, por isso ela é pedida agora.',
+});
+
 // Adiciona uma loja sugerida (as do Garimpo) com um clique, depois de explicar o que ela é.
 async function addSuggested(slug, dlgDraw) {
   const g = (S?.suggested || []).find((x) => x.slug === slug);
   if (!g || S.busy) return;
   if (!(await confirmDialog(`Adicionar a loja ${g.name}?`, `${g.about} A conversão é feita pelo Garimpo, do BrunOS, e não é oficial. Endereço: ${g.url.replace(/^https:\/\//, '')}`, 'Adicionar'))) return;
-  if (!S || S.busy) return;
+  const pw = await storePassword(g.name);
+  if (!pw || !S || S.busy) return;
   S.busy = '@stores'; draw(); dlgDraw?.();
   toast(`Adicionando ${g.name}…`, 'O Runtipi baixa a loja; pode levar um minuto.');
   try {
-    const r = await api.store.stores('add', g.slug, g.url);
+    const r = await api.store.stores('add', g.slug, g.url, pw);
     if (!S) return;
     S.cat = r.catalog; S.suggested = r.suggested || []; S.loadedAt = Date.now();
     toast(`Loja ${g.name} adicionada`, `${S.cat.stores.find((s) => s.slug === g.slug)?.apps ?? 0} apps novos na Loja.`);
@@ -548,10 +556,10 @@ function storesDialog() {
         <p class="st-warn">${svg('shield')}Só adicione lojas de quem você confia: os apps de uma loja rodam no seu servidor.</p>
         <div class="dlg-actions">${busy ? '<span class="st-busy"><span class="upd-spin"></span>Falando com o Runtipi…</span>' : ''}<button type="button" class="pill-btn" data-refresh ${busy ? 'disabled' : ''}>${svg('refresh')}Atualizar lojas</button><button type="submit" class="pill-btn primary" ${busy ? 'disabled' : ''}>Adicionar</button></div></form>`;
   };
-  const run = async (action, name, url, okMsg) => {
+  const run = async (action, name, url, okMsg, pw = '') => {
     err = ''; S.busy = '@stores'; paint();
     try {
-      const r = await api.store.stores(action, name, url);
+      const r = await api.store.stores(action, name, url, pw);
       if (!S) return;
       S.cat = r.catalog; S.suggested = r.suggested || S.suggested; S.loadedAt = Date.now();
       toast(okMsg);
@@ -572,7 +580,7 @@ function storesDialog() {
     e.preventDefault();
     const name = $('[name="name"]', box).value.trim().toLowerCase(), url = $('[name="url"]', box).value.trim().replace(/\/+$/, '').replace(/\.git$/, '');
     if (!name || !url) { err = 'Preencha o nome e o endereço.'; paint(); return; }
-    run('add', name, url, `Loja ${name} adicionada`);
+    storePassword(name).then((pw) => { if (pw && S) run('add', name, url, `Loja ${name} adicionada`, pw); });
   });
   paint();
 }

@@ -1,10 +1,20 @@
 // Janela de app (0.17.0, decisão 58): o app do Runtipi (ou um link) dentro do BrunOS, num iframe.
-// Sem sandbox (quebraria login e envio de arquivos dos apps). O navegador não deixa o BrunOS ver em
-// qual página do app você está, então recarregar e "abrir em nova aba" levam à página inicial do app.
-import { esc, svg } from './ui.js';
+// O navegador não deixa o BrunOS ver em qual página do app você está, então recarregar e "abrir em nova
+// aba" levam à página inicial do app.
+//
+// sandbox (auditoria de 19/11/2026): libera tudo o que os apps usam (scripts, login com cookies do
+// próprio app, formulários, envio e download de arquivos, janelas de login, avisos, tela cheia), mas o app
+// não consegue trocar a aba do BrunOS por outra página sozinho (sem um clique dentro dele), que era o
+// caminho para uma tela de login falsa.
+import { esc, svg, safeUrl } from './ui.js';
+
+const SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads ' +
+  'allow-modals allow-pointer-lock allow-presentation allow-orientation-lock allow-storage-access-by-user-activation ' +
+  'allow-top-navigation-by-user-activation';
 
 // a = app, url = endereço, iconHTML = ícone pronto, blocked = texto explicando por que não abre aqui
 export function appWindow(a, url, { iconHTML = '', originEl, blocked = '' } = {}) {
+  url = safeUrl(url) || 'about:blank';
   let frame = null, body = null;
   const newTab = () => window.open(url, '_blank', 'noopener');
   return {
@@ -29,6 +39,7 @@ export function appWindow(a, url, { iconHTML = '', originEl, blocked = '' } = {}
       el.innerHTML = '<div class="win-loading" aria-hidden="true"></div>';
       frame = document.createElement('iframe');
       frame.title = a.name;
+      frame.setAttribute('sandbox', SANDBOX);
       frame.allow = 'fullscreen; clipboard-write; autoplay; picture-in-picture';
       frame.referrerPolicy = 'no-referrer';
       frame.addEventListener('load', () => el.classList.add('loaded'), { once: true });

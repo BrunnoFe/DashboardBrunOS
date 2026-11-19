@@ -5,6 +5,8 @@ export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const html = (str) => { const t = document.createElement('template'); t.innerHTML = str.trim(); return t.content.firstElementChild; };
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// valores de CSS e endereços vindos das preferências (funções puras em safe.js, testadas no Node)
+export { cssVal, safeUrl } from './safe.js';
 export const fmt = (n, d = 1) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
 export const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
@@ -238,18 +240,19 @@ export function confirmDialog(title, text, okLabel = 'Confirmar', { danger = fal
     d.el.addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (!b) return; done = true; resolve(b.dataset.c === 'ok'); d.close(); });
   });
 }
-export function promptDialog(title, { label = '', value = '', okLabel = 'Salvar', placeholder = '', select = true } = {}) {
+// password: campo de senha (não mostra o que é digitado e não tira espaços); text: explicação acima do campo.
+export function promptDialog(title, { label = '', value = '', okLabel = 'Salvar', placeholder = '', select = true, password = false, text = '' } = {}) {
   return new Promise((resolve) => {
     let done = false;
-    const d = openDialog(`<h2>${esc(title)}</h2><form class="form-grid"><label>${esc(label)}<input class="text-input" name="v" value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off"></label>
+    const d = openDialog(`<h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ''}<form class="form-grid"><label>${esc(label)}<input class="text-input" name="v" type="${password ? 'password' : 'text'}" value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off"></label>
       <div class="dlg-actions"><button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn primary">${esc(okLabel)}</button></div></form>`,
       { closeBtn: false, width: 420, onClose: () => { if (!done) resolve(null); } });
     const input = $('input', d.el);
     setTimeout(() => {
       input.focus();
-      if (select) { const dot = value.lastIndexOf('.'); input.setSelectionRange(0, dot > 0 ? dot : value.length); }
+      if (select && !password) { const dot = value.lastIndexOf('.'); input.setSelectionRange(0, dot > 0 ? dot : value.length); }
     }, 50);
-    $('form', d.el).addEventListener('submit', (e) => { e.preventDefault(); done = true; resolve(input.value.trim()); d.close(); });
+    $('form', d.el).addEventListener('submit', (e) => { e.preventDefault(); done = true; resolve(password ? input.value : input.value.trim()); d.close(); });
     $('[data-c="no"]', d.el).addEventListener('click', () => d.close());
   });
 }

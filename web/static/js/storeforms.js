@@ -266,7 +266,8 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
     rawEd.focus();
     refresh();
   }
-  const needPw = () => ajDirty() || (!edit && privs.length > 0);
+  let askPw = false; // o servidor pediu a senha (loja que não foi adicionada pelo BrunOS)
+  const needPw = () => askPw || ajDirty() || (!edit && privs.length > 0);
 
   // resumo das seções fechadas e o campo de senha, conforme o que está escolhido
   const refresh = () => {
@@ -366,6 +367,12 @@ export async function appDialog(a, ctx, { edit = false, open = '' } = {}) {
         rb.innerHTML = `<div class="sf-privh">${svg('alert')}<b>O texto novo dá privilégios ao app</b></div><p>Com eles, um app com defeito ou malicioso pode mexer no servidor inteiro:</p>
           <ul>${ex.data.risks.map((p) => `<li>${esc(p)}</li>`).join('')}</ul><label class="sf-check"><input type="checkbox" name="rawrisks"> Entendo os riscos e quero dar esses privilégios</label>`;
         showErr('Leia a lista acima, marque “Entendo os riscos” e salve de novo.');
+        return;
+      }
+      if (ex.data?.needPassword && !askPw) { // loja que não entrou pelo BrunOS: mostra o campo da senha
+        askPw = true; refresh();
+        showErr(`${m}. Digite a Senha de configuração abaixo e clique em Instalar de novo.`);
+        $('[name="pw"]', box).focus();
         return;
       }
       if (/ainda não existe Senha de (configuração|formatação)/.test(m)) {

@@ -1,7 +1,7 @@
 // Widgets personalizáveis (etapa 7): Formatos, Tamanhos, Métricas da fonte "BrunOS" e Modelos.
 // Termos em CONTEXT.md. Este módulo só monta HTML a partir de um item e de um contexto (valores,
 // definições, séries), então serve igual para a tela inicial e para a prévia do editor.
-import { esc, fmt, fmtBytes, fmtRate, fmtDuration, timeAgo, svg, folderSVG, clamp } from './ui.js';
+import { esc, fmt, fmtBytes, fmtRate, fmtDuration, timeAgo, svg, folderSVG, clamp, cssVal } from './ui.js';
 import { lineSVG, barSVG, donutSVG, sparkSVG, stats, initChartTips } from './charts.js';
 import { batteryGlyph, stateText } from './battery.js';
 
@@ -451,7 +451,7 @@ export const FOLDER_ICONS = ['folder', 'film', 'music', 'image', 'doc', 'downloa
 export const FOLDER_HUES = [209, 259, 330, 6, 24, 45, 145, 174];
 function folderIcon(f) {
   if ((!f.icon || f.icon === 'folder') && f.color == null) return folderSVG();
-  return `<span class="wf-ficon" style="--fh:${f.color ?? 'var(--bh)'}">${svg(f.icon || 'folder')}</span>`;
+  return `<span class="wf-ficon" style="--fh:${cssVal(f.color) || 'var(--bh)'}">${svg(f.icon || 'folder')}</span>`;
 }
 function freeOf(f, roots) {
   const r = roots.find((x) => x.id === f.root);
@@ -555,7 +555,7 @@ export function lookStyle(item) {
   if (l.follow !== false) return '';
   let s = '';
   if (l.opacity != null) s += `--w-alpha:${clamp(l.opacity, 0, 100) / 100};`;
-  if (l.hue != null) s += `--bh:${l.hue};--bs:80%;--bl:50%;`;
+  if (l.hue != null && Number.isFinite(+l.hue)) s += `--bh:${clamp(+l.hue, 0, 359)};--bs:80%;--bl:50%;`;
   return s;
 }
 
