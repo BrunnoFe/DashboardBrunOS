@@ -212,9 +212,10 @@ func (s *server) hStoreAppAction(w http.ResponseWriter, r *http.Request) {
 // {"action": "remove", "name": "minha-loja"} ou {"action": "refresh"} (baixa a lista nova de todas).
 func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Action string `json:"action"`
-		Name   string `json:"name"`
-		URL    string `json:"url"`
+		Action   string `json:"action"`
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		Password string `json:"password"` // Senha de configuração (só no add): o script do servidor confere
 	}
 	if err := decode(r, &req, 4<<10); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
@@ -224,6 +225,7 @@ func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 	u := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(req.URL), "/"), ".git")
 	cat := s.tipi.Catalog()
 	var cmd, title string
+	var in []byte
 	switch req.Action {
 	case "refresh":
 	case "add":
@@ -241,6 +243,13 @@ func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// adicionar loja pede a Senha de configuração (auditoria de 19/11/2026: os apps de uma loja
+		// adicionada instalam sem senha); vai pela entrada padrão, o BrunOS não grava
+		if req.Password == "" || len(req.Password) > 200 || strings.ContainsAny(req.Password, "\r\n") {
+			writeJSON(w, 400, map[string]string{"error": "digite a Senha de configuração"})
+			return
+		}
+		in = []byte(req.Password + "\n")
 		cmd, title = hostcmd.CmdStoreAdd+" "+name+" "+u, "Loja "+name+" adicionada"
 	case "remove":
 		if !hostcmd.ValidStoreName(name) {
@@ -264,7 +273,7 @@ func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.storeMu.Unlock()
 	if cmd != "" {
-		if err := s.storeAct(r.Context(), cmd, nil); err != nil {
+		if err := s.storeAct(r.Context(), cmd, in); err != nil {
 			writeJSON(w, 502, map[string]string{"error": err.Error()})
 			return
 		}

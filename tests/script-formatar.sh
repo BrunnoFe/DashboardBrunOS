@@ -57,7 +57,10 @@ case "$1" in /mnt/*) grep -q " $1 " /etc/fstab || exit 1; echo "$1" >>/tmp/monta
 
   # ── montar ────────────────────────────────────────────────────
   [ "$($H montar 1111-aaaa Fotos)" = "montado /mnt/Fotos ext4" ] && ok "montar" || erro "montar"
-  grep -qx "UUID=1111-aaaa /mnt/Fotos ext4 defaults,nofail 0 2 # brunos" /etc/fstab && ok "linha do fstab marcada # brunos e com nofail" || erro "fstab: $(cat /etc/fstab)"
+  grep -qx "UUID=1111-aaaa /mnt/Fotos ext4 defaults,nofail,nosuid,nodev 0 2 # brunos" /etc/fstab && ok "linha do fstab marcada # brunos, com nofail, nosuid e nodev" || erro "fstab: $(cat /etc/fstab)"
+  # auditoria 19/11: valor começando com "-" seria lido como opção pelo programa (ex.: ntfslabel --new-serial)
+  recusa "rótulo começando com traço" "inválido" $H rotulo 1111-aaaa --new-serial
+  recusa "pasta começando com traço" "inválido" $H montar 1111-aaaa -x
   ls /etc/fstab.brunos-* >/dev/null 2>&1 && ok "cópia do fstab antes de mexer" || erro "sem cópia do fstab"
   recusa "montar de novo a mesma partição" "já tem uma linha" $H montar 1111-aaaa Outra
   recusa "montar partição do disco do sistema" "disco do sistema" $H montar 2222-bbbb X

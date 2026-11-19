@@ -20,7 +20,7 @@ H=/usr/local/sbin/brunos-host
 falhou=0
 erro() { echo "ERRO: $*"; falhou=1; }
 R=/opt/runtipi
-mkdir -p $R/apps/casaos/alist $R/apps/migrated/plex
+mkdir -p $R/apps/casaos/alist $R/apps/migrated/plex $R/repos/casaos $R/repos/migrated
 printf '#!/bin/sh\necho ok\n' >$R/runtipi-cli && chmod +x $R/runtipi-cli
 printf 'INTERNAL_IP=192.168.1.50\nNGINX_PORT=8080\nJWT_SECRET="segredo-antigo"\n' >$R/.env
 echo "v4.12.0" >$R/VERSION
@@ -94,6 +94,12 @@ echo 400 >/tmp/resp.cod; echo '{"statusCode":400,"message":"APP_ERROR_PORT_ALREA
 saida=$(printf '{}' | "$H" instalar-app alist:casaos 2>&1); c=$?
 [ $c -eq 1 ] && echo "$saida" | grep -q PORT_ALREADY && echo "ok: erro do Runtipi volta" || erro "erro 400 -> $c: $saida"
 rm -f /tmp/resp.cod
+# auditoria 19/11 (script 18): sem senha, só instala de loja confiável (as que já existiam ou foram
+# adicionadas pelo BrunOS); de outra loja, só pelo instalar-app-senha
+grep -qx casaos /etc/brunos-host/lojas && echo "ok: lojas que já existiam viraram confiáveis" || erro "lista de lojas: $(cat /etc/brunos-host/lojas 2>&1)"
+: >/tmp/curl.urls
+saida=$(printf '{}' | "$H" instalar-app alist:outra-loja 2>&1); c=$?
+[ $c -eq 8 ] && echo "$saida" | grep -q "não foi adicionada pelo BrunOS" && [ ! -s /tmp/curl.urls ] && echo "ok: loja não confiável não instala sem senha" || erro "loja não confiável -> $c: $saida"
 # Runtipi antigo (antes da 4.12): chave é o JWT_SECRET do .env, sem docker
 echo "v4.11.2" >$R/VERSION; : >/tmp/docker.log
 pede 0 "" reiniciar-app alist:casaos

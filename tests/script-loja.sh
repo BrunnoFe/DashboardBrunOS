@@ -57,8 +57,16 @@ print(\"scrypt\$32768\$8\$1\$%s\$%s\$agora\"%(sal.hex(),h.hex()))" >/etc/brunos-
   com_senha errada 6 "bloqueado por 1 hora" desinstalar-app immich:migrated
   com_senha certa-12345 6 "bloqueado até" desinstalar-app immich:migrated
   rm -f /etc/brunos-host/formatar.trava
-  pede 0 feito adicionar-loja minha-loja https://github.com/usuario/minha-loja
+  # auditoria 19/11: senhas erradas em paralelo não passam da trava (antes cada pedido lia a mesma contagem)
+  for i in 1 2 3 4 5 6 7 8; do sh -c "echo errada | $H desinstalar-app immich:migrated" >/dev/null 2>&1 & done; wait
+  com_senha certa-12345 6 "bloqueado" desinstalar-app immich:migrated
+  rm -f /etc/brunos-host/formatar.trava
+  # adicionar loja pede a Senha de configuração e a loja vira confiável; remover tira da lista
+  com_senha errada 7 "tentativa 1 de 5" adicionar-loja minha-loja https://github.com/usuario/minha-loja
+  com_senha certa-12345 0 feito adicionar-loja minha-loja https://github.com/usuario/minha-loja
+  if grep -qx minha-loja /etc/brunos-host/lojas && grep -qx migrated /etc/brunos-host/lojas; then echo "ok: loja adicionada virou confiável"; else echo "ERRO: lista de lojas: $(cat /etc/brunos-host/lojas)"; falhou=1; fi
   pede 0 feito remover-loja minha-loja
+  if grep -qx minha-loja /etc/brunos-host/lojas; then echo "ERRO: a loja removida continuou confiável"; falhou=1; else echo "ok: loja removida saiu da lista"; fi
   pede 1 "app not found" parar-app falha:migrated
   pede 2 "inválido" adicionar-loja minha-loja "https://github.com/a/b;reboot"
   pede 2 "inválido" adicionar-loja minha-loja https://u:p@github.com/a/b

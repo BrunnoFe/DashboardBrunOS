@@ -75,8 +75,12 @@ const (
 	// não está instalado (o Runtipi não apaga os Ajustes ao desinstalar), 0.21.0; 16 = "reiniciar" e
 	// "cancelar-desligar" (menu de energia: desligar/reiniciar em 1 minuto, com cancelar), 0.25.0;
 	// 17 = o menu de energia espera num temporizador do systemd (o "--when=+1min" cria o /run/nologin, que
-	// barrava a chave do BrunOS e impedia cancelar) e ganha "desligar-agendado", 0.25.1.
-	ScriptVersion = 17
+	// barrava a chave do BrunOS e impedia cancelar) e ganha "desligar-agendado", 0.25.1;
+	// 18 = endurecimento da auditoria de 19/11/2026: a trava da Senha de configuração conta um pedido por
+	// vez; "adicionar-loja" pede a Senha de configuração; "instalar-app" sem senha só de loja confiável
+	// (adicionada pelo BrunOS ou que já existia); discos montados com nosuid,nodev; nenhum valor começa
+	// com "-"; o /etc/fstab é regravado de forma atômica ao desmontar.
+	ScriptVersion = 18
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -195,10 +199,11 @@ const (
 var FormatFS = map[string]bool{"ext4": true, "btrfs": true, "exfat": true, "ntfs": true}
 
 var (
-	uuidRe   = regexp.MustCompile(`^[A-Fa-f0-9-]{1,36}$`)
-	folderRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
-	labelRe  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,16}$`)
-	serialRe = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+	// nunca começando com "-" (o programa do servidor leria como opção), igual ao script
+	uuidRe   = regexp.MustCompile(`^[A-Fa-f0-9][A-Fa-f0-9-]{0,35}$`)
+	folderRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,31}$`)
+	labelRe  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,15}$`)
+	serialRe = regexp.MustCompile(`^[A-Za-z0-9_.:][A-Za-z0-9_.:-]{0,63}$`)
 )
 
 func ValidUUID(s string) bool   { return uuidRe.MatchString(s) }
@@ -357,7 +362,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=17
+VERSAO=18
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -380,8 +385,9 @@ disco_ok() {
   return 1
 }
 # palavra só com os caracteres permitidos e até N letras: so_com <texto> <caracteres> <máximo>
+# (nunca começando com "-": os programas leriam como opção, ex.: um rótulo "--new-serial")
 so_com() {
-  case "$1" in ""|*[!$2]*) return 1 ;; esac
+  case "$1" in ""|-*|*[!$2]*) return 1 ;; esac
   [ ${#1} -le "$3" ]
 }
 uuid_ok() { so_com "$1" "A-Fa-f0-9-" 36; }
@@ -506,6 +512,47 @@ LOG=/var/log/brunos-atualizar.log
 LOGD=/var/log/brunos-discos.log
 SENHA=/etc/brunos-host/formatar
 TRAVA=/etc/brunos-host/formatar.trava
+LOJAS=/etc/brunos-host/lojas
+# Lojas confiáveis (script 18): "instalar-app" sem a Senha de configuração só de loja que está nesta
+# lista (arquivo de root, uma por linha). Entram as que já existiam quando a lista nasceu e as adicionadas
+# pelo BrunOS, que pede a Senha de configuração. Quem tiver só a chave do BrunOS não acrescenta loja.
+lojas_iniciar() {
+  [ -f "$LOJAS" ] && return 0
+  [ -d /etc/brunos-host ] || mkdir -m 700 /etc/brunos-host
+  t=$(mktemp /etc/brunos-host/.lojas.XXXXXX)
+  echo migrated >"$t"
+  if d=$(pasta_runtipi); then
+    for r in "$d"/repos/*/; do
+      n=${r%/}; n=${n##*/}
+      if loja_ok "$n"; then echo "$n" >>"$t"; fi
+    done
+  fi
+  sort -u "$t" -o "$t"
+  chmod 644 "$t"
+  mv -f "$t" "$LOJAS"
+}
+loja_confiavel() { lojas_iniciar; grep -qx -- "$1" "$LOJAS"; }
+loja_lembrar() {
+  lojas_iniciar
+  t=$(mktemp /etc/brunos-host/.lojas.XXXXXX)
+  { cat "$LOJAS"; echo "$1"; } | sort -u >"$t"
+  chmod 644 "$t"
+  mv -f "$t" "$LOJAS"
+}
+loja_esquecer() {
+  [ -f "$LOJAS" ] || return 0
+  t=$(mktemp /etc/brunos-host/.lojas.XXXXXX)
+  grep -vx -- "$1" "$LOJAS" >"$t" || true
+  chmod 644 "$t"
+  mv -f "$t" "$LOJAS"
+}
+# grava a trava da senha de forma atômica (um pedido interrompido não deixa o arquivo pela metade)
+grava_trava() {
+  t=$(mktemp "$TRAVA.XXXXXX")
+  echo "$1" >"$t"
+  chmod 600 "$t"
+  mv -f "$t" "$TRAVA"
+}
 # disco inteiro e as partições dele (nomes do /sys)
 partes() {
   echo "$1"
@@ -557,6 +604,10 @@ le_senha() { # pede uma senha no Terminal sem mostrar o que é digitado
 confere_senha() {
   [ -f "$SENHA" ] || falha "ainda não existe Senha de configuração: crie no Terminal do servidor com sudo brunos-host senha-config" 5
   command -v python3 >/dev/null 2>&1 || falha "falta o python3 no servidor" 3
+  # uma conferência por vez (script 18): pedidos em paralelo liam a mesma contagem e não passavam da
+  # trava, e um pedido atrasado podia apagar o bloqueio de 1 hora
+  exec 8>/run/brunos-senha.lock
+  flock -w 60 8 || falha "outra conferência da Senha de configuração está em andamento: tente de novo daqui a pouco" 4
   agora=$(date +%s)
   n=0; ate=0
   if [ -f "$TRAVA" ]; then read -r n ate <"$TRAVA" || true; fi
@@ -565,13 +616,14 @@ confere_senha() {
     falha "$1 está bloqueado até $(date -d "@$ate" +%H:%M) por causa de senhas erradas" 6
   fi
   IFS= read -r senha || senha=""
+  # a tentativa conta ANTES de conferir: se o pedido for interrompido no meio, ela já contou
+  n=$((n + 1))
+  grava_trava "$n 0"
   if ! printf '%s' "$senha" | python3 -c "$PY_CONFERE" "$SENHA"; then
-    n=$((n + 1))
     if [ "$n" -ge 5 ]; then
-      echo "0 $((agora + 3600))" >"$TRAVA"
+      grava_trava "0 $((agora + 3600))"
       falha "Senha de configuração errada 5 vezes: $1 ficou bloqueado por 1 hora" 6
     fi
-    echo "$n 0" >"$TRAVA"
     falha "Senha de configuração errada (tentativa $n de 5)" 7
   fi
   rm -f "$TRAVA"
@@ -808,10 +860,12 @@ case "$acao" in
     d=$(lsblk -nso NAME "$dev" 2>/dev/null | tail -n 1)
     if [ -n "$d" ] && e_sistema "$d"; then falha "essa partição é do disco do sistema" 3; fi
     fs=$(blkid -o value -s TYPE "$dev" 2>/dev/null || true)
+    # nosuid,nodev (script 18): um disco preparado com programa "setuid" ou arquivo de aparelho não vira
+    # porta para root no servidor
     case "$fs" in
-      ext4|ext3|ext2|btrfs|xfs) op="defaults,nofail" ;;
-      ntfs) fs=ntfs3; op="uid=1000,gid=1000,nofail" ;;
-      exfat|vfat) op="uid=1000,gid=1000,nofail" ;;
+      ext4|ext3|ext2|btrfs|xfs) op="defaults,nofail,nosuid,nodev" ;;
+      ntfs) fs=ntfs3; op="uid=1000,gid=1000,nofail,nosuid,nodev" ;;
+      exfat|vfat) op="uid=1000,gid=1000,nofail,nosuid,nodev" ;;
       *) falha "não sei montar o sistema de arquivos \"$fs\"" 3 ;;
     esac
     if lsblk -nro MOUNTPOINT "$dev" 2>/dev/null | grep -q .; then falha "essa partição já está montada" 3; fi
@@ -849,9 +903,10 @@ case "$acao" in
     r=$(umount "$alvo" 2>&1) || falha "o Linux recusou desmontar: $r" 1
     if grep -qsE "[[:space:]]$alvo[[:space:]].*# brunos\$" /etc/fstab; then
       cp -p /etc/fstab "/etc/fstab.brunos-$(date +%Y%m%d-%H%M%S)"
+      # troca atômica (script 18): uma queda no meio não deixa o /etc/fstab pela metade
       grep -vE "[[:space:]]$alvo[[:space:]].*# brunos\$" /etc/fstab >/etc/fstab.brunos-novo || true
-      cat /etc/fstab.brunos-novo >/etc/fstab
-      rm -f /etc/fstab.brunos-novo
+      chmod 644 /etc/fstab.brunos-novo
+      mv -f /etc/fstab.brunos-novo /etc/fstab
       systemctl daemon-reload 2>/dev/null || true
       echo "fstab tirado"
     elif grep -qsE "[[:space:]]$alvo[[:space:]]" /etc/fstab; then
@@ -1013,6 +1068,8 @@ case "$acao" in
     d=$(pasta_runtipi) || falha "não achei o runtipi-cli: em Configurações -> Energia, copie os comandos de atualização e cole no servidor" 3
     # desinstalar apaga os dados do app: só com a Senha de configuração (pela entrada padrão), conferida aqui
     if [ "$acao" = desinstalar-app ]; then confere_senha desinstalar; fi
+    # adicionar loja (script 18) também: uma loja nova vira "confiável" (instala sem senha)
+    if [ "$acao" = adicionar-loja ]; then lojas_iniciar; confere_senha "adicionar loja"; fi
     cd "$d"
     case "$acao" in
       iniciar-app) set -- app start "$valor" ;;
@@ -1025,6 +1082,10 @@ case "$acao" in
       echo "$r" | tail -n 3 >&2
       exit 1
     fi
+    case "$acao" in
+      adicionar-loja) loja_lembrar "$valor" ;;
+      remover-loja) loja_esquecer "$valor" ;;
+    esac
     echo "feito"
     exit 0 ;;
   info-app)
@@ -1032,7 +1093,9 @@ case "$acao" in
     api_runtipi GET "/apps/$valor" </dev/null
     exit 0 ;;
   instalar-app)
-    # o formulário (JSON) vem pela entrada padrão; o Runtipi instala sozinho, em segundo plano
+    # o formulário (JSON) vem pela entrada padrão; o Runtipi instala sozinho, em segundo plano.
+    # Sem senha só de loja confiável (script 18); de outra loja, pelo instalar-app-senha.
+    loja_confiavel "${valor#*:}" || falha "a loja ${valor#*:} não foi adicionada pelo BrunOS: para instalar apps dela, digite a Senha de configuração" 8
     api_runtipi POST "/app-lifecycle/$valor/install"
     exit 0 ;;
   reconfigurar-app)

@@ -52,7 +52,7 @@ esac'"'"'
   for bad in "reiniciar agora" "desligar-agendado 60" "cancelar-desligar ja"; do
     if r=$(SSH_ORIGINAL_COMMAND="$bad" $H 2>&1); then erro "\"$bad\" deveria ser recusado: $r"; else ok "recusa \"$bad\""; fi
   done
-  [ "$($H versao)" = "brunos-host 17" ] && ok "versão 17" || erro "versão: $($H versao)"
+  [ "$($H versao)" = "brunos-host 18" ] && ok "versão 18" || erro "versão: $($H versao)"
   exit $falhou
 '
 echo "script-energia: tudo certo"
