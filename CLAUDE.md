@@ -11,7 +11,7 @@
 Tem: tela inicial com papel de parede, widgets personalizáveis com integrações, apps do Runtipi com
 status, dock, busca `Ctrl+K`, gerenciador de arquivos, monitor de hardware e de apps, terminal SSH,
 energia (desligamento seguro, consumo), atualizações pela interface e configurações no servidor. A lista
-atual de recursos está no `README.md`.
+atual de recursos está em `docs/recursos.md` (o `README.md` é só a vitrine, curto e sem tecnicalidades).
 
 - Código: <https://github.com/BrunnoFe/DashboardBrunOS> (público, MIT, autor Bruno Barbosa)
 - Loja do Runtipi: <https://github.com/BrunnoFe/RuntipiAppStore> (o app fica em `apps/brunos/`)

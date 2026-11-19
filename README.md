@@ -1,146 +1,250 @@
+<div align="center">
+
+<img src="web/static/assets/favicon.svg" alt="" width="84" height="84">
+
 # BrunOS
 
-Painel para servidor caseiro com [Runtipi](https://runtipi.io), no estilo do umbrelOS: tela inicial com papel de parede, widgets de vidro, dock com ampliação, gerenciador de arquivos e uso do hardware ao vivo.
+**O painel bonito e leve para o seu servidor caseiro.**<br>
+Seus apps, arquivos, discos e o uso do servidor num só lugar, no estilo do UmbrelOS.
 
-- **Leve:** um binário Go estático (~9 MB, imagem `scratch`), sem dependências externas, ~12–20 MB de RAM.
-- **Integrado ao Runtipi:** lê os apps instalados (nome, logo, porta, domínio local) direto da pasta do Runtipi, só leitura.
-- **Seguro:** usuário próprio criado na primeira execução, container sem privilégios e Docker atrás de um proxy com permissões mínimas.
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-3b82f6?style=flat-square)](LICENSE)
+[![Imagem Docker](https://img.shields.io/badge/docker-ghcr.io%2Fbrunnofe%2Fbrunos-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/BrunnoFe/DashboardBrunOS/pkgs/container/brunos)
+[![Para o Runtipi](https://img.shields.io/badge/feito%20para-Runtipi-6d28d9?style=flat-square)](https://runtipi.io)
+![Versão](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FBrunnoFe%2FDashboardBrunOS%2Fmain%2FVERSION&search=%28%5Cd%2B%5C.%5Cd%2B%5C.%5Cd%2B%29&replace=%241&label=vers%C3%A3o&style=flat-square&color=0ea5e9)
+![Em português](https://img.shields.io/badge/interface-pt--BR-16a34a?style=flat-square)
 
-## Estrutura
+**🇧🇷 Português** · [🇺🇸 English](README.en.md)
 
-```
-main.go                  servidor HTTP, rotas, autenticação, preferências, apps, estatísticas
-internal/auth            usuário, senha, sessões, limite de tentativas
-internal/sysinfo         CPU, memória, temperatura, ventoinha, bateria, discos, rede (lê /proc e /sys)
-internal/runtipi         descobre os apps instalados (apps/<loja>/<app>/config.json + app.env)
-internal/dockerc         cliente mínimo da API do Docker (listar, estatísticas, ligar/parar/reiniciar, logs)
-internal/appmon          uso e disponibilidade de cada app nas últimas 24 h (aviso quando um app cai)
-internal/history         histórico de uso do servidor (24 h por minuto, 7 dias por hora)
-internal/procs           processos do servidor (como o htop), só leitura
-internal/netmon          latência e quedas da internet
-internal/files           gerenciador de arquivos (os.Root, lixeira, upload com retomada, zip, busca,
-                         editor de texto, extrair, duplicados, mapa do espaço)
-internal/events          central de notificações (o sino da tela inicial)
-internal/power           quedas de energia e desligamento seguro pela bateria
-internal/diskhist        uso diário dos discos e previsão de disco cheio
-internal/logins          aparelhos que já entraram (aviso de acesso novo)
-internal/hostcmd         comandos no servidor por SSH (usado pelo desligamento seguro)
-internal/terminal        terminal SSH embutido (abas, "ainda está rodando?")
-internal/termkey         Chave do Terminal
-internal/notes           texto dos widgets de Notas
-web/static               interface (HTML/CSS/JS puros, sem build), embutida no binário
-runtipi-app/brunos       pacote para a app store (config.json + docker-compose.json)
-tools/codemirror         receita do pacote do CodeMirror usado pelo editor (só para atualizá-lo)
-tests/                   fixture, testes da API e teste de fumaça com Docker
-```
+<br>
 
-## Instalação no Runtipi
+### 👉 [Experimente agora, direto no navegador](https://brunnofe.github.io/DashboardBrunOS/) 👈
+<sub>Modo demonstração: dados de mentira, qualquer usuário e senha entram.</sub>
 
-1. **Imagem:** cada push na `main` roda o teste com Docker de verdade (`tests/smoke.sh`). Quando o arquivo `VERSION` traz uma versão nova e o teste passa, o GitHub Actions publica `ghcr.io/brunnofe/brunos:<versão>` (amd64 e arm64). Na primeira publicação, abra o pacote em *Your profile → Packages → brunos → Package settings* e mude a visibilidade para **Public**; assim o servidor baixa a imagem sem login.
-2. **App store:** o app fica em [`BrunnoFe/RuntipiAppStore`](https://github.com/BrunnoFe/RuntipiAppStore), na pasta `apps/brunos` (mesmo conteúdo de `runtipi-app/brunos` aqui). O formato é o `docker-compose.json` legado, igual aos outros apps da loja.
-3. No Runtipi, atualize a loja e instale o **BrunOS**. Confira no formulário a pasta do Runtipi (por exemplo `/home/<usuário>/runtipi`) e o UID/GID (`id -u`, `id -g`).
-4. Abra o app pela porta 8790 ou pelo domínio local e crie seu usuário.
+<br>
 
-### Testar no servidor antes de instalar pela loja
+[Conhecer](#conhecer) ·
+[Instalar](#instalar) ·
+[Perguntas](#perguntas) ·
+[Documentação](#documentacao)
 
-```bash
-git clone https://github.com/BrunnoFe/DashboardBrunOS && cd DashboardBrunOS
-docker build -t brunos:teste .
-FIX=/tmp/brunos-teste bash tests/smoke.sh brunos:teste   # mesmo teste do GitHub, com o Docker do servidor
-```
+<br>
 
-## Montagens (docker-compose)
+<a href="https://brunnofe.github.io/DashboardBrunOS/"><img src="docs/img/demo.gif" alt="BrunOS em ação: dock que cresce, arquivos, discos, loja e busca" width="760"></a>
 
-| No servidor | No container | Para quê |
-|---|---|---|
-| `${APP_DATA_DIR}/data` | `/data` | usuário, sessões, preferências, papéis de parede enviados |
-| pasta do Runtipi | `/runtipi` (ro) | descobrir apps, logos, portas e domínios |
-| `/home` | `/files/home` | gerenciador de arquivos |
-| `/mnt` | `/files/mnt` | cada pasta em `/mnt/*` pode virar um disco no gerenciador. Em *Arquivos → Discos → Mapear* você escolhe quais aparecem (fica salvo em `/data/disks.json`); sem escolha, aparecem só as pastas com um disco montado |
-| pasta do Runtipi | `/files<mesmo caminho>` (ro) | impede apagar o Runtipi pelo gerenciador |
-| `/proc`, `/etc/os-release`, `/etc/hostname` | `/host/...` (ro) | rede do servidor, processos e informações do sistema |
-| `/etc/passwd` | `/host/passwd` (ro) | nome do usuário dono de cada processo |
+</div>
 
-O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário já pode. Se os discos em `/mnt` pertencem ao root e você quer escrever neles pelo painel, ajuste as permissões só das pastas que quiser (por exemplo `sudo chown -R <usuário>:<usuário> /mnt/<disco>`).
+<br>
 
-## Variáveis de ambiente
+## ✨ Por que o BrunOS?
 
-| Variável | Padrão | |
-|---|---|---|
-| `BRUNOS_ADDR` | `:8080` | endereço do servidor |
-| `BRUNOS_DATA` | `/data` | pasta de dados |
-| `BRUNOS_FILES` | `/files` | cada subpasta vira um local (dentro de `mnt`/`media`, cada disco) |
-| `BRUNOS_ROOTS` | — | lista manual: `Fotos=/files/mnt/disco1/Fotos;Backups=/files/mnt/disco2:ro` |
-| `BRUNOS_TERMINAL` | `true` | `false` esconde e desliga o terminal SSH |
-| `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi montada |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | ou `tcp://brunos-docker-proxy:2375`; `off` desliga |
-| `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
-| `BRUNOS_MAX_UPLOAD_GB` | `50` | tamanho máximo por arquivo enviado |
-| `HOST_PROC` | `/host/proc` | `/proc` do servidor (rede) |
-| `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | deixe `false`: o cadastro do primeiro usuário só é aceito de dentro da rede de casa |
+Quem tem um servidor em casa costuma acabar com dezenas de apps, cada um numa porta diferente. O BrunOS junta tudo numa tela só, bonita e rápida, que você abre de qualquer aparelho.
 
-## Desenvolvimento
+|   |   |
+|---|---|
+| 🪶 **Leve de verdade** | A imagem tem cerca de 4 MB e o painel usa por volta de 10 MB de memória. Cabe até em servidor velho. |
+| 🎨 **Bonito e do seu jeito** | Vidro, papel de parede, dock que cresce quando o mouse passa, widgets e cores que combinam com a imagem. |
+| 🔌 **Pronto para o Runtipi** | Ele encontra os apps que você já instalou, com nome, ícone e endereço. Nada para cadastrar. |
+| 🔒 **Seguro por padrão** | Roda sem privilégios, com usuário e senha seus. As ações que mexem no servidor pedem uma senha extra. |
+| 🇧🇷 **Em português** | Interface e mensagens de erro em português do Brasil. |
 
-```bash
-go run . # com variáveis apontando para pastas locais:
-BRUNOS_DATA=./tmp/data BRUNOS_FILES=./tmp/files BRUNOS_RUNTIPI=./tmp/runtipi DOCKER_HOST=off HOST_PROC=/proc go run .
-```
+<br>
 
-Abrir `web/static/index.html` sem o servidor liga o **modo demonstração**, com dados simulados.
+<a id="conhecer"></a>
 
-## API
+## 🖼️ O que ele faz
 
-Todas as rotas ficam em `/api/*` e exigem login (menos as públicas de entrada). A lista completa está em [`docs/projeto/arquitetura.md`](docs/projeto/arquitetura.md).
+### Tudo à mão na tela inicial
 
-## Créditos e licenças de terceiros
+Seus apps aparecem como ícones, com uma bolinha mostrando se estão no ar. Arraste um sobre o outro para criar pastas. Os **widgets** mostram o que importa: espaço nos discos, CPU, memória, temperatura, internet, clima, relógio, notas e lista de tarefas. Aperte <kbd>Ctrl</kbd>+<kbd>K</kbd> para buscar qualquer app, ação ou arquivo.
 
-- **Papéis de parede** em `web/static/assets/wallpapers`: do repositório do [umbrelOS](https://github.com/getumbrel/umbrel), licença PolyForm Noncommercial 1.0.0. São para uso pessoal e não comercial; troque pelos seus se for distribuir.
-- **Ícones dos apps** em `web/static/assets/icons`: projeto [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). As marcas pertencem aos respectivos donos.
-- **Fonte Inter**: SIL Open Font License 1.1 (`web/static/assets/fonts/LICENSE-Inter.txt`).
-- **Editor de texto**: [CodeMirror 6](https://codemirror.net) (MIT), empacotado em `web/static/vendor/codemirror` pela receita de `tools/codemirror`.
-- **Clima**: dados do [Open-Meteo](https://open-meteo.com) (CC BY 4.0), consultados pelo servidor só quando há um widget de clima.
-- Inspiração visual: umbrelOS. A interface foi escrita do zero; os valores das sombras de vidro, da curva de ampliação do dock e da animação de abertura das janelas foram adaptados do `tailwind.config.ts` e do `index.css` do Umbrel.
+<div align="center">
+<img src="docs/img/inicio.jpg" alt="Tela inicial do BrunOS: papel de parede, widgets de vidro, apps e dock" width="780">
+</div>
 
-## Terminal
+<br>
 
-Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor por SSH, com o seu usuário e senha (ou chave privada). Na primeira conexão ele mostra a impressão digital da chave do servidor para você conferir com `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
+<div align="center">
+<img src="docs/img/busca.jpg" alt="Busca rápida com Ctrl+K" width="48%">
+<img src="docs/img/widgets.jpg" alt="Janela de widgets com os modelos prontos" width="48%">
+</div>
 
-O terminal tem até 4 abas, botão de minimizar (as abas continuam rodando e o ícone aparece na dock), comandos salvos em botões e conexões salvas. Com a *Chave do Terminal* (no ⚙ da janela), ele entra direto no servidor sem pedir a senha do SSH: basta colar uma vez no servidor o comando que a janela mostra. Antes de fechar uma aba, o BrunOS confere se ainda tem algo rodando nela e pergunta; o tempo para fechar abas esquecidas fica em *Configurações → Sistema*.
+<br>
 
-Precisa do `openssh-server` ligado no servidor (`sudo apt install openssh-server`). Para desligar o recurso, use `BRUNOS_TERMINAL=false`.
+### Arquivos do servidor no navegador
 
-O terminal usa o [xterm.js](https://github.com/xtermjs/xterm.js) (MIT) e o `golang.org/x/crypto/ssh` (BSD), ambos distribuídos junto com o código.
+Navegue, envie, baixe, edite textos, compacte, apague (com lixeira) e encontre arquivos duplicados. Funciona com várias abas, como num computador de verdade.
 
-## Tela de bloqueio, relógio, clima e notas
+<div align="center">
+<img src="docs/img/arquivos.jpg" alt="Gerenciador de arquivos" width="780">
+</div>
 
-`Ctrl+Shift+L` (ou a busca, ou o botão direito na tela inicial) bloqueia a tela, que mostra um relógio grande sobre o papel de parede. Em *Configurações → Conta* você escolhe se ela pede a senha do BrunOS para voltar e depois de quanto tempo sem uso ela bloqueia sozinha.
+<br>
 
-Na janela *Widgets* há os modelos Relógio (digital ou de ponteiros, com fuso horário), Bloco de notas e Lista de tarefas (escritos direto na tela inicial e iguais em todos os aparelhos) e, cadastrando a integração *Clima* com o nome da sua cidade, temperatura, ícone do tempo e previsão dos próximos dias.
+### Saúde dos discos, sem susto
 
-## Consumo, saúde dos discos e atualizações
+Veja cada disco com temperatura, espaço, desempenho e o estado de saúde explicado em português simples. O sino avisa **antes** de um disco dar problema, quando um disco novo é conectado ou quando um some.
 
-A janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mês, com projeção) pela tarifa que você informa. O consumo vem de uma tomada inteligente Tuya (integração *Tomada Tuya*, pela rede de casa, sem nuvem), da bateria durante as quedas de energia ou de uma estimativa que o BrunOS aprende.
+<div align="center">
+<img src="docs/img/discos.jpg" alt="Janela de discos com saúde, partições e temperatura" width="780">
+</div>
 
-A janela *Discos* (na dock, ao lado de Arquivos) mostra cada disco do servidor, inclusive os que não estão montados: identificação, partições, quais apps usam o disco, se ele está dormindo, a saúde (SMART) com cada número explicado, o teste do próprio disco, leitura e escrita ao vivo e dos últimos 30 dias, temperatura, teste de velocidade, espaço com previsão, uma linha do tempo (conectado, desconectado, montado, saúde mudou, esquentou) e os erros que o Linux anotou. Discos USB desmontados podem ser ejetados com segurança. Dá também para montar uma partição numa pasta de `/mnt` (volta sozinha quando o servidor reinicia), desmontar, trocar o rótulo e formatar um disco inteiro (ext4, Btrfs, exFAT ou NTFS); formatar pede a senha do BrunOS e a Senha de configuração, criada só no Terminal do servidor (`sudo brunos-host senha-config`). O sino avisa quando um disco começa a falhar, quando um disco novo é conectado e quando um disco some.
+<br>
 
-O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pacotes do Linux). Um clique abre o painel e já confere; dali dá para atualizar cada app e o Linux sem abrir o terminal, acompanhando o andamento. A atualização roda no próprio servidor e continua mesmo se o BrunOS reiniciar no meio. A frequência da conferência automática fica em *Configurações → Sistema → Procurar atualizações*.
+### Uso do servidor ao vivo
 
-Esses recursos usam um pequeno script instalado no servidor: em *Configurações → Energia*, copie os comandos e cole no servidor uma vez (para o SMART, instale também o `smartmontools`); depois o BrunOS mantém o script atualizado sozinho. O SMART lê um disco de cada vez e descobre sozinho o jeito certo de falar com cada gaveta USB; uma gaveta que não deixa o SMART passar aparece com a etiqueta *sem SMART* e não é mais incomodada.
+Gráficos de CPU, memória, temperatura e rede, e quanto cada app está consumindo. Avisa no sino quando um app cai ou quando a internet some.
 
-## Energia e notificações
+<div align="center">
+<img src="docs/img/uso-ao-vivo.jpg" alt="Uso ao vivo do servidor" width="560">
+</div>
 
-O sino no canto da tela inicial reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.
+<br>
 
-A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche, o histórico de CPU, memória, temperatura e rede (5 min, 24 h ou 7 dias) e a lista de processos do servidor. O widget *Internet* mostra a latência e quantas vezes a internet caiu (o sino avisa quando cai e quando volta).
+### Loja para instalar e atualizar apps
 
-## Apps
+Navegue pelos apps do Runtipi (e de outras lojas, como CasaOS e LinuxServer), instale com um formulário e atualize tudo sem abrir o terminal.
 
-A *Loja* (ícone da sacola no dock) mostra os apps de todas as lojas do Runtipi com categorias, busca, favoritos e a página de cada app, sem usar internet: ela lê o que o Runtipi já baixou. *Instalar* abre a tela de instalação do Runtipi; parar, iniciar e desinstalar apps e adicionar, remover e atualizar lojas são feitos pelo próprio BrunOS, com o servidor preparado em *Configurações → Sistema → Energia*. Desinstalar apaga os dados do app e por isso pede a Senha de configuração, a mesma de formatar discos: uma segunda senha, só para as ações sensíveis do servidor.
+<div align="center">
+<img src="docs/img/loja.jpg" alt="Loja de apps" width="780">
+</div>
 
-Com o script do servidor atualizado, **instalar acontece na própria Loja**: as perguntas do app aparecem num formulário (com listas prontas de discos e pastas e o recomendado já marcado), o Runtipi instala e o BrunOS acompanha até o app ligar. Depois, cada app instalado tem **Instalação** (mudar as respostas) e **Ajustes**: pastas do servidor dentro do app, limite de memória e de núcleos, placa de vídeo e variáveis. Os Ajustes ficam no arquivo de ajustes do Runtipi, valem depois das atualizações, respeitam o que já foi escrito à mão no Runtipi e pedem a Senha de configuração. A Senha de configuração pode ser criada em *Configurações → Sistema* (o botão abre o Terminal com o comando pronto).
+<br>
 
-Mais apps: a Loja sugere as lojas **CasaOS** e **LinuxServer**, convertidas todo dia para o formato do Runtipi pelo [Garimpo](https://github.com/BrunnoFe/Garimpo) (um clique para adicionar). Cada loja aparece num cartão próprio, e os apps dela levam o selo da origem ("via CasaOS"). Receitas que pedem poderes sobre o servidor (privileged, socket do Docker, rede do servidor, pastas do sistema), de qualquer loja, aparecem com o selo **Requer privilégios**, ficam juntas na guia **Apps com Privilégios** e só instalam depois de você marcar "Entendo os riscos" e digitar a Senha de configuração.
+### Também no celular
 
-Clique com o botão direito num ícone → *Detalhes, logs e uso* para ver a disponibilidade e o consumo de CPU e memória nas últimas 24 h, os logs de cada container (inclusive ao vivo) e ligar, parar ou reiniciar o app (com *Permitir reiniciar apps* ligado no formulário do Runtipi). Ligar e parar pelo BrunOS não muda o estado no Runtipi. *Desinstalar* abre a página do app no painel do Runtipi. A cada minuto o BrunOS confere se cada app responde e avisa no sino quando algum cai (dá para desligar em *Configurações → Apps*). Arraste um app sobre outro para criar uma pasta; com muitos apps, a tela inicial vira páginas. Para a temperatura dos HDs, o módulo `drivetemp` do Linux precisa estar carregado; a própria janela mostra os comandos.
+A interface se adapta a telas pequenas: o mesmo painel, com a dock embaixo, na palma da mão.
 
-Em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.
+<div align="center">
+<img src="docs/img/celular-inicio.jpg" alt="Tela inicial no celular" width="240">
+&nbsp;&nbsp;
+<img src="docs/img/celular-discos.jpg" alt="Janela de discos no celular" width="240">
+</div>
+
+<br>
+
+### E mais
+
+<details>
+<summary><b>🔔 Avisos no sino</b></summary>
+<br>
+
+Queda de energia, disco quente ou cheio, app que parou, internet que caiu e acesso de um aparelho novo ao painel.
+</details>
+
+<details>
+<summary><b>⚡ Energia e desligamento seguro</b></summary>
+<br>
+
+Acompanhe quanto o servidor gasta (em watts e em reais, com projeção do mês). Em notebooks usados como servidor, o BrunOS pode desligar tudo com segurança quando a bateria estiver acabando.
+</details>
+
+<details>
+<summary><b>💻 Terminal no navegador</b></summary>
+<br>
+
+Um terminal do servidor com abas, direto no painel, sem precisar de outro programa.
+</details>
+
+<details>
+<summary><b>🔒 Tela de bloqueio</b></summary>
+<br>
+
+Um relógio grande sobre o papel de parede, com senha para voltar e bloqueio automático depois de um tempo parado.
+</details>
+
+<details>
+<summary><b>⬆️ Atualizações pela interface</b></summary>
+<br>
+
+Um botão mostra quantas atualizações existem (apps e Linux). Dá para atualizar com um clique e acompanhar o andamento.
+</details>
+
+Todos os detalhes, um por um, estão em **[docs/recursos.md](docs/recursos.md)**.
+
+<br>
+
+<a id="instalar"></a>
+
+## 🚀 Instalar em 3 passos
+
+Você precisa de um servidor com o [Runtipi](https://runtipi.io) funcionando.
+
+1. No Runtipi, adicione a loja de apps: `https://github.com/BrunnoFe/RuntipiAppStore`
+2. Instale o **BrunOS** e confira no formulário a pasta do Runtipi.
+3. Abra o app, crie seu usuário e pronto.
+
+> O primeiro usuário só pode ser criado de dentro da rede de casa.
+
+Quer testar antes, sem instalar nada? Abra a **[demonstração no navegador](https://brunnofe.github.io/DashboardBrunOS/)**, com dados de mentira.
+
+Passo a passo completo, pastas e opções: **[docs/instalacao.md](docs/instalacao.md)**.
+
+<br>
+
+<a id="perguntas"></a>
+
+## ❓ Perguntas rápidas
+
+<details>
+<summary><b>Preciso saber programar?</b></summary>
+<br>
+
+Não. Instalar e usar é tudo pela interface.
+</details>
+
+<details>
+<summary><b>Funciona sem o Runtipi?</b></summary>
+<br>
+
+Ele foi feito para o Runtipi e é lá que mostra tudo o que sabe fazer. Em outros cenários, o uso fica limitado.
+</details>
+
+<details>
+<summary><b>Meus dados ficam seguros?</b></summary>
+<br>
+
+Tudo fica no seu servidor, nada vai para a nuvem. O único contato com a internet é a previsão do tempo, e só se você criar um widget de clima. O painel roda sem privilégios, e ações delicadas (formatar disco, desinstalar app) pedem uma segunda senha.
+</details>
+
+<details>
+<summary><b>Qual a diferença para o Homarr, Dashy e outros?</b></summary>
+<br>
+
+O BrunOS não é só um painel de atalhos: ele também gerencia arquivos, discos, apps e energia, continuando muito leve e com a cara do umbrelOS.
+</details>
+
+<details>
+<summary><b>Posso usar no celular?</b></summary>
+<br>
+
+Sim, a interface se adapta a telas pequenas.
+</details>
+
+<br>
+
+<a id="documentacao"></a>
+
+## 📚 Documentação
+
+| Para quê | Onde |
+|---|---|
+| Instalar, pastas e variáveis | [docs/instalacao.md](docs/instalacao.md) |
+| Cada recurso em detalhe | [docs/recursos.md](docs/recursos.md) |
+| Mexer no código, rodar testes, API | [docs/desenvolvimento.md](docs/desenvolvimento.md) |
+| Como o BrunOS funciona por dentro | [docs/projeto/arquitetura.md](docs/projeto/arquitetura.md) |
+| Por que cada decisão foi tomada | [docs/projeto/decisoes.md](docs/projeto/decisoes.md) |
+| Histórico de versões | [docs/projeto/historico.md](docs/projeto/historico.md) |
+| O que vem por aí | [docs/projeto/roadmap.md](docs/projeto/roadmap.md) |
+
+<br>
+
+## 💙 Créditos
+
+Criado por **Bruno Barbosa**, com inspiração visual no [umbrelOS](https://github.com/getumbrel/umbrel). Os ícones vêm do [dashboard-icons](https://github.com/homarr-labs/dashboard-icons), a fonte é a Inter, o editor de texto é o CodeMirror e o terminal usa o xterm.js. A lista completa de licenças está em [docs/desenvolvimento.md](docs/desenvolvimento.md#créditos-e-licenças-de-terceiros).
+
+Código sob licença [MIT](LICENSE). Os papéis de parede são do umbrelOS e valem só para uso pessoal.
+
+<div align="center">
+<br>
+Gostou? Deixe uma ⭐ no repositório, ajuda muito!
+</div>

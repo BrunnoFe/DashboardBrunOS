@@ -27,7 +27,7 @@ adaptados de lá; os papéis de parede são os do Umbrel (licença PolyForm Nonc
 
 ## Funcionalidades
 
-A lista atual está no `README.md` (seções por assunto). Resumo: tela inicial com papel de parede, widgets
+A lista atual está em `docs/recursos.md` (seções por assunto). Resumo: tela inicial com papel de parede, widgets
 personalizáveis com integrações, dock, busca `Ctrl+K`, gerenciador de arquivos completo, monitor de
 hardware e de apps, central de notificações, energia e desligamento seguro, terminal SSH, tela de
 bloqueio, atualizações pela interface. O que falta: `roadmap.md` e `ideias-futuras.md`.
