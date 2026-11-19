@@ -78,7 +78,8 @@ type Manager struct {
 	users        []User
 	sessions     map[string]*Session // chave: sha256(token) em hex
 	limiter      *limiter
-	dummy        User // gasta o mesmo tempo quando o usuário não existe
+	dummy        User           // gasta o mesmo tempo quando o usuário não existe
+	sessFails    map[string]int // senhas erradas por Sessão (desbloqueio, troca de senha, ações sensíveis)
 
 	// OnBlock é chamado quando um IP erra a senha tantas vezes que fica bloqueado.
 	OnBlock func(ip string, lock time.Duration)
@@ -90,6 +91,7 @@ func New(dataDir string) (*Manager, error) {
 		sessionsPath: filepath.Join(dataDir, "sessions.json"),
 		sessions:     map[string]*Session{},
 		limiter:      newLimiter(),
+		sessFails:    map[string]int{},
 	}
 	var af authFile
 	if _, err := store.ReadJSON(m.authPath, &af); err != nil {
@@ -124,7 +126,19 @@ func newUser(username, display, password string) (User, error) {
 	}, nil
 }
 
+// hashSem limita quantas conferências de senha (PBKDF2, ~0,3 s de CPU cada) rodam ao mesmo tempo:
+// uma enxurrada de logins não ocupa todos os núcleos do servidor. Quem espera demais recebe "não".
+var hashSem = make(chan struct{}, 2)
+
+const hashWait = 20 * time.Second
+
 func (u User) check(password string) bool {
+	select {
+	case hashSem <- struct{}{}:
+		defer func() { <-hashSem }()
+	case <-time.After(hashWait):
+		return false
+	}
 	salt, err1 := base64.StdEncoding.DecodeString(u.Salt)
 	want, err2 := base64.StdEncoding.DecodeString(u.Hash)
 	if err1 != nil || err2 != nil || u.Iterations <= 0 || len(want) == 0 {
@@ -203,7 +217,7 @@ func (m *Manager) Setup(username, display, password, ip, ua string) (string, err
 
 // Login confere a senha (com limite de tentativas por IP) e abre uma sessão.
 func (m *Manager) Login(username, password, ip, ua string) (string, error) {
-	if m.limiter.blocked(ip) > 0 {
+	if !m.limiter.reserve(ip) {
 		return "", ErrRateLimited
 	}
 	m.mu.Lock()
@@ -322,8 +336,15 @@ var ErrSessionEnded = errors.New("muitas tentativas erradas: entre de novo com u
 
 // Verify confere a senha do usuário com o mesmo limite de tentativas do login.
 func (m *Manager) Verify(username, password, ip string) error {
-	if m.limiter.blocked(ip) > 0 {
-		return ErrRateLimited
+	err, _ := m.verify(username, password, ip)
+	return err
+}
+
+// verify é o Verify que diz também se a senha chegou a ser conferida (checked) — falso quando o IP já
+// estava bloqueado antes desta tentativa (por exemplo, por outra pessoa errando com o mesmo IP).
+func (m *Manager) verify(username, password, ip string) (err error, checked bool) {
+	if !m.limiter.reserve(ip) {
+		return ErrRateLimited, false
 	}
 	u, ok := m.User(username)
 	if !ok || !u.check(password) {
@@ -331,17 +352,23 @@ func (m *Manager) Verify(username, password, ip string) error {
 			if m.OnBlock != nil {
 				m.OnBlock(ip, lock)
 			}
-			return ErrRateLimited
+			return ErrRateLimited, true
 		}
-		return ErrInvalidCredentials
+		return ErrInvalidCredentials, true
 	}
 	m.limiter.success(ip)
-	return nil
+	return nil, true
 }
 
-// Unlock confere a senha e desbloqueia a Sessão. Se o IP ficar bloqueado por errar demais, a
-// Sessão é encerrada (quem estiver tentando adivinhar perde o acesso de vez).
-func (m *Manager) Unlock(id, password, ip string) error {
+// maxSessionFails: senhas erradas seguidas numa mesma Sessão (desbloqueio, troca de senha, ações que
+// pedem a senha de novo) antes de ela ser encerrada. Vale mesmo que o IP mude a cada tentativa.
+const maxSessionFails = 5
+
+// VerifySession confere a senha do dono da Sessão. Errar maxSessionFails vezes seguidas encerra a
+// Sessão (ErrSessionEnded): quem tem um cookie roubado não fica adivinhando a senha. Se o IP já estava
+// bloqueado ANTES (ErrRateLimited sem conferir), a Sessão continua: um terceiro errando de propósito
+// com o mesmo IP não derruba o dono.
+func (m *Manager) VerifySession(id, password, ip string) error {
 	m.mu.Lock()
 	s, ok := m.sessions[id]
 	var user string
@@ -350,16 +377,35 @@ func (m *Manager) Unlock(id, password, ip string) error {
 	}
 	m.mu.Unlock()
 	if !ok {
-		return ErrInvalidCredentials
+		return ErrSessionEnded
 	}
-	if err := m.Verify(user, password, ip); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			m.mu.Lock()
-			delete(m.sessions, id)
-			_ = m.saveSessionsLocked()
-			m.mu.Unlock()
-			return ErrSessionEnded
-		}
+	err, checked := m.verify(user, password, ip)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err == nil {
+		delete(m.sessFails, id)
+		return nil
+	}
+	if !checked {
+		return err
+	}
+	m.sessFails[id]++
+	if m.sessFails[id] >= maxSessionFails {
+		delete(m.sessFails, id)
+		delete(m.sessions, id)
+		_ = m.saveSessionsLocked()
+		return ErrSessionEnded
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return ErrRateLimited
+	}
+	return ErrInvalidCredentials
+}
+
+// Unlock confere a senha e desbloqueia a Sessão. Errar 5 vezes seguidas nesta Sessão a encerra
+// (quem estiver tentando adivinhar perde o acesso de vez).
+func (m *Manager) Unlock(id, password, ip string) error {
+	if err := m.VerifySession(id, password, ip); err != nil {
 		return err
 	}
 	m.mu.Lock()
@@ -375,6 +421,7 @@ func (m *Manager) Logout(token string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.sessions, hashToken(token))
+	delete(m.sessFails, hashToken(token))
 	_ = m.saveSessionsLocked()
 }
 

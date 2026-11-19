@@ -5,12 +5,13 @@ B=os.environ.get('BASE','http://127.0.0.1:8099')
 FIX=os.environ.get('FIX','/tmp/bt')
 cj=http.cookiejar.CookieJar(); op=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 ok=0; bad=0
-def req(method, path, body=None, raw=None, hdr=True, ctype='application/json', ua=None):
+def req(method, path, body=None, raw=None, hdr=True, ctype='application/json', ua=None, hdrs=None):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     r=urllib.request.Request(B+path, data=data, method=method)
     if data is not None: r.add_header('Content-Type', ctype)
     if hdr: r.add_header('X-BrunOS','1')
     if ua: r.add_header('User-Agent', ua)
+    for k,v in (hdrs or {}).items(): r.add_header(k, v)
     try:
         resp=op.open(r); return resp.status, resp.read(), resp.headers
     except urllib.error.HTTPError as e:
@@ -331,6 +332,11 @@ s,b,_=req('GET','/api/events'); ev=[e for e in json.loads(b)['events'] if e['kin
 s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},ua=FF); s,b,_=req('GET','/api/events'); check('o mesmo navegador não avisa de novo', len([e for e in json.loads(b)['events'] if e['kind']=='login-new'])==1, b)
 s,b,_=req('POST','/api/auth/logout',{}); check('logout', s==200)
 s,b,_=req('GET','/api/files/roots'); check('depois do logout → 401', s==401)
+# troca de senha com limite (auditoria 19/11): chutar a senha atual trocando de IP não adianta
+s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'}); check('login de novo', s==200, b)
+cs=[req('POST','/api/auth/password',{'current':'chute%d'%i,'next':'outra-senha-123'},hdrs={'X-Forwarded-For':'203.0.113.%d'%i})[0] for i in range(5)]
+check('troca de senha: 5 chutes (cada um de um IP) → a Sessão acaba no 5º', cs[:4]==[403]*4 and cs[4]==401, cs)
+s,b,_=req('GET','/api/files/roots'); check('troca de senha: depois dos chutes a Sessão não vale mais', s==401)
 for i in range(5): req('POST','/api/auth/login',{'username':'bruno','password':'errada'})
 s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'}); check('5 erros → bloqueio 429 (mesmo com a senha certa)', s==429, (s,b))
 auth=json.load(open(FIX+'/data/auth.json')); check('auth.json sem senha em texto', 'nova-senha-123' not in json.dumps(auth) and auth['users'][0]['iterations']==600000)

@@ -319,8 +319,13 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		slog.Error("não deu para abrir a porta", "endereco", cfg.Addr, "erro", err)
+		os.Exit(1)
+	}
 	slog.Info("BrunOS no ar", "versao", version, "endereco", cfg.Addr, "configurado", !am.SetupRequired())
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := srv.Serve(newLimitListener(ln, maxConns)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("servidor parou", "erro", err)
 		os.Exit(1)
 	}
@@ -433,7 +438,7 @@ func (s *server) routes() http.Handler {
 		writeJSON(w, 404, map[string]string{"error": "rota desconhecida"})
 	})
 	mux.Handle("/", web.Handler(version))
-	return securityHeaders(mux)
+	return securityHeaders(bodyDeadline(mux))
 }
 
 // frame-src aceita http: e https: para as Janelas de app (0.17.0); o BrunOS continua recusando ser
@@ -600,6 +605,7 @@ func (s *server) hUnlock(w http.ResponseWriter, r *http.Request) {
 			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 			writeJSON(w, 401, map[string]string{"error": err.Error()})
 		case errors.Is(err, auth.ErrRateLimited):
+			slog.Warn("desbloqueio recusado: IP bloqueado por senhas erradas", "ip", ip)
 			writeJSON(w, 429, map[string]string{"error": err.Error()})
 		default:
 			slog.Warn("desbloqueio recusado", "ip", ip)
@@ -728,11 +734,20 @@ func (s *server) hPowerManual(w http.ResponseWriter, r *http.Request) {
 	s.power.HandleManual(w, r, body.Action)
 }
 
+// Errar a senha 5 vezes seguidas na mesma Sessão encerra a Sessão (auth.VerifySession).
 func (s *server) verifyPassword(w http.ResponseWriter, r *http.Request, password string) bool {
-	err := s.auth.Verify(session(r).Username, password, clientIP(r))
+	sess := session(r)
+	err := s.auth.VerifySession(sess.ID, password, clientIP(r))
 	switch {
 	case err == nil:
 		return true
+	case errors.Is(err, auth.ErrSessionEnded):
+		s.tkey.Forget(sess.ID)
+		if s.term != nil {
+			s.term.CloseOwner(sess.ID)
+		}
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		writeJSON(w, 401, map[string]string{"error": err.Error()})
 	case errors.Is(err, auth.ErrRateLimited):
 		writeJSON(w, 429, map[string]string{"error": err.Error()})
 	default:
@@ -876,6 +891,11 @@ func (s *server) hPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := session(r)
+	// a senha atual passa pelo mesmo limite de tentativas das outras conferências (antes não tinha:
+	// com uma Sessão roubada dava para adivinhar a senha à vontade por aqui)
+	if !s.verifyPassword(w, r, req.Current) {
+		return
+	}
 	if err := s.auth.ChangePassword(sess.Username, req.Current, req.Next, sess.token); err != nil {
 		code := 400
 		if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -1042,11 +1062,15 @@ func (s *server) hStatsStream(w http.ResponseWriter, r *http.Request) {
 	defer unsubNotes()
 	sid := session(r).ID
 	first, _ := json.Marshal(map[string]any{"snapshot": s.stats.Latest(), "history": s.stats.History(), "metrics": s.integ.Snapshot()})
+	sseDeadline(w)
 	fmt.Fprintf(w, "retry: 3000\nevent: init\ndata: %s\n\n", first)
 	flusher.Flush()
 	keep := time.NewTicker(25 * time.Second)
 	defer keep.Stop()
 	for {
+		// o próximo envio sai em no máximo 25 s (ping): quem parou de ler é desligado em vez de prender
+		// a conexão para sempre
+		sseDeadline(w)
 		select {
 		case <-r.Context().Done():
 			return
