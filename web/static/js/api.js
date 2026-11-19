@@ -1,6 +1,7 @@
 // Cliente da API do BrunOS. Sem backend (ex.: abrindo o HTML direto, ou no artefato
 // de pré-visualização) cai num modo demonstração com dados simulados.
 import { emit } from './ui.js';
+import { cdnIcon, ICON_MAX } from './icons.js';
 
 const H = { 'X-BrunOS': '1' };
 
@@ -131,6 +132,15 @@ const real = {
     return data;
   },
   deleteWallpaper: (name) => call('DELETE', `/api/wallpapers/${encodeURIComponent(name)}`),
+  // Ícones guardados (0.24.0): enviados e do catálogo dashboard-icons, servidos pelo BrunOS
+  iconUrl: (name) => `/api/icons/${encodeURIComponent(name)}`,
+  catalogIconUrl: (slug) => `/api/icons/di/${encodeURIComponent(slug)}`,
+  async uploadIcon(file) {
+    const res = await fetch('/api/icons', { method: 'PUT', headers: { ...H, 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Falha no envio do ícone');
+    return data;
+  },
   stats: () => call('GET', '/api/stats'),
   // estatísticas ao vivo; os avisos novos da central (event: notify) e os valores das integrações
   // (event: metrics) chegam pela mesma conexão
@@ -329,6 +339,7 @@ const real = {
 const DEMO_P = { '5m': { step: 60, n: 5 }, '1h': { step: 60, n: 60 }, '24h': { step: 60, n: 1440 }, '48h': { step: 60, n: 2880 }, '7d': { step: 300, n: 2016 }, '30d': { step: 1200, n: 2160 } };
 function makeDemo() {
   const LS = 'brunos.demo.settings';
+  const demoIcons = new Map();
   const load = () => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch { return {}; } };
   let settings = load();
   let logged = false;
@@ -743,6 +754,16 @@ function makeDemo() {
     publicWallpaperUrl: () => '',
     uploadWallpaper: () => Promise.reject(new Error('No modo demonstração a imagem fica só nesta aba')),
     deleteWallpaper: () => wait({ ok: true }),
+    // ícones na demonstração: catálogo direto do CDN; o enviado fica só nesta aba
+    iconUrl: (name) => demoIcons.get(name) || '',
+    catalogIconUrl: (slug) => cdnIcon(slug),
+    uploadIcon: (file) => {
+      if (file.size > ICON_MAX) return Promise.reject(new Error('ícone grande demais (máximo 1 MB)'));
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace('jpeg', 'jpg');
+      const name = `${(Date.now() * 4096 + demoIcons.size).toString(16).padStart(16, '0').slice(-16)}.${ext}`;
+      demoIcons.set(name, URL.createObjectURL(file));
+      return wait({ name }, 300);
+    },
     stats: () => wait({ snapshot: snap(), history }),
     events: {
       list: () => wait({ events: demoEvents, unread: demoEvents.filter((e) => !e.read).length }),

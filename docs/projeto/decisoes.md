@@ -161,6 +161,13 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     `X-Frame-Options` e `frame-ancestors`; app que recusa vira **Só em aba**; o que não deu para testar
     tenta a janela. Proxy reescrevendo respostas foi recusado (pesado, quebra login/cookies/WebSocket,
     abre brecha). O peso fica no navegador, por isso há limite de apps abertos.
+63. **Ícones guardados: só os usados, baixados pelo servidor** (0.24.0, escolha do Bruno): o ícone do
+    catálogo dashboard-icons é baixado do jsDelivr pelo BrunOS na primeira vez que aparece e fica em
+    `/data/icons/di` para sempre; os enviados (até 1 MB, nome = hash do conteúdo) ficam em `/data/icons`.
+    Recusado: embutir o pacote inteiro (milhares de ícones, a imagem cresceria muitos MB) e continuar só
+    pelo CDN (sem internet o ícone sumia). Download só do jsDelivr, nome conferido, sem seguir link de
+    outro site (outro endereço = "baixe e envie"); SVG servido com CSP `sandbox`. Sem galeria nem limpeza
+    (escolha do Bruno: cada ícone é pequeno).
 
 ## Loja, Garimpo, instalação
 

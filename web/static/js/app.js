@@ -16,6 +16,7 @@ import { initLock, lockNow, showLock, hideLock, isScreenLocked } from './lockscr
 import { mountNotes, noteFocus, restoreNoteFocus, noteChanged, deleteNote, refreshNotes } from './notes.js';
 import * as wins from './windows.js';
 import { appWindow } from './appwindow.js';
+import { parseIconInput, cdnIcon, ICON_ACCEPT, ICON_MAX } from './icons.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -225,15 +226,30 @@ function appUrl(a, forceMode) {
   if (mode === 'domain') return domainUrl || portUrl;
   return domainUrl || portUrl; // automático: domínio local quando o Runtipi expõe, senão IP:porta
 }
+// 0.24.0: os ícones do catálogo e os enviados vêm do servidor (Ícones guardados, funcionam sem internet);
+// o do catálogo tem o CDN como reserva (fb) se o servidor não conseguir baixar.
 function iconInfo(a) {
   const pref = a.o.icon || a.icon || 'auto';
-  if (pref.startsWith('di:')) return { src: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/${encodeURIComponent(pref.slice(3))}.webp` };
+  if (pref.startsWith('di:')) return { src: api.catalogIconUrl(pref.slice(3)), fb: cdnIcon(pref.slice(3)) };
+  if (pref.startsWith('up:')) return { src: api.iconUrl(pref.slice(3)) };
   if (pref.startsWith('builtin:')) return { src: `assets/icons/${pref.slice(8)}.webp` };
   if (pref === 'letter') return {};
   if (a.hasLogo) return { src: api.logoUrl(a.urn), full: true };
   if (a.builtinIcon) return { src: `assets/icons/${a.builtinIcon}.webp` };
   return {};
 }
+// Imagem que não carregou: tenta a reserva (data-fb) e depois mostra a inicial (data-ini); miniatura do
+// Arquivos (data-thumb) ganha o aspecto de erro. Fica aqui, e não num onerror escrito no HTML, porque a CSP
+// do BrunOS (script-src 'self') bloqueia script no próprio HTML: o onerror antigo nunca rodava e o atalho
+// ficava com a imagem quebrada, sem nem a inicial (corrigido na 0.24.0).
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement)) return;
+  if (img.hasAttribute('data-thumb')) { img.parentElement?.classList.add('err'); return; }
+  if (!img.hasAttribute('data-ini')) return;
+  if (img.dataset.fb) { const fb = img.dataset.fb; delete img.dataset.fb; img.src = fb; return; }
+  img.replaceWith(Object.assign(document.createElement('span'), { className: 'initial', textContent: img.dataset.ini }));
+}, true);
 function tileCss(a, info) {
   const t = a.o.tile || a.tile;
   if (t === 'brand') return 'var(--brand)';
@@ -244,9 +260,11 @@ function tileCss(a, info) {
 function appIconHTML(a, cls = 'app-icon', extra = '') {
   const info = iconInfo(a);
   const inner = info.src
-    ? `<img src="${esc(info.src)}" alt="" loading="lazy" draggable="false" class="${info.full ? 'full' : ''}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initial',textContent:${esc(JSON.stringify((a.name || '?')[0]))}}))">`
+    ? `<img src="${esc(info.src)}" alt="" loading="lazy" draggable="false" class="${info.full ? 'full' : ''}" data-ini="${esc((a.name || '?')[0])}"${info.fb ? ` data-fb="${esc(info.fb)}"` : ''}>`
     : `<span class="initial">${esc((a.name || '?')[0])}</span>`;
-  return `<span class="${cls}" style="--tile:${tileCss(a, info)}">${inner}${extra}</span>`;
+  // tile-auto: se a imagem falhar e virar a inicial, o fundo automático passa a ser a cor de destaque
+  // (a inicial é branca e sumia no fundo branco)
+  return `<span class="${cls}${a.o.tile || a.tile ? '' : ' tile-auto'}" style="--tile:${tileCss(a, info)}">${inner}${extra}</span>`;
 }
 // Por que um app não abre em Janela de app ('' = abre). Só em aba (o próprio app recusa, conferido pelo
 // servidor) ou BrunOS em https com app em http (o navegador bloqueia). Decisão 58.
@@ -1942,21 +1960,69 @@ function passwordDialog() {
     catch (x) { err.textContent = x.message; }
   };
 }
-function iconPicker(current) {
-  return `<div class="icon-pick">
-    <label class="radio"><input type="radio" name="iconMode" value="auto" ${!current || current === 'auto' ? 'checked' : ''}> Automático</label>
-    <label class="radio"><input type="radio" name="iconMode" value="di" ${current?.startsWith('di:') || current?.startsWith('builtin:') ? 'checked' : ''}> Dashboard Icons</label>
-    <label class="radio"><input type="radio" name="iconMode" value="letter" ${current === 'letter' ? 'checked' : ''}> Letra</label>
-    <input class="text-input" name="slug" placeholder="ex.: jellyfin, home-assistant" value="${esc(current?.startsWith('di:') ? current.slice(3) : current?.startsWith('builtin:') ? current.slice(8) : '')}" list="di-list">
-    <datalist id="di-list">${BUILTIN_ICONS.map((i) => `<option value="${i}">`).join('')}</datalist>
-    <small class="hint">Nomes em <a href="https://dashboardicons.com" target="_blank" rel="noopener">dashboardicons.com</a>. Os ícones vêm do CDN jsDelivr.</small>
-  </div>`;
+// Seletor de ícone (0.24.0): prévia ao vivo, Catálogo (nome ou link do dashboardicons.com), Enviar arquivo
+// e Letra. Fica numa <div> (e não num <label>) para um clique no espaço vazio não marcar "Automático".
+function iconPicker(current = 'auto') {
+  const mode = current === 'auto' ? 'auto' : current === 'letter' ? 'letter' : current.startsWith('up:') ? 'up' : 'di';
+  const slug = current.startsWith('di:') ? current.slice(3) : current.startsWith('builtin:') ? current.slice(8) : '';
+  return `<div class="field"><span>Ícone</span><div class="icon-pick" data-cur="${esc(current)}">
+    <span class="app-icon ip-prev"></span>
+    <span class="ip-modes" role="radiogroup" aria-label="Ícone">${[['auto', 'Automático'], ['di', 'Catálogo'], ['up', 'Enviar'], ['letter', 'Letra']]
+      .map(([v, l]) => `<label class="radio"><input type="radio" name="iconMode" value="${v}" ${mode === v ? 'checked' : ''}> ${l}</label>`).join('')}</span>
+    <div class="ip-pane ip-di"><input class="text-input" name="slug" placeholder="nome ou link, ex.: router" value="${esc(slug)}" list="di-list" autocomplete="off" spellcheck="false" aria-label="Nome ou link do ícone">
+      <datalist id="di-list">${BUILTIN_ICONS.map((i) => `<option value="${i}">`).join('')}</datalist>
+      <small class="hint">Procure em <a href="https://dashboardicons.com" target="_blank" rel="noopener">dashboardicons.com</a> e cole o nome ou o link. O ícone fica guardado no servidor e aparece mesmo sem internet.</small></div>
+    <div class="ip-pane ip-up"><button type="button" class="pill-btn" data-ip="file">${svg('upload')}Escolher arquivo</button><input type="file" name="iconFile" accept="${ICON_ACCEPT}" hidden>
+      <small class="hint">SVG, PNG, ICO ou JPG, até 1 MB. Fica guardado no servidor.</small></div>
+    <small class="ip-status" aria-live="polite"></small>
+  </div></div>`;
 }
-function readIcon(form) {
-  const mode = form.iconMode.value, slug = form.slug.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-  if (mode === 'letter') return 'letter';
-  if (mode === 'di' && slug) return BUILTIN_ICONS.includes(slug) ? `builtin:${slug}` : `di:${slug}`;
-  return 'auto';
+// Liga o seletor. app() = o app como está no diálogo (nome atual), tile() = o fundo escolhido.
+// read() devolve a escolha ('auto', 'letter', 'di:x', 'builtin:x', 'up:x') ou null, com o erro na tela.
+function bindIconPicker(form, { app, tile }) {
+  const root = $('.icon-pick', form), status = $('.ip-status', root);
+  let prev = $('.ip-prev', root), uploaded = root.dataset.cur.startsWith('up:') ? root.dataset.cur : '', uploading = false, seq = 0;
+  const say = (msg, kind = '') => { status.textContent = msg; status.className = `ip-status${kind ? ` ${kind}` : ''}`; };
+  const choice = () => {
+    const m = form.iconMode.value;
+    if (m === 'auto' || m === 'letter') return { pref: m };
+    if (m === 'up') return uploaded ? { pref: uploaded } : { error: uploading ? 'Espere o envio terminar.' : 'Escolha um arquivo de ícone.' };
+    const r = parseIconInput(form.slug.value);
+    return r.error ? r : { pref: BUILTIN_ICONS.includes(r.slug) ? `builtin:${r.slug}` : `di:${r.slug}`, slug: r.slug };
+  };
+  const paint = () => {
+    const c = choice(), m = form.iconMode.value, pref = c.pref || 'letter';
+    const el = html(appIconHTML({ ...app(), icon: pref, tile: undefined, o: { icon: pref, tile: tile() || undefined } }, 'app-icon ip-prev'));
+    prev.replaceWith(el); prev = el;
+    const my = ++seq;
+    if (m !== 'di') { if (m !== 'up' || !uploading) say(''); return; }
+    if (c.error) { if (form.slug.value.trim()) say(c.error, 'err'); else say(''); return; }
+    const img = $('img', el);
+    if (!img || c.pref.startsWith('builtin:')) { say('Ícone encontrado.', 'ok'); return; }
+    say('Procurando o ícone…');
+    img.loading = 'eager';
+    img.addEventListener('load', () => { if (my === seq) say('Ícone encontrado.', 'ok'); });
+    // o tratador geral tenta o CDN primeiro; só quando a imagem some de vez (vira a inicial) é que falhou
+    img.addEventListener('error', () => { if (my === seq && !img.isConnected) say('Não achei esse ícone no dashboardicons.com. Confira o nome.', 'err'); });
+  };
+  let timer;
+  form.slug.addEventListener('input', () => { form.iconMode.value = 'di'; clearTimeout(timer); timer = setTimeout(paint, 350); });
+  root.addEventListener('change', (e) => { if (e.target.name === 'iconMode') paint(); });
+  form.name?.addEventListener('input', debounce(paint, 250));
+  $('[data-ip="file"]', root).onclick = () => form.iconFile.click();
+  form.iconFile.onchange = async () => {
+    const file = form.iconFile.files[0]; if (!file) return;
+    form.iconFile.value = '';
+    if (file.size > ICON_MAX) { say('Arquivo grande demais (máximo 1 MB).', 'err'); return; }
+    uploading = true; say(`Enviando ${file.name}…`);
+    try { uploaded = `up:${(await api.uploadIcon(file)).name}`; uploading = false; paint(); say(`${file.name} enviado.`, 'ok'); }
+    catch (err) { uploading = false; say(err.message, 'err'); }
+  };
+  paint();
+  return {
+    paint,
+    read() { const c = choice(); if (c.error) { say(c.error, 'err'); return null; } return c.pref; },
+  };
 }
 const TILES = ['', '#ffffff', '#f2f2f7', '#1d1d22', '#0f172a', 'brand'];
 const tileOpts = (cur) => `<span class="tile-opts">${TILES.map((t) => `<button type="button" class="tile-opt ${(cur || '') === t ? 'on' : ''}" data-tile="${t}" style="background:${t === 'brand' ? 'var(--brand)' : t || 'conic-gradient(#fff 0 25%,#2a2a30 0 50%,#fff 0 75%,#2a2a30 0)'}" title="${t ? t : 'Automático'}"></button>`).join('')}</span>`;
@@ -1969,24 +2035,25 @@ function editAppDialog(a) {
     <label>Como abrir<span class="seg" data-seg="urlMode">${[['', 'Padrão'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button type="button" class="${(o.urlMode || '') === k ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</span></label>
     <label>Endereço personalizado (opcional)<input class="text-input" name="url" value="${esc(o.url || '')}" placeholder="${esc(appUrl({ ...a, o: { ...o, url: '' } }) || 'https://app.server.lan')}"></label>
     <small class="hint">${a.localDomain ? `Domínio do Runtipi: ${esc(a.localDomain)}` : 'Este app não está exposto no domínio local do Runtipi.'}${a.port ? ` · Porta ${a.port}` : ''}</small>`}
-    <label>Ícone${iconPicker(o.icon || a.icon)}</label>
+    ${iconPicker(o.icon || a.icon || 'auto')}
     <label>Fundo do ícone${tileOpts(o.tile || a.tile)}</label>
     <div class="dlg-actions">${!isLink && Object.keys(o).length ? '<button type="button" class="pill-btn" data-c="reset" style="margin-right:auto">Restaurar</button>' : ''}<button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn primary">Salvar</button></div></form>`, { closeBtn: false, width: 480 });
   const f = $('form', d.el);
   let tile = o.tile || a.tile || '', urlMode = o.urlMode || '';
   d.el.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tile]');
-    if (t) { tile = t.dataset.tile; $$('[data-tile]', d.el).forEach((x) => x.classList.toggle('on', x === t)); }
+    if (t) { tile = t.dataset.tile; $$('[data-tile]', d.el).forEach((x) => x.classList.toggle('on', x === t)); ip.paint(); }
     const sg = e.target.closest('[data-seg="urlMode"] [data-v]');
     if (sg) { urlMode = sg.dataset.v; $$('[data-seg="urlMode"] [data-v]', d.el).forEach((x) => x.classList.toggle('on', x === sg)); }
     const c = e.target.closest('[data-c]');
     if (c?.dataset.c === 'no') d.close();
     if (c?.dataset.c === 'reset') { delete set().apps[a.id]; save(); renderApps(); renderDock(); d.close(); }
   });
-  f.slug.addEventListener('input', () => { f.iconMode.value = 'di'; });
+  const ip = bindIconPicker(f, { app: () => ({ ...a, name: f.name.value.trim() || a.name }), tile: () => tile });
   f.onsubmit = (e) => {
     e.preventDefault();
-    const st = set(), icon = readIcon(f), name = f.name.value.trim() || a.name;
+    const icon = ip.read(); if (icon == null) return;
+    const st = set(), name = f.name.value.trim() || a.name;
     if (isLink) {
       const l = st.links.find((x) => `link:${x.id}` === a.id);
       if (l) Object.assign(l, { name, url: normalizeUrl(f.url.value), icon, tile });
@@ -2008,21 +2075,21 @@ function linkDialog() {
   const d = openDialog(`<h2>${svg('link')}Novo atalho</h2><form class="form-grid">
     <label>Nome<input class="text-input" name="name" placeholder="Roteador" required autofocus></label>
     <label>Endereço<input class="text-input" name="url" placeholder="http://192.168.1.1" required></label>
-    <label>Ícone${iconPicker('auto')}</label>
+    ${iconPicker('auto')}
     <label>Fundo do ícone${tileOpts('')}</label>
     <div class="dlg-actions"><button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn primary">Adicionar</button></div></form>`, { closeBtn: false, width: 460 });
   const f = $('form', d.el);
   let tile = '';
   d.el.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tile]');
-    if (t) { tile = t.dataset.tile; $$('[data-tile]', d.el).forEach((x) => x.classList.toggle('on', x === t)); }
+    if (t) { tile = t.dataset.tile; $$('[data-tile]', d.el).forEach((x) => x.classList.toggle('on', x === t)); ip.paint(); }
     if (e.target.closest('[data-c="no"]')) d.close();
   });
-  f.slug.addEventListener('input', () => { f.iconMode.value = 'di'; });
+  const ip = bindIconPicker(f, { app: () => ({ kind: 'link', name: f.name.value.trim() || '?' }), tile: () => tile });
   f.onsubmit = (e) => {
     e.preventDefault();
+    let icon = ip.read(); if (icon == null) return;
     const id = Math.random().toString(36).slice(2, 10);
-    let icon = readIcon(f);
     if (icon === 'auto') icon = 'letter';
     set().links.push({ id, name: f.name.value.trim(), url: normalizeUrl(f.url.value), icon, tile });
     save(); renderApps(); refreshSettings(); d.close();

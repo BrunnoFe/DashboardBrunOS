@@ -15,7 +15,7 @@ celular.
 
 ## Melhorias de 18/11/2026 (combinadas com o Bruno, três versões)
 
-1. **0.24.0: Ícones** (feita, ainda não lançada): bug do link colado no campo (virava um nome
+1. **0.24.0: Ícones** (lançada em 18/11, aguardando teste do Bruno): bug do link colado no campo (virava um nome
    impossível) e do `onerror` inline barrado pela CSP (atalho sem nem a inicial); campo Catálogo aceita
    nome ou link, com prévia; Enviar arquivo (svg/png/ico/jpg, até 1 MB); Ícones guardados no servidor
    (decisão 63).

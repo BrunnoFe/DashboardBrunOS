@@ -38,6 +38,7 @@ import (
 	"brunos/internal/framecheck"
 	"brunos/internal/history"
 	"brunos/internal/hostcmd"
+	"brunos/internal/icons"
 	"brunos/internal/integrations"
 	"brunos/internal/logins"
 	"brunos/internal/netmon"
@@ -125,6 +126,7 @@ type server struct {
 	integ     *integrations.Hub
 	tkey      *termkey.Vault
 	notes     *notes.Store
+	icons     *icons.Store // Ícones guardados (0.24.0)
 	energy    *energy.Monitor
 	smart     *smart.Monitor
 	disks     *disks.Monitor // janela Discos (0.15.0)
@@ -191,6 +193,10 @@ func main() {
 	known := sshknown.New(filepath.Join(cfg.DataDir, "known_hosts.json")) // terminal e desligamento usam o mesmo arquivo
 	s.tkey = termkey.New(filepath.Join(cfg.DataDir, "terminal_key.json"))
 	s.notes = notes.New(filepath.Join(cfg.DataDir, "notes.json"))
+	if s.icons, err = icons.New(cfg.DataDir); err != nil {
+		slog.Error("não foi possível criar a pasta de ícones", "erro", err)
+		os.Exit(1)
+	}
 	if cfg.Terminal {
 		s.term = terminal.NewManagerWith(known)
 		s.term.OwnerOf = func(r *http.Request) string { return session(r).ID }
@@ -371,6 +377,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PUT /api/wallpapers", a(s.hWallpaperUpload))
 	mux.HandleFunc("GET /api/wallpapers/{name}", a(s.hWallpaperFile))
 	mux.HandleFunc("DELETE /api/wallpapers/{name}", a(s.hWallpaperDelete))
+	s.icons.Register(mux, a)
 
 	mux.HandleFunc("GET /api/stats", a(s.hStats))
 	mux.HandleFunc("GET /api/stats/stream", a(s.hStatsStream))

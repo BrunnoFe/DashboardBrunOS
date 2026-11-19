@@ -8,6 +8,7 @@ Tudo o que o BrunOS faz, assunto por assunto.
 
 - Papel de parede (os do pacote ou o seu), cor de destaque tirada da imagem e efeito de vidro ajustável.
 - Os apps do Runtipi aparecem como ícones, com a bolinha de status. Arraste um app sobre outro para criar uma pasta; com muitos apps, a tela inicial vira páginas.
+- **Ícones:** em *Personalizar* (botão direito num app) ou num atalho novo, escolha um ícone do catálogo do [dashboardicons.com](https://dashboardicons.com) colando o nome ou o link, ou envie o seu próprio arquivo (SVG, PNG, ICO ou JPG, até 1 MB). Uma prévia mostra o resultado antes de salvar. Os ícones ficam guardados no servidor e aparecem mesmo sem internet.
 - A busca (`Ctrl+K`) acha apps, ações e arquivos.
 - **Tela de bloqueio:** `Ctrl+Shift+L` (ou a busca, ou o botão direito na tela inicial) mostra um relógio grande sobre o papel de parede. Em *Configurações → Conta* você escolhe se ela pede a senha para voltar e depois de quanto tempo sem uso ela bloqueia sozinha.
 - **Widgets:** na janela *Widgets* há modelos de armazenamento, sistema, rede, internet, bateria, consumo, gráficos, Relógio (digital ou de ponteiros, com fuso horário), Bloco de notas e Lista de tarefas (escritos direto na tela inicial e iguais em todos os aparelhos). Cadastrando a integração *Clima* com o nome da sua cidade, aparecem temperatura, ícone do tempo e previsão dos próximos dias.

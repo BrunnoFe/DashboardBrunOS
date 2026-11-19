@@ -70,7 +70,7 @@ Métrica, Formato, Tamanho, Quadro, Disposição...): `CONTEXT.md`.
 main.go, apps.go, watch.go, settings.go, monitors.go   servidor HTTP, rotas, vigias, preferências, rotinas
 internal/                  um pacote por assunto: auth, store, sysinfo, dockerc, appmon, history, procs,
                            netmon, runtipi, files, terminal, termkey, sshknown, notes, events, hostcmd,
-                           power, diskhist, logins, secret, energy, smart, updates, integrations
+                           power, diskhist, logins, secret, energy, smart, updates, integrations, icons
 web/web.go                 serve web/static com gzip + ETag
 web/static/index.html      casca da página
 web/static/js/             app.js (interface principal), api.js (cliente + modo demonstração), ui.js

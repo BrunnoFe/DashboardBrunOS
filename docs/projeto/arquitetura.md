@@ -142,6 +142,11 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `POST /api/smart/selftest {key,kind:curto|longo}` pede o teste ao disco, e o disco em teste é lido de
   novo a cada 3 min (aviso `disk-selftest` ao terminar). `Note` manda SMART mudou e testes para a Linha do
   tempo do `internal/disks`. A temperatura lida vira a série `disk.<dev>.temp` no tsdb.
+- **`internal/icons`** (0.24.0, decisão 63): Ícones guardados. `Save` (envio até 1 MB; formato pelo
+  conteúdo: svg, png, ico, jpg, webp, gif; nome = 16 hex do SHA-256, o mesmo arquivo vira um só) e
+  `Catalog(slug)` (baixa do jsDelivr `webp` → `png` → `svg` na primeira vez e guarda em `icons/di/`; um
+  download por ícone de cada vez; "não existe" (404/403) lembrado por 1 h, falha de rede por 2 min).
+  Servidos com tipo fixo, `nosniff` e CSP `sandbox`. O frontend usa o CDN direto como reserva.
 - **`internal/framecheck`** (0.17.0, decisão 58): se o app aceita Janela de app. `Verdict(header)` lê
   `X-Frame-Options` (DENY/SAMEORIGIN recusam; o app fica em outra porta/domínio) e a CSP `frame-ancestors`
   (só `*`, `http:` ou `https:` aceitam; quando existe, vence o XFO). `Check` faz um GET na raiz do app em
@@ -314,6 +319,7 @@ GET  /api/health                      GET  /api/public · /api/public/wallpaper
 POST /api/auth/setup · login · logout · password      GET/PUT /api/auth/me
 GET/PUT /api/settings                 (JSON livre do frontend, até 512 KB, /data/settings.json)
 GET/PUT /api/wallpapers · GET/DELETE /api/wallpapers/{name}   (nome ^[a-f0-9]{16}\.(jpg|png|webp|avif|gif)$)
+PUT /api/icons (corpo = arquivo, até 1 MB) · GET /api/icons/{name} · GET /api/icons/di/{nome}   (0.24.0)
 GET  /api/stats · /api/stats/stream (SSE: event init {snapshot,history}; data {snapshot,point})
 GET  /api/system                      (info, runtipi, docker, dockerActions, terminal, version...)
 GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
@@ -365,7 +371,7 @@ conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente r
 ### Dados em `/data` (todos 0600)
 
 Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/privado/seguranca.md`),
-`settings.json` (+ `settings-backup/`), `wallpapers/`, `disks.json`, `known_hosts.json`, `events.json`,
+`settings.json` (+ `settings-backup/`), `wallpapers/`, `icons/` (+ `icons/di/`, 0.24.0), `disks.json`, `known_hosts.json`, `events.json`,
 `power.json`, `power-events.json`, `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos
 discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 30 dias: `snapshot.bin` +
 `journal.log`; o `history.json` antigo some na primeira vez),
@@ -493,7 +499,8 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
 (`centro`|`celular`), `homeFit` (`encolher`|`widgets`), `widgets` (`files`, `storage`, `system`, `network`, `battery`),
 `showStatus`, `reduceMotion`, `openIn` (`tab`|`same`), `urlMode` (`auto`|`domain`|`port`), `serverHost`,
 `runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
-(atalhos), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
+(atalhos), ícone de app/atalho (`icon`: `auto` | `letter` | `builtin:<nome>` | `di:<nome do catálogo>` |
+`up:<16hex>.<ext>` enviado, 0.24.0), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
 `sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio),
 `netMonitor` (0.8.0, padrão true), widget `internet` (0.8.0), `appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
 `[{id,name,apps:[ids]}]`), `apps[id].noMonitor`, `widgets2` (0.9.0: `{v:1, areas:{"<página>":[ids]},

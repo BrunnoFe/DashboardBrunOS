@@ -215,7 +215,7 @@ const keyOf = (e) => (F.mode === 'search' ? e.path : e.name);
 const pathOf = (e) => (F.mode === 'search' ? e.path : joinPath(F.path, e.name));
 function iconFor(e, big = false) {
   if (e.dir) return folderSVG(big ? 'folder-ico big' : 'folder-ico');
-  if (big && THUMB_EXT.test(e.name) && e.size < 20e6 && !api.demo) return `<span class="thumb"><img src="${esc(api.files.rawUrl(F.root, pathOf(e)))}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('err')"></span>`;
+  if (big && THUMB_EXT.test(e.name) && e.size < 20e6 && !api.demo) return `<span class="thumb"><img src="${esc(api.files.rawUrl(F.root, pathOf(e)))}" alt="" loading="lazy" decoding="async" data-thumb></span>`; // erro tratado em app.js (a CSP bloqueia onerror no HTML)
   return fileSVG(e.name, big ? 'file-ico big' : 'file-ico');
 }
 // título da guia: a pasta aberta (ou Lixeira, Busca, o nome do local na raiz)

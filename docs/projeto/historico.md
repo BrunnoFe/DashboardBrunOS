@@ -151,6 +151,14 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   (`appcfg.CheckRaw`); privilégios novos só por ele, com a lista, "Entendo os riscos" + Senha de
   configuração, aviso no sino e selo no app.
 
+## Melhorias de 18/11 (0.24.0 →)
+- 0.24.0: **ícones**. O print do Bruno (link do jsDelivr colado "todo bugado", atalho sem ícone) juntava três
+  bugs: o campo apagava tudo que não fosse letra/número/hífen; o `onerror` escrito no HTML nunca rodava
+  (a CSP `script-src 'self'` barra script no próprio HTML, então a imagem quebrada ficava); e a inicial
+  branca sumia no fundo branco. Agora: Catálogo aceita nome ou link, com prévia; **Enviar** arquivo (até
+  1 MB); **Ícones guardados** em `/data/icons` (decisão 63), com o CDN como reserva. Lição: o jsDelivr
+  responde 403, e não 404, para svg que não existe.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.
