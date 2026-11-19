@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"brunos/internal/access"
 	"brunos/internal/appmon"
 	"brunos/internal/auth"
 	"brunos/internal/diskhist"
@@ -119,6 +120,7 @@ type server struct {
 	diskHist  *diskhist.Store
 	appmon    *appmon.Monitor
 	frames    *framecheck.Cache // apps que aceitam Janela de app (0.17.0, decisão 58)
+	domains   *access.Cache     // Domínio de cada app responde pelo Traefik? (0.26.0, decisão 65)
 	hist      *history.Store
 	tsdb      *tsdb.DB // Históricos de 30 dias (0.14.0)
 	procs     *procs.Reader
@@ -162,7 +164,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now(), appmon: appmon.New(), frames: framecheck.NewCache()}
+	s := &server{cfg: cfg, auth: am, tipi: runtipi.New(cfg.RuntipiDir), started: time.Now(), appmon: appmon.New(), frames: framecheck.NewCache(), domains: access.NewCache()}
 
 	hostProc := ""
 	if st, err := os.Stat(cfg.HostProc); err == nil && st.IsDir() {
@@ -1139,6 +1141,7 @@ type appOut struct {
 	Uptime     *float64        `json:"uptime,omitempty"` // % das últimas 24 h
 	Update     *runtipi.Update `json:"update,omitempty"` // atualização na loja (conferida 1×/dia)
 	Frame      string          `json:"frame"`            // "ok" | "no" (Só em aba) | "" (não testado)
+	Domain     string          `json:"domain"`           // Forma de acesso Domínio: "up" | "down" | "" (não testado)
 }
 
 func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
@@ -1180,6 +1183,9 @@ func (s *server) hApps(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.frames != nil {
 			o.Frame = s.frames.Get(a.URN)
+		}
+		if s.domains != nil {
+			o.Domain = s.domains.Get(a.URN)
 		}
 		out = append(out, o)
 	}

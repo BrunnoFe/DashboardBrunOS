@@ -388,15 +388,15 @@ function makeDemo() {
 
   // Janela de app na demonstração (0.17.0): os apps abrem uma página de exemplo local (demoUrl); Nextcloud
   // e Vaultwarden fazem o papel de apps que recusam (Só em aba).
-  const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', frame: 'ok', demoUrl: `assets/demo-app.html#${encodeURIComponent(name)}`, ...extra });
+  const A = (id, store, name, port, icon, extra = {}) => ({ urn: `${id}:${store}`, id, store, name, port, localDomain: `${id}-${store}.server.lan`, protocol: 'https', project: `${id}_${store}`, hasLogo: false, builtinIcon: icon, state: 'running', containers: 1, running: 1, shortDesc: '', frame: 'ok', health: 'up', domain: 'up', demoUrl: `assets/demo-app.html#${encodeURIComponent(name)}`, ...extra });
   const apps = [
     A('immich', 'migrated', 'Immich', 2283, 'immich'), A('nextcloud-mini', 'migrated', 'Nextcloud', 8083, 'nextcloud', { frame: 'no' }),
-    A('plex', 'migrated', 'Plex', 32400, 'plex'), A('syncthing', 'migrated', 'Syncthing', 8384, 'syncthing'),
+    A('plex', 'migrated', 'Plex', 32400, 'plex', { domain: 'down' }), // Formas de acesso (0.26.0): domínio sem resposta A('syncthing', 'migrated', 'Syncthing', 8384, 'syncthing'),
     A('vaultwarden', 'migrated', 'Vaultwarden', 8107, 'vaultwarden', { frame: 'no' }), A('adguard', 'migrated', 'AdGuard Home', 8104, 'adguard-home'),
     A('transmission', 'migrated', 'Transmission', 9091, 'transmission'), A('qbittorrent', 'migrated', 'qBittorrent', 8080, 'qbittorrent'),
     A('speedtest-tracker', 'migrated', 'Speedtest Tracker', 8765, 'speedtest-tracker'), A('watchyourlan', 'migrated', 'WatchYourLAN', 8840, 'watchyourlan', { priv: true }),
     A('filebrowser', 'migrated', 'File Browser', 8087, 'filebrowser'), A('dashdot-lite', 'personal-store', 'Dashdot', 3001, 'dashdot'),
-    A('homarr', 'migrated', 'Homarr', 7575, 'homarr', { state: 'stopped', running: 0 }), A('tailscale', 'migrated', 'Tailscale', 0, 'tailscale', { localDomain: '', priv: true }),
+    A('homarr', 'migrated', 'Homarr', 7575, 'homarr', { state: 'stopped', running: 0, health: 'unknown', domain: '' }), A('tailscale', 'migrated', 'Tailscale', 0, 'tailscale', { localDomain: '', priv: true }),
   ];
 
   // Árvore de arquivos simulada

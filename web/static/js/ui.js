@@ -192,7 +192,7 @@ export function closeMenu() { menuCloser?.(); }
 export function contextMenu(x, y, items, onClose) {
   closeMenu();
   const visible = items.filter((it) => it && (it === '-' || !it.hidden));
-  const m = html(`<div class="ctx" role="menu">${visible.map((it, i) => it === '-' ? '<hr>' : `<button role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''} class="${it.danger ? 'danger' : ''}">${svg(it.icon || 'chevR')}<span>${esc(it.label)}</span>${it.kbd ? `<kbd>${esc(it.kbd)}</kbd>` : ''}</button>`).join('')}</div>`);
+  const m = html(`<div class="ctx" role="menu">${visible.map((it, i) => it === '-' ? '<hr>' : `<button role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''} class="${it.danger ? 'danger' : ''}"${it.title ? ` title="${esc(it.title)}"` : ''}>${svg(it.icon || 'chevR')}<span>${esc(it.label)}</span>${it.dot ? `<i class="acc-dot ${it.dot.status === 'up' ? 'up' : ''}" title="${esc(it.dot.tip || '')}"></i>` : ''}${it.kbd ? `<kbd>${esc(it.kbd)}</kbd>` : ''}</button>`).join('')}</div>`);
   $('#menu-host').append(m);
   const r = m.getBoundingClientRect();
   m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';

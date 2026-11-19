@@ -20,13 +20,13 @@ celular.
    nome ou link, com prévia; Enviar arquivo (svg/png/ico/jpg, até 1 MB); Ícones guardados no servidor
    (decisão 63).
 2. **0.25.0: Energia e avisos** (lançada em 18/11; o teste achou que cancelar não funcionava, corrigido na
-   0.25.1, aguardando teste; decisão 64): botão de energia no canto (depois do sino) com Bloquear, Sair, Reiniciar e
+   0.25.1, testada pelo Bruno em 19/11; decisão 64): botão de energia no canto (depois do sino) com Bloquear, Sair, Reiniciar e
    Desligar; os mesmos botões ao lado de "Sair" nas Configurações; Desligar/Reiniciar pedem a senha do
    BrunOS e esperam 1 min com Cancelar no sino; sem chave SSH, levam à janela Energia; pedido novo
    `reiniciar` no script (troca assinada, sem colar nada); "Reiniciar agora" no painel de Atualizações
    quando o Ubuntu pedir. Avisos de nível Aviso/Importante expandem no painel (explicação, o que fazer,
    dados e botão de atalho); clicar no balão abre o sino no aviso.
-3. **0.26.0: Formas de acesso**: o Automático segue a Forma de acesso usada para abrir o BrunOS
+3. **0.26.0: Formas de acesso** (lançada em 19/11, aguardando teste do Bruno; decisão 65): o Automático segue a Forma de acesso usada para abrir o BrunOS
    (`brunos.server.lan` → `https://app.server.lan`; `IP:porta` ou `server.lan:porta` → mesmo nome com a
    porta do app), com troca para a outra se a escolhida não funcionar; o vigia testa a porta (já faz) e, a
    cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão

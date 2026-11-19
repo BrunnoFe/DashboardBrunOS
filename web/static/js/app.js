@@ -18,6 +18,7 @@ import { mountNotes, noteFocus, restoreNoteFocus, noteChanged, deleteNote, refre
 import * as wins from './windows.js';
 import { appWindow } from './appwindow.js';
 import { parseIconInput, cdnIcon, ICON_ACCEPT, ICON_MAX } from './icons.js';
+import { brunosForm, portHost, accessUrls, formStatus, pickForm } from './access.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -215,17 +216,32 @@ function allApps() {
   return list.sort((a, b) => (idx.has(a.id) ? idx.get(a.id) : 1e6) - (idx.has(b.id) ? idx.get(b.id) : 1e6) || a.name.localeCompare(b.name, 'pt-BR'));
 }
 const appById = (id) => allApps().find((a) => a.id === id);
-const serverHost = () => set().serverHost || location.hostname || S.tipi.internalIp || 'localhost';
+// Formas de acesso (0.26.0, decisão 65; regra em access.js): Domínio ou Porta. No Automático o app segue a
+// forma usada para abrir o BrunOS e troca para a outra se a escolhida não respondeu no último teste.
+const serverHost = () => portHost({ serverHost: set().serverHost, loc: location, localDomain: S.tipi.localDomain, internalIp: S.tipi.internalIp });
+const appUrls = (a) => accessUrls(a, serverHost());
+const appForm = (a, forceMode) => pickForm(a, appUrls(a), forceMode || a.o.urlMode || set().urlMode, brunosForm(location));
 function appUrl(a, forceMode) {
   if (a.kind === 'link') return a.url || '';
   if (!forceMode && a.o.url) return a.o.url;
   if (a.demoUrl) return a.demoUrl; // só no modo demonstração (página de exemplo local)
-  const mode = forceMode || a.o.urlMode || set().urlMode;
-  const domainUrl = a.exposedDomain ? `https://${a.exposedDomain}` : a.localDomain ? `${a.protocol === 'http' ? 'http' : 'https'}://${a.localDomain}` : '';
-  const portUrl = a.port ? `http://${serverHost()}:${a.port}` : '';
-  if (mode === 'port') return portUrl || domainUrl;
-  if (mode === 'domain') return domainUrl || portUrl;
-  return domainUrl || portUrl; // automático: domínio local quando o Runtipi expõe, senão IP:porta
+  return appUrls(a)[appForm(a, forceMode)] || '';
+}
+// Bolinha de uma Forma de acesso: verde = respondeu no último teste; cinza = não respondeu ou sem teste.
+const FORM_TIP = { up: 'respondeu no último teste', down: 'não respondeu no último teste', '': 'ainda sem teste' };
+const formDot = (a, form) => `<i class="acc-dot ${formStatus(a, form) === 'up' ? 'up' : ''}" title="${FORM_TIP[formStatus(a, form)]}"></i>`;
+// Bolinhas compactas (D = Domínio, P = Porta) na lista de apps do Monitor.
+function accessDots(a) {
+  const u = appUrls(a);
+  return `<span class="acc-dots">${u.domain ? `<span title="Domínio: ${FORM_TIP[formStatus(a, 'domain')]}">${formDot(a, 'domain')}D</span>` : ''}${u.port ? `<span title="Porta: ${FORM_TIP[formStatus(a, 'port')]}">${formDot(a, 'port')}P</span>` : ''}</span>`;
+}
+// Linha com as duas formas do app (endereço e situação), usada no Personalizar e nos Detalhes do app.
+function accessHint(a) {
+  const u = appUrls(a), bits = [];
+  if (u.domain) bits.push(`${formDot(a, 'domain')}Domínio: ${esc(u.domain.replace(/^https?:\/\//, ''))}`);
+  else bits.push('Sem domínio (o app não está no domínio local do Runtipi)');
+  if (u.port) bits.push(`${formDot(a, 'port')}Porta: ${esc(u.port.replace(/^https?:\/\//, ''))}`);
+  return bits.map((b) => `<span class="acc-form">${b}</span>`).join(' ');
 }
 // 0.24.0: os ícones do catálogo e os enviados vêm do servidor (Ícones guardados, funcionam sem internet);
 // o do catálogo tem o CDN como reserva (fb) se o servidor não conseguir baixar.
@@ -1353,7 +1369,8 @@ function folderMenu(id, x, y) {
 function appMenu(a, x, y, el) {
   const st = set();
   const pinned = st.dock.includes(a.id);
-  const alt = a.kind === 'runtipi' && a.port && a.localDomain;
+  const urls = a.kind === 'runtipi' ? appUrls(a) : {}, alt = !!(urls.domain && urls.port);
+  const dot = (f) => ({ status: formStatus(a, f) === 'up' ? 'up' : 'off', tip: FORM_TIP[formStatus(a, f)] });
   el?.classList.add('menu-open');
   const url = appUrl(a), brunos = st.openIn === 'brunos', open = wins.has(a.id);
   const origin = el?.querySelector('.app-icon') || el?.closest?.('.dock-item') || null;
@@ -1365,8 +1382,8 @@ function appMenu(a, x, y, el) {
     { icon: 'x', label: 'Fechar janela', hidden: !open, run: () => wins.close(a.id) },
     { icon: 'external', label: a.o.forceTab ? 'Voltar a abrir no BrunOS' : 'Sempre abrir em nova aba', hidden: !brunos || !url || (a.frame === 'no' && !a.o.forceTab), run: () => setForceTab(!a.o.forceTab) },
     { icon: 'info', label: 'Detalhes, logs e uso…', hidden: a.kind !== 'runtipi', run: () => openAppDetails(a) },
-    { icon: 'globe', label: 'Abrir pelo domínio local', hidden: !alt, run: () => window.open(appUrl(a, 'domain'), '_blank', 'noopener') },
-    { icon: 'network', label: `Abrir por IP:porta (${a.port})`, hidden: !alt, run: () => window.open(appUrl(a, 'port'), '_blank', 'noopener') },
+    { icon: 'globe', label: 'Abrir pelo domínio', dot: dot('domain'), title: urls.domain, hidden: !alt, run: () => window.open(urls.domain, '_blank', 'noopener') },
+    { icon: 'network', label: `Abrir pela porta (${a.port})`, dot: dot('port'), title: urls.port, hidden: !alt, run: () => window.open(urls.port, '_blank', 'noopener') },
     { icon: 'copy', label: 'Copiar endereço', hidden: !appUrl(a), run: async () => { try { await navigator.clipboard.writeText(appUrl(a)); toast('Endereço copiado', appUrl(a)); } catch { toast('Não deu para copiar', appUrl(a)); } } },
     '-',
     { icon: 'edit', label: 'Personalizar…', run: () => editAppDialog(a) },
@@ -1389,7 +1406,7 @@ async function startStopApp(a) {
 function openAppDetails(a) {
   if (!a) return;
   import('./appinfo.js').then((m) => m.appDetails(a, {
-    iconHTML: (x) => appIconHTML(x, 'app-icon ai-icon'), appUrl, openApp, runtipiBase, dockerActions: S.dockerActions,
+    iconHTML: (x) => appIconHTML(x, 'app-icon ai-icon'), appUrl, accessHTML: accessHint, openApp, runtipiBase, dockerActions: S.dockerActions,
     monitored: (x) => !set().apps[x.id]?.noMonitor,
     setMonitored: (x, on) => { const st = set(); st.apps[x.id] = { ...(st.apps[x.id] || {}), noMonitor: !on }; save(); },
     reload: () => setTimeout(loadApps, 1500),
@@ -1712,9 +1729,9 @@ function settingsRows() {
       ctrl: `<div class="seg">${[['float', 'Flutuante'], ['sheet', 'Folha']].map(([k, l]) => `<button class="${(st.winStyle || 'float') === k ? 'on' : ''}" data-winstyle="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Dock com app maximizado', desc: 'Sempre visível: a dock fica por cima do app. Esconde sozinha: some e volta quando o mouse chega na beirada de baixo (no celular, toque na beirada). App acima da dock: o app para onde a dock começa',
       ctrl: `<div class="seg">${[['visible', 'Sempre visível'], ['auto', 'Esconde sozinha'], ['above', 'App acima da dock']].map(([k, l]) => `<button class="${(st.dockWithMax || 'auto') === k ? 'on' : ''}" data-dockmax="${k}">${l}</button>`).join('')}</div>` },
-    { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Endereço dos apps', desc: 'Automático usa o domínio local do Runtipi quando o app está exposto, e IP:porta nos outros', ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
+    { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Forma de acesso dos apps', desc: `Automático: os apps abrem do mesmo jeito que você abriu o BrunOS (agora, ${brunosForm(location) === 'domain' ? 'pelo domínio' : 'pela porta'}) e trocam para o outro se esse não estiver funcionando. Domínio = app.${esc(S.tipi.localDomain || 'server.lan')}; Porta = ${esc(serverHost())}:porta`, ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio'], ['port', 'Porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelo ícone Runtipi do dock e pela Loja (tela de instalar). Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
-    { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor para IP:porta', desc: `Vazio = o mesmo endereço que você usou para abrir o BrunOS (${esc(location.hostname || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
+    { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor na forma Porta', desc: `Vazio = o mesmo nome que você usou para abrir o BrunOS (agora, ${esc(portHost({ loc: location, localDomain: S.tipi.localDomain, internalIp: S.tipi.internalIp }) || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
     { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor, na ordem em que você marca', ctrl: dockPickerBtn() },
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
     { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando, vermelho fora do ar', ctrl: sw('showStatus') },
@@ -2053,9 +2070,9 @@ function editAppDialog(a) {
   const d = openDialog(`<h2>${appIconHTML(a, 'mini')} Personalizar ${esc(a.name)}</h2><form class="form-grid">
     <label>Nome<input class="text-input" name="name" value="${esc(a.name)}" autofocus></label>
     ${isLink ? `<label>Endereço<input class="text-input" name="url" value="${esc(a.url || '')}" placeholder="https://…" required></label>` : `
-    <label>Como abrir<span class="seg" data-seg="urlMode">${[['', 'Padrão'], ['domain', 'Domínio local'], ['port', 'IP:porta']].map(([k, l]) => `<button type="button" class="${(o.urlMode || '') === k ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</span></label>
+    <label>Forma de acesso<span class="seg" data-seg="urlMode">${[['', 'Padrão'], ['domain', 'Domínio'], ['port', 'Porta']].map(([k, l]) => `<button type="button" class="${(o.urlMode || '') === k ? 'on' : ''}" data-v="${k}">${k ? formDot(a, k) : ''}${l}</button>`).join('')}</span></label>
     <label>Endereço personalizado (opcional)<input class="text-input" name="url" value="${esc(o.url || '')}" placeholder="${esc(appUrl({ ...a, o: { ...o, url: '' } }) || 'https://app.server.lan')}"></label>
-    <small class="hint">${a.localDomain ? `Domínio do Runtipi: ${esc(a.localDomain)}` : 'Este app não está exposto no domínio local do Runtipi.'}${a.port ? ` · Porta ${a.port}` : ''}</small>`}
+    <small class="hint">${accessHint(a)}</small>`}
     ${iconPicker(o.icon || a.icon || 'auto')}
     <label>Fundo do ícone${tileOpts(o.tile || a.tile)}</label>
     <div class="dlg-actions">${!isLink && Object.keys(o).length ? '<button type="button" class="pill-btn" data-c="reset" style="margin-right:auto">Restaurar</button>' : ''}<button type="button" class="pill-btn" data-c="no">Cancelar</button><button type="submit" class="pill-btn primary">Salvar</button></div></form>`, { closeBtn: false, width: 480 });
@@ -2198,7 +2215,7 @@ function liveUsageDialog() {
       $('.proc-list', d.el).innerHTML = list.length ? list.map((u) => {
         const a = u.urn ? appById(u.urn) : null;
         const icon = a ? appIconHTML(a, 'mini') : `<span class="mini" style="--tile:#fff"><img src="assets/icons/tipi.webp" alt=""></span>`;
-        return `<div class="proc ${a ? 'clickable' : ''}" ${a ? `data-proc-app="${esc(a.id)}" title="Detalhes, logs e uso de ${esc(a.name)}"` : ''}>${icon}<span class="nm">${esc(a?.name || u.name)}</span><span class="track"><i style="width:${clamp((u.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(u.cpu, 2)}%</span><span class="mem">${fmtBytes(u.memory)}</span></div>`;
+        return `<div class="proc ${a ? 'clickable' : ''}" ${a ? `data-proc-app="${esc(a.id)}" title="Detalhes, logs e uso de ${esc(a.name)}"` : ''}>${icon}<span class="nm">${esc(a?.name || u.name)}${a?.kind === 'runtipi' ? accessDots(a) : ''}</span><span class="track"><i style="width:${clamp((u.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(u.cpu, 2)}%</span><span class="mem">${fmtBytes(u.memory)}</span></div>`;
       }).join('') : `<div class="empty-note">${S.docker ? 'Nenhum container rodando' : 'Docker não conectado'}</div>`;
     } catch { /* tenta de novo no próximo ciclo */ }
     if (liveOpen) usageTimer = setTimeout(drawUsage, 3000);

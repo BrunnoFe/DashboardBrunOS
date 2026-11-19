@@ -180,6 +180,15 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     Detalhes dos avisos: só os de nível Aviso/Importante abrem no sino; os textos ficam no frontend
     (`notifdetails.js`, por tipo), e não no servidor como planejado, para valer também para os avisos já
     guardados e não mudar o `events.json`; um teste confere que todo aviso importante do Go tem texto.
+65. **Formas de acesso: o Automático segue o endereço do BrunOS** (0.26.0, combinado com o Bruno em
+    18/11): BrunOS aberto sem porta e por um nome (`brunos.server.lan`) → apps pelo Domínio; aberto por
+    `IP:porta` ou `server.lan:porta` → apps pela Porta, com o mesmo nome (aberto pelo Domínio, a Porta usa
+    `server.lan` ou o IP). Troca para a outra forma só quando a escolhida não respondeu no último teste e
+    a outra não está caída. A Porta usa o teste que o vigia já fazia (a cada minuto, conta só com o monitor
+    ligado); o Domínio ganhou um teste próprio a cada ~10 min, direto no Traefik pelo IP (o container não
+    precisa resolver `*.server.lan`), sem conferir o certificado (é do próprio Runtipi; só se testa a
+    rota, nada é enviado). Antes, o Automático escolhia o domínio sempre que o Runtipi o anotava, mesmo
+    quando o Traefik não roteava o app.
 
 ## Loja, Garimpo, instalação
 

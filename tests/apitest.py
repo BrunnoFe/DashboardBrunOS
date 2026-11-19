@@ -72,6 +72,7 @@ _apps=json.loads(b).get('apps') or []; check('apps com o campo frame', _apps and
 _s,_b,_h=req('GET','/'); _csp=_h.get('Content-Security-Policy','')
 check('CSP deixa abrir apps em janela e não deixa embutir o BrunOS', "frame-src 'self' http: https:" in _csp and "frame-ancestors 'self'" in _csp and _h.get('X-Frame-Options')=='SAMEORIGIN', _csp)
 d=json.loads(b); check('porta e loja', any(a['urn']=='syncthing:migrated' and a['port']==8384 and a['hasLogo'] for a in d['apps']) and d['runtipi']['localDomain']=='server.lan', d)
+check('Formas de acesso: porta https do Traefik e situação do Domínio', d['runtipi'].get('sslPort')==443 and all('domain' in a for a in d['apps']), d['runtipi'])
 s,b,h=req('GET','/api/apps/logo?urn=syncthing:migrated'); check('logo', s==200 and b[:2]==b'\xff\xd8')
 s,b,_=req('GET','/api/apps/logo?urn=../../etc'); check('logo de urn inválida → 404', s==404)
 s,b,_=req('GET','/api/stats'); st=json.loads(b); check('stats', st['snapshot']['mem']['total']>0, b[:200])

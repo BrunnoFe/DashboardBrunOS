@@ -169,6 +169,13 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   `reiniciar` e o novo `desligar-agendado` esperam num temporizador do systemd (`brunos-energia.timer`),
   que não bloqueia logins; cancelar para o temporizador. Lição: o teste com `systemctl` falso não pega
   efeito colateral do systemd de verdade; conferir num systemd real (deu para fazer no WSL com `--user`).
+- 0.26.0: **Formas de acesso** (decisão 65). O Automático segue o endereço usado para abrir o BrunOS
+  (sem porta e com nome = Domínio; `IP:porta` ou `server.lan:porta` = Porta) e troca para a outra forma
+  quando a escolhida não respondeu. Teste novo do Domínio (`internal/access`, a cada 10 min) direto no
+  Traefik pelo IP, sem depender do DNS do container; bolinhas verde/cinza no botão direito, Personalizar,
+  Detalhes do app e lista de apps do Uso ao vivo. Regra em `js/access.js`, com teste; o CI passou a rodar
+  todos os testes de JS. Lição: o Traefik responde "404 page not found" para nome desconhecido, o mesmo
+  texto do 404 padrão do Go; por isso só esse corpo exato conta como "não roteado".
 
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o

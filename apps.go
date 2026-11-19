@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"brunos/internal/access"
 	"brunos/internal/appmon"
 	"brunos/internal/dockerc"
 	"brunos/internal/framecheck"
@@ -489,7 +490,7 @@ func (s *server) checkApps(ctx context.Context) {
 	on, skip := s.monitorPrefs()
 	alive := map[string]bool{}
 	aliveURN := map[string]bool{}
-	frameBudget := 4
+	frameBudget, domainBudget := 4, 4
 	for _, a := range apps {
 		alive[a.Project] = true
 		aliveURN[a.URN] = true
@@ -533,6 +534,14 @@ func (s *server) checkApps(ctx context.Context) {
 			s.frames.Set(a.URN, a.Version, framecheck.Check(fctx, framecheck.Client, info.InternalIP, a.Port), time.Now())
 			cancel()
 		}
+		// Forma de acesso Domínio (0.26.0): a cada ~10 min, pergunta ao Traefik se o nome do app chega nele.
+		// Vale com o monitor desligado; poucos por minuto.
+		if dom := appDomain(a); running > 0 && dom != "" && info.InternalIP != "" && domainBudget > 0 && s.domains.Need(a.URN, dom, time.Now()) {
+			domainBudget--
+			dctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+			s.domains.Set(a.URN, dom, access.Check(dctx, info.InternalIP, info.SSLPort, dom), time.Now())
+			cancel()
+		}
 		s.appmon.Add(a.Project, sample)
 		if s.tsdb != nil && total > 0 { // Histórico de 30 dias (0.14.0); app sem container não grava zeros
 			pref := "app." + a.Project + "."
@@ -550,4 +559,14 @@ func (s *server) checkApps(ctx context.Context) {
 	}
 	s.appmon.Forget(alive)
 	s.frames.Forget(aliveURN)
+	s.domains.Forget(aliveURN)
+}
+
+// appDomain é o nome que a interface usa na Forma de acesso Domínio: o domínio público, se o app está
+// exposto na internet, senão o domínio local (mesma ordem de appUrl em app.js).
+func appDomain(a runtipi.App) string {
+	if a.ExposedDomain != "" {
+		return a.ExposedDomain
+	}
+	return a.LocalDomain
 }

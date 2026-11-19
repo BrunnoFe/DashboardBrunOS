@@ -43,7 +43,7 @@ jobs:
       - name: go vet, testes e build
         run: go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...
       - name: testes do encaixe dos widgets e das janelas (JS, Node da própria máquina do CI)
-        run: node --version && node --experimental-detect-module --test tests/layout.test.mjs tests/windows.test.mjs
+        run: node --version && node --experimental-detect-module --test tests/layout.test.mjs tests/windows.test.mjs tests/icons.test.mjs tests/notifdetails.test.mjs tests/access.test.mjs
       - name: gofmt
         run: test -z "$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))" || (gofmt -l . && exit 1)
       - name: Gera a imagem

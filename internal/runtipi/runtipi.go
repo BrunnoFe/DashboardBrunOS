@@ -25,6 +25,7 @@ import (
 var allowedEnv = map[string]bool{
 	"APP_PORT": true, "APP_DOMAIN": true, "APP_LOCAL_DOMAIN": true, "APP_PROTOCOL": true,
 	"APP_EXPOSED": true, "APP_EXPOSED_DOMAIN": true, "LOCAL_DOMAIN": true, "INTERNAL_IP": true, "NGINX_PORT": true,
+	"NGINX_PORT_SSL": true,
 }
 
 type App struct {
@@ -50,7 +51,8 @@ type Info struct {
 	Found       bool   `json:"found"`
 	LocalDomain string `json:"localDomain"`
 	InternalIP  string `json:"internalIp"`
-	Port        int    `json:"port"` // porta do painel do Runtipi (padrão 80)
+	Port        int    `json:"port"`    // porta do painel do Runtipi (padrão 80)
+	SSLPort     int    `json:"sslPort"` // porta https do Traefik (padrão 443), usada no teste do Domínio
 }
 
 type Discoverer struct {
@@ -243,6 +245,7 @@ func (d *Discoverer) readGlobal(info *Info) {
 		LocalDomain string `json:"localDomain"`
 		InternalIP  string `json:"internalIp"`
 		Port        int    `json:"port"`
+		SSLPort     int    `json:"sslPort"`
 	}
 	if data, err := os.ReadFile(filepath.Join(d.dir, "state", "settings.json")); err == nil {
 		_ = json.Unmarshal(data, &settings)
@@ -263,6 +266,13 @@ func (d *Discoverer) readGlobal(info *Info) {
 	}
 	if info.Port <= 0 || info.Port > 65535 {
 		info.Port = 80
+	}
+	info.SSLPort = settings.SSLPort
+	if info.SSLPort == 0 {
+		info.SSLPort, _ = strconv.Atoi(env["NGINX_PORT_SSL"])
+	}
+	if info.SSLPort <= 0 || info.SSLPort > 65535 {
+		info.SSLPort = 443
 	}
 }
 

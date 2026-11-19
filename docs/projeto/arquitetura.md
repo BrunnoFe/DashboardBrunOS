@@ -155,6 +155,18 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   veredito anterior. Quem chama é o `checkApps` (vigia de apps, a cada minuto, até 4 checagens por volta,
   mesmo com o monitor desligado). `GET /api/apps` devolve `frame` por app. A CSP do BrunOS libera
   `frame-src 'self' http: https:` (o BrunOS continua com `frame-ancestors 'self'`).
+- **`internal/access`** (0.26.0, decisão 65): teste da Forma de acesso Domínio. `Check(ctx, ip, sslPort,
+  domínio)` conecta no Traefik (`IP interno:porta https`, sem DNS) com o nome do app (SNI + Host, sem
+  conferir o certificado do Runtipi) e devolve "up" (qualquer resposta do app, até 401/404 dele) ou "down"
+  (404 padrão do Traefik = nome desconhecido, 502/503/504, sem resposta). `Cache` por URN: "up" vale 10 min,
+  "down" volta em 2 min, domínio trocado testa na hora. Chamado pelo `checkApps` (até 4 por volta, só apps
+  rodando, mesmo com o monitor desligado). O domínio testado é `exposedDomain` ou `localDomain` (`appDomain`
+  em `apps.go`). A porta https vem de `state/settings.json` (`sslPort`) ou do `.env` (`NGINX_PORT_SSL`),
+  padrão 443 (`runtipi.Info.SSLPort`). `GET /api/apps` devolve `domain` por app e `runtipi.sslPort`.
+  No frontend, `js/access.js` (funções puras, `tests/access.test.mjs`): `brunosForm(location)` (sem porta e
+  com nome = Domínio), `portHost`, `accessUrls`, `formStatus` (Domínio = `domain`, Porta = `health`) e
+  `pickForm`; o `appUrl` do `app.js` usa `pickForm`. Preferência `urlMode` (auto/domain/port) e
+  `apps[urn].urlMode` não mudaram.
 - **Instalar, editar e Ajustes** (0.20.0, decisão 61): `install.go` + `internal/appcfg`. Rotas:
   `GET /api/store/form?urn=` (perguntas do app com tipo, `env`, padrão, opções, mín./máx.; pastas
   prontas; se instalado, as respostas atuais sem senhas: `current.secrets` só diz quais estão

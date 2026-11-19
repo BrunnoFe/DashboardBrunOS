@@ -41,7 +41,7 @@ function timelineHTML(points, range, step) {
 }
 
 /**
- * ctx: { iconHTML(a), appUrl(a), openApp(a), runtipiBase(), dockerActions, monitored(a), setMonitored(a, on), reload() }
+ * ctx: { iconHTML(a), appUrl(a), accessHTML(a), openApp(a), runtipiBase(), dockerActions, monitored(a), setMonitored(a, on), reload() }
  */
 export function appDetails(a, ctx) {
   let containers = [], cid = '', stopFollow = null, history = null, metric = 'cpu', range = '24h', chart = null;
@@ -53,6 +53,7 @@ export function appDetails(a, ctx) {
         <button class="pill-btn primary" data-ai="open">${svg('external')}Abrir</button>
         ${tipi ? `<button class="pill-btn" data-ai="start" hidden>${svg('power')}Ligar</button><button class="pill-btn" data-ai="stop" hidden>${svg('power')}Parar</button><button class="pill-btn" data-ai="restart" hidden>${svg('refresh')}Reiniciar</button>` : ''}
       </div>
+      ${tipi && ctx.accessHTML ? `<p class="ai-note ai-access" title="Verde: respondeu no último teste. Cinza: não respondeu ou ainda sem teste.">${ctx.accessHTML(a)}</p>` : ''}
       ${tipi && a.update ? `<div class="ai-update">${svg('arrowUp')}<span><b>Atualização disponível</b><small>versão ${esc(a.update.installed || '?')} → ${esc(a.update.available || '?')}</small></span><span class="f-spacer"></span><button class="pill-btn primary" data-ai="update">${svg('external')}Atualizar no Runtipi</button></div>` : ''}
       ${tipi && a.priv ? `<p class="ai-note ai-priv">${svg('shield')}<span><b>Requer privilégios.</b> A receita deste app tem poderes sobre o servidor que os apps comuns não têm. A lista está na página do app, na Loja.</span></p>` : ''}
       ${tipi && !ctx.dockerActions ? '<p class="ai-note">Para ligar, parar e reiniciar por aqui, ative “Permitir reiniciar apps pelo BrunOS” nas configurações do BrunOS no Runtipi.</p>' : ''}
