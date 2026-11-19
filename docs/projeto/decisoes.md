@@ -168,6 +168,16 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     pelo CDN (sem internet o ícone sumia). Download só do jsDelivr, nome conferido, sem seguir link de
     outro site (outro endereço = "baixe e envie"); SVG servido com CSP `sandbox`. Sem galeria nem limpeza
     (escolha do Bruno: cada ícone é pequeno).
+64. **Desligar e reiniciar pela interface: senha + 1 minuto no próprio servidor** (0.25.0, escolhas do
+    Bruno): menu de energia depois do sino, botões nas Configurações e "Reiniciar agora" nas Atualizações.
+    Pede a senha do BrunOS (com o mesmo limite de tentativas do login); o script 16 agenda com
+    `systemctl reboot|poweroff --check-inhibitors=no --when=+1min`, então quem desliga é o servidor (mesmo
+    que o BrunOS caia) e cancelar manda `cancelar-desligar` (`--when=cancel`, ou `shutdown -c` num systemd
+    antigo). Sem a conexão da Energia, os botões aparecem e levam à janela Energia. Não usa o modo
+    simulação (é um pedido explícito). Recusado: desligar na hora, sem a espera para cancelar.
+    Detalhes dos avisos: só os de nível Aviso/Importante abrem no sino; os textos ficam no frontend
+    (`notifdetails.js`, por tipo), e não no servidor como planejado, para valer também para os avisos já
+    guardados e não mudar o `events.json`; um teste confere que todo aviso importante do Go tem texto.
 
 ## Loja, Garimpo, instalação
 

@@ -3,9 +3,16 @@
 // stream de estatísticas (event: notify) e também aparecem como toast.
 import { api } from './api.js';
 import { $, esc, html, svg, toast, timeAgo, emit } from './ui.js';
+import { canExpand, notifDetail } from './notifdetails.js';
 
 const S = { events: [], unread: 0, installs: [] };
-let panel = null;
+let panel = null, actions = {};
+const opened = new Set(); // avisos abertos (0.25.0: detalhes dos importantes)
+
+/** Botões de atalho dos detalhes (app.js): { app(urn), disks(), power(), internet(), updates(), password(), store(), 'cancel-power'() } */
+export const setNotifActions = (a) => { actions = a; };
+/** Redesenha o painel aberto (o menu de energia chama quando o pedido muda: o Cancelar aparece/some). */
+export const redrawNotifications = () => drawPanel();
 
 // 0.21.2: instalações acompanhadas em segundo plano (storeforms.js): o sino ganha um anel girando e o
 // painel mostra "Em andamento" com uma barra animada, até o app ligar.
@@ -38,8 +45,23 @@ export function onNotify(e) {
   S.events.unshift(e); S.unread++;
   paintBell(true);
   if (panel) drawPanel();
-  toast(e.title, e.body || '', null, { error: e.level === 'critico', ms: e.level === 'critico' ? 12000 : 7000 });
+  // aviso importante: clicar no balão abre o sino já com este aviso aberto
+  toast(e.title, e.body || '', null, { error: e.level === 'critico', ms: e.level === 'critico' ? 12000 : 7000, onClick: canExpand(e) ? () => showNotification(e.id) : undefined });
   emit('notify', e);
+}
+
+/** Abre o painel com um aviso aberto (balão flutuante, busca...). */
+export function showNotification(id) {
+  if (id) opened.add(id);
+  if (!panel) openPanel(); else drawPanel();
+  if (id) markRead(id);
+  requestAnimationFrame(() => panel?.querySelector(`[data-id="${CSS.escape(id || '')}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+}
+
+async function markRead(id) {
+  const e = S.events.find((x) => x.id === id); if (!e || e.read) return;
+  e.read = true; S.unread = Math.max(0, S.unread - 1); paintBell(); drawPanel();
+  try { const r = await api.events.read([id]); if (typeof r?.unread === 'number') { S.unread = r.unread; paintBell(); } } catch { /* fica lido só aqui */ }
 }
 
 export function closePanel() {
@@ -75,6 +97,10 @@ function openPanel() {
   drawPanel();
   setTimeout(() => document.addEventListener('mousedown', outside, true));
   panel.addEventListener('click', async (e) => {
+    const na = e.target.closest('[data-na]');
+    if (na) { const run = actions[na.dataset.na]; if (run) { if (na.dataset.na !== 'cancel-power') closePanel(); run(na.dataset.arg || ''); } return; }
+    const item = e.target.closest('.np-can');
+    if (item && !e.target.closest('.np-detail') && !e.target.closest('[data-np]')) { toggle(item.dataset.id); return; }
     const b = e.target.closest('[data-np]'); if (!b) return;
     try {
       if (b.dataset.np === 'read') { await api.events.read([]); S.events.forEach((x) => { x.read = true; }); S.unread = 0; }
@@ -82,6 +108,28 @@ function openPanel() {
     } catch (err) { toast('Não deu para atualizar', err.message, null, { error: true }); }
     paintBell(); drawPanel();
   });
+  panel.addEventListener('keydown', (e) => {
+    const item = e.target.closest?.('.np-can');
+    if (item && e.target === item && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(item.dataset.id); }
+  });
+}
+
+function toggle(id) {
+  if (opened.has(id)) opened.delete(id); else { opened.add(id); markRead(id); }
+  drawPanel();
+  panel?.querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
+
+// Detalhes de um aviso importante aberto: explicação, o que fazer, dados e o botão de atalho.
+function detailHTML(e) {
+  const d = notifDetail(e); if (!d) return '';
+  if (d.action?.act === 'cancel-power' && actions.powerPending && !actions.powerPending()) d.action = null; // já cancelado
+  return `<div class="np-detail">
+    <p>${esc(d.why)}</p>
+    <p class="np-todo"><b>O que fazer</b>${esc(d.todo)}</p>
+    ${d.facts.length ? `<dl class="np-facts">${d.facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+    ${d.action ? `<button class="pill-btn sm ${d.action.act === 'cancel-power' ? 'danger-solid' : ''}" data-na="${esc(d.action.act)}" data-arg="${esc(e.meta?.urn || '')}">${esc(d.action.label)}</button>` : ''}
+  </div>`;
 }
 
 function drawPanel() {
@@ -92,10 +140,14 @@ function drawPanel() {
       <span class="np-ico">${svg('download')}</span>
       <span class="np-text"><b>Instalando ${esc(x.name)}</b><small>O Runtipi está baixando e ligando o app. O sino avisa quando terminar.</small><span class="np-bar" role="progressbar" aria-label="Instalando ${esc(x.name)}"><i></i></span><time>${esc(timeAgo(Math.floor(x.since / 1000)))}</time></span>
     </div>`).join('')}${S.events.length ? '<div class="np-sec">Avisos</div>' : ''}` : '';
-  list.innerHTML = working + (S.events.length ? S.events.map((e) => `<div class="np-item lv-${esc(e.level)} ${e.read ? '' : 'unread'}">
+  list.innerHTML = working + (S.events.length ? S.events.map((e) => {
+    const can = canExpand(e), open = can && opened.has(e.id);
+    return `<div class="np-item lv-${esc(e.level)} ${e.read ? '' : 'unread'} ${can ? 'np-can' : ''} ${open ? 'open' : ''}" data-id="${esc(e.id)}"${can ? ` role="button" tabindex="0" aria-expanded="${open}"` : ''}>
       <span class="np-ico" title="${esc(LEVEL[e.level] || '')}">${svg(ICON(e))}</span>
-      <span class="np-text"><b>${esc(e.title)}</b>${e.body ? `<small>${esc(e.body)}</small>` : ''}<time datetime="${new Date(e.time * 1000).toISOString()}" title="${esc(new Date(e.time * 1000).toLocaleString('pt-BR'))}">${esc(timeAgo(e.time))}</time></span>
-    </div>`).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, problemas nos discos e acessos novos ao BrunOS aparecem aqui.</small></span></div>`)
+      <span class="np-text"><b>${esc(e.title)}</b>${e.body ? `<small>${esc(e.body)}</small>` : ''}<time datetime="${new Date(e.time * 1000).toISOString()}" title="${esc(new Date(e.time * 1000).toLocaleString('pt-BR'))}">${esc(timeAgo(e.time))}</time>${open ? detailHTML(e) : ''}</span>
+      ${can ? `<span class="np-chev" aria-hidden="true">${svg('chevD')}</span>` : ''}
+    </div>`;
+  }).join('') : `<div class="np-empty">${svg('bell')}<span>Nenhuma notificação.<br><small>Quedas de energia, problemas nos discos e acessos novos ao BrunOS aparecem aqui.</small></span></div>`)
     .replace(/^(<div class="np-empty">.*)$/s, S.installs.length ? '' : '$1');
 }
 const $$np = (p) => [...p.querySelectorAll('[data-np]')];

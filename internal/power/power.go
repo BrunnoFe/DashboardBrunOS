@@ -137,6 +137,7 @@ type Monitor struct {
 	lastSave   time.Time
 	lastText   string
 	execMu     sync.Mutex // um desligamento por vez
+	manual     *Manual    // desligar/reiniciar pedido pela interface (manual.go)
 }
 
 // ErrHostNotReady: a conexão SSH com o servidor ainda não foi configurada e testada.
@@ -190,6 +191,9 @@ func New(configFile, stateFile string, ev *events.Store, runner *hostcmd.Runner)
 	if m.cfg.Enabled {
 		m.phase = PhaseArmed
 	}
+	// um desligamento/reinício pedido antes de o BrunOS reiniciar já aconteceu (ou foi cancelado no
+	// servidor): tira o aviso da lista de ativos, senão o próximo pedido não avisaria
+	m.resolveLocked(keyManual, nil)
 	if m.cfg.Enabled && !m.cfg.Simulate && m.cfg.NeedsUpdate() {
 		m.emitLocked(events.Event{Kind: "power-setup-old", Level: events.Aviso, Key: keySetupOld,
 			Title: "Atualize a configuração do desligamento",

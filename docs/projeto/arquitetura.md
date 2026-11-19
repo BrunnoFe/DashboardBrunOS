@@ -254,6 +254,14 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `POST /api/power/charge {detect}`): `range`, `toggle` ou `none`. `POST /api/power/charge {limit}` ou
   `{protect}` aplica pelo script e grava `chargeLimit`/`chargeProtect` em `power.json`; a cada 10 min,
   só se houver suporte e pedido, relê um arquivo e reaplica (no máximo a cada 30 min).
+  **Desligar/reiniciar pela interface** (`manual.go`, 0.25.0, decisão 64): `POST /api/power/manual
+  {action: desligar|reiniciar, password}` (em `main.go`, que confere a senha) → `RequestManual` manda o
+  pedido ao script (agenda para +1 min), guarda `manual {action, deadline}` só na memória e emite o aviso
+  `power-manual` (Importante, Key `power-manual`, `meta {deadline, action}`); `POST /api/power/manual/cancel`
+  → `cancelar-desligar` e o aviso `power-manual-cancelled`. Sem conexão pronta = 409 com `setup: true`;
+  script antigo ("pedido inválido") = mensagem de que ele se atualiza sozinho. O pedido some do estado 2 min
+  depois do prazo; ao ligar, o BrunOS tira `power-manual` da lista de avisos ativos. `GET /api/power` ganhou
+  `hostReady` e `manual {action, deadline, remaining}`.
 - **`internal/sysinfo/drivetemp.go`** (0.5.0): temperatura por disco (`Disk.temp`, `tempAt`). Liga o
   hwmon `drivetemp` ao `sdX` (`hwmonN/device/block/*`) e o hwmon `nvme` ao controlador (`nvme0`). Mede
   junto com os discos (a cada 20 s), mas no máximo 1 vez por minuto, e um HD só de novo se
@@ -320,6 +328,7 @@ POST /api/auth/setup · login · logout · password      GET/PUT /api/auth/me
 GET/PUT /api/settings                 (JSON livre do frontend, até 512 KB, /data/settings.json)
 GET/PUT /api/wallpapers · GET/DELETE /api/wallpapers/{name}   (nome ^[a-f0-9]{16}\.(jpg|png|webp|avif|gif)$)
 PUT /api/icons (corpo = arquivo, até 1 MB) · GET /api/icons/{name} · GET /api/icons/di/{nome}   (0.24.0)
+POST /api/power/manual {action, password} · POST /api/power/manual/cancel   (0.25.0, menu de energia)
 GET  /api/stats · /api/stats/stream (SSE: event init {snapshot,history}; data {snapshot,point})
 GET  /api/system                      (info, runtipi, docker, dockerActions, terminal, version...)
 GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
@@ -429,7 +438,14 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
 - `js/battery.js`: `paintBattery(root, battery)`, `batteryDialog`.
 - `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.
 - `js/notifications.js` (0.4.0): sino `#bell` (no `index.html`), painel, `onNotify(e)` (toast),
-  `refreshNotifications()` (chamado no `init` do stream, ou seja, também a cada reconexão).
+  `refreshNotifications()` (chamado no `init` do stream, ou seja, também a cada reconexão). 0.25.0:
+  avisos Aviso/Importante abrem com os detalhes de `js/notifdetails.js` (`notifDetail(e)`: explicação, o
+  que fazer, dados do `meta` e botão de atalho, tratado por `setNotifActions` em `app.js`); clicar no balão
+  chama `showNotification(id)`; abrir marca o aviso como lido.
+- `js/powermenu.js` (0.25.0): botão `#power-btn` (depois do sino; o sino foi para `right: 58px` e as
+  Atualizações para `102px`), menu Bloquear/Sair/Reiniciar/Desligar, `powerAction(action)` (diálogo com a
+  senha; também nas Configurações, na busca e no "Reiniciar agora" das Atualizações), contagem no botão e
+  no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`.
 - `js/power.js` (0.4.0): `powerDialog({openTerminal})` (Configurações → Sistema → Energia),
   `paintBanner(status)`/`refreshPowerBanner()` (faixa da contagem; usa `status.remaining` do servidor),
   `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço

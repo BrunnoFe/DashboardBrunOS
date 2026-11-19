@@ -411,6 +411,7 @@ func (s *server) routes() http.Handler {
 	s.files.Register(mux, a)
 	s.events.Register(mux, a)
 	s.power.Register(mux, a)
+	mux.HandleFunc("POST /api/power/manual", a(s.hPowerManual)) // menu de energia (0.25.0): pede a senha
 	s.diskHist.Register(mux, a)
 	s.hist.Register(mux, a)
 	s.tsdb.Register(mux, a) // GET /api/history (várias séries, períodos de 5 min a 30 dias)
@@ -703,6 +704,28 @@ func (s *server) hTermKeyDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // verifyPassword confere a senha do BrunOS (com o limite de tentativas) e responde o erro.
+// hPowerManual: desligar ou reiniciar o servidor pelo menu de energia (0.25.0, decisão 64). Só com a senha
+// do BrunOS; o servidor espera 1 minuto e dá para cancelar (POST /api/power/manual/cancel).
+func (s *server) hPowerManual(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action   string `json:"action"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	if body.Action != power.ActShutdown && body.Action != power.ActReboot {
+		writeJSON(w, 400, map[string]string{"error": power.ErrBadAction.Error()})
+		return
+	}
+	if !s.verifyPassword(w, r, body.Password) {
+		return
+	}
+	slog.Warn("energia: pedido pela interface", "pedido", body.Action, "usuario", session(r).Username, "ip", clientIP(r))
+	s.power.HandleManual(w, r, body.Action)
+}
+
 func (s *server) verifyPassword(w http.ResponseWriter, r *http.Request, password string) bool {
 	err := s.auth.Verify(session(r).Username, password, clientIP(r))
 	switch {

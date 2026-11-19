@@ -7,7 +7,8 @@ import {
 } from './layout.js';
 import { api, initApi } from './api.js';
 import { mountChart, periodSeg, PERIOD_LONG } from './charts.js';
-import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications } from './notifications.js';
+import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications, setNotifActions } from './notifications.js';
+import { initPowerMenu, closePowerMenu, powerMenuOpen, powerAction, cancelPowerManual, refreshPowerMenu, powerPending } from './powermenu.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML } from './disks.js';
@@ -787,6 +788,21 @@ initUpdates({
   },
   openSettings: () => { setSettingsTab('system'); settingsQuery = ''; openSheet('settings', $('[data-sys="settings"]')); },
   reloadApps: () => loadApps(),
+  reboot: () => powerAction('reiniciar'),
+});
+// menu de energia (0.25.0) e os botões de atalho dos detalhes dos avisos do sino
+initPowerMenu({ lock: () => lockNow(), logout: () => logout(), openPower: () => openPower() });
+setNotifActions({
+  app: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
+  disks: () => openDisks(),
+  power: () => openPower(),
+  internet: () => internetDialog(),
+  updates: () => showUpdates(),
+  password: () => passwordDialog(),
+  store: () => openStore(),
+  'cancel-power': () => cancelPowerManual(),
+  powerPending: () => powerPending(),
+  reboot: () => powerAction('reiniciar'),
 });
 setInterval(() => { if (!document.hidden && S.desktopReady && !document.body.classList.contains('is-locked')) refreshEnergy(); }, 60000);
 setInterval(() => { if (S.desktopReady && !document.body.classList.contains('is-locked')) refreshUpdates(); }, 3600e3);
@@ -1761,8 +1777,11 @@ function renderSettings(body) {
           <div class="kv"><span>Tempo ativo</span><span data-bind="uptime">—</span></div>
           <div class="kv"><span>BrunOS</span><span>${esc(S.system?.version || S.pub.version || '')}</span></div>
         </div>
-        <div class="btn-row">
+        <div class="btn-row wrap">
           <button class="pill-btn" data-act="logout">${svg('logout')}Sair</button>
+          <button class="pill-btn" data-act="lock-now">${svg('lock')}Bloquear</button>
+          <button class="pill-btn" data-act="reboot">${svg('refresh')}Reiniciar</button>
+          <button class="pill-btn danger-text" data-act="shutdown">${svg('power')}Desligar</button>
           <button class="pill-btn" data-act="live">${svg('activity')}Uso ao vivo</button>
         </div>
         <div class="card meter-card"><div class="row"><span>Armazenamento</span><span><b data-bind="storageUsed"></b> <small data-bind="storageTotal"></small></span></div><div class="track"><i data-bind-w="storage"></i></div></div>
@@ -1859,6 +1878,8 @@ function wireSettings(body) {
         catch { toast('Não deu para copiar', CFG_PW_CMD); }
       } else if (a === 'cfgpw-check') { cfgPw = null; redraw(); loadCfgPw(); }
       else if (a === 'lock-now') { closeSheet(); setTimeout(lockNow, 200); }
+      else if (a === 'reboot') powerAction('reiniciar');
+      else if (a === 'shutdown') powerAction('desligar');
       else if (a === 'updates') { closeSheet(); setTimeout(showUpdates, 230); }
       else if (a === 'os-list') osUpdatesDialog();
       else if (a === 'backups') backupsDialog();
@@ -2404,7 +2425,7 @@ function startStream() {
     (d) => {
       S.snapshot = d.snapshot; S.history = d.history || [];
       for (const v of d.metrics || []) S.metrics[v.id] = v;
-      bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner(); refreshNotes();
+      bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner(); refreshNotes(); refreshPowerMenu();
     },
     (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); paintWidgets(); emit('stats'); },
     (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
@@ -2484,6 +2505,7 @@ document.addEventListener('keydown', (e) => {
     else if (notificationsOpen()) closePanel();
     else if (dialogs.length) dialogs[dialogs.length - 1]();
     else if (updatesOpen()) closeUpdates();
+    else if (powerMenuOpen()) closePowerMenu();
     else if (currentSheet) closeSheet();
     else if (wEditing) setWidgetEditing(false);
   }
@@ -2692,6 +2714,8 @@ $('#desktop').addEventListener('contextmenu', (e) => {
     '-',
     { icon: 'lock', label: 'Bloquear a tela', kbd: 'Ctrl+Shift+L', run: () => lockNow() },
     { icon: 'logout', label: 'Sair', run: () => logout() },
+    { icon: 'refresh', label: 'Reiniciar o servidor…', run: () => powerAction('reiniciar') },
+    { icon: 'power', label: 'Desligar o servidor…', run: () => powerAction('desligar') },
   ]);
 });
 $('#wp-file').addEventListener('change', (e) => { uploadWallpaper(e.target.files[0]); e.target.value = ''; });

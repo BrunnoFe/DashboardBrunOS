@@ -16,7 +16,7 @@ function counts(s = snap()) {
   return { apps, os, total: apps + os, security: s?.os?.security || 0 };
 }
 
-/** Liga o botão. c = { get, set, appIcon(urn), openApp(urn), osList(), scriptDialog(), openSettings(), reloadApps() } */
+/** Liga o botão. c = { get, set, appIcon(urn), openApp(urn), osList(), scriptDialog(), openSettings(), reloadApps(), reboot() } */
 export function initUpdates(c) {
   ctx = c;
   $('#upd-btn').addEventListener('click', (e) => { e.stopPropagation(); if (panel) closeUpdates(); else openUpdates(); });
@@ -144,6 +144,7 @@ async function onClick(e) {
   else if (a === 'script-auto') { b.disabled = true; upgradeScript(); }
   else if (a === 'dismiss') { dismissed = snap()?.job?.startedAt || 0; drawPanel(); }
   else if (a === 'dismiss-fail') { failure = ''; drawPanel(); }
+  else if (a === 'reboot') { closeUpdates(); ctx.reboot?.(); } // 0.25.0: mesma senha e mesmo minuto do menu de energia
 }
 
 // Faixa do script do servidor desatualizado: troca sozinho (7+, versão assinada) ou pelo Terminal.
@@ -190,7 +191,9 @@ function drawPanel() {
   const linux = o?.err
     ? `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${esc(o.err)}</small></span></span>${script ? '<button class="pill-btn sm" data-up="script">Mostrar comandos</button>' : ''}</div>`
     : `<div class="upd-row"><span class="upd-app"><span class="mini sys">${svg('cpu')}</span><span class="upd-txt"><b>Linux</b><small>${osText}</small></span></span>
-      ${o?.total || o?.phased ? '<button class="np-btn" data-up="os-list">Ver lista</button>' : ''}${o?.total ? `<button class="pill-btn sm" data-up="linux" ${disOS}>Atualizar</button>` : ''}</div>`;
+      ${o?.total || o?.phased ? '<button class="np-btn" data-up="os-list">Ver lista</button>' : ''}${o?.total ? `<button class="pill-btn sm" data-up="linux" ${disOS}>Atualizar</button>` : ''}</div>
+      ${o?.reboot && !run ? `<div class="upd-note warn"><span>${svg('refresh')}</span><span><b>O servidor precisa reiniciar</b><small>Uma atualização já instalada só passa a valer depois de reiniciar. Os apps e o BrunOS param por alguns minutos e voltam sozinhos.</small>
+        <span class="upd-note-acts"><button class="pill-btn sm primary" data-up="reboot">${svg('refresh')}Reiniciar agora</button></span></span></div>` : ''}`;
   // cada seção com o seu "Conferir" (Apps também atualiza as lojas do Runtipi)
   const busy = (p) => checking === p || checking === 'all';
   const secBtn = (p) => busy(p) ? '<span class="upd-sec-busy"><span class="upd-spin"></span>conferindo…</span>' : `<button class="np-btn" data-up="check-${p}" ${checking || run ? 'disabled' : ''}>Conferir</button>`;

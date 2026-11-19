@@ -23,6 +23,39 @@ func (m *Monitor) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("GET /api/power/setup", wrap(m.hSetup))
 	mux.HandleFunc("POST /api/power/test", wrap(m.hTest))
 	mux.HandleFunc("POST /api/power/charge", wrap(m.hCharge))
+	mux.HandleFunc("POST /api/power/manual/cancel", wrap(m.hManualCancel))
+	// POST /api/power/manual (pede a senha) fica em main.go, que confere a senha do BrunOS
+}
+
+// HandleManual responde ao pedido de desligar/reiniciar depois de a senha ter sido conferida.
+func (m *Monitor) HandleManual(w http.ResponseWriter, r *http.Request, action string) {
+	cur, err := m.RequestManual(r.Context(), action)
+	switch {
+	case err == nil:
+		writeJSON(w, 200, map[string]any{"manual": cur})
+	case errors.Is(err, ErrHostNotReady):
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "setup": true})
+	case errors.Is(err, ErrBadAction):
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrManualBusy):
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "manual": m.ManualStatus()})
+	default:
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+	}
+}
+
+func (m *Monitor) hManualCancel(w http.ResponseWriter, r *http.Request) {
+	err := m.CancelManual(r.Context())
+	switch {
+	case err == nil:
+		writeJSON(w, 200, map[string]any{"manual": nil})
+	case errors.Is(err, ErrNoManual):
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrHostNotReady):
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "setup": true})
+	default:
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+	}
 }
 
 // hCharge aplica o limite de carga ({limit}) ou a proteção ({protect: "on"|"off"}), ou
@@ -75,7 +108,7 @@ func (m *Monitor) hGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"config": m.Config(), "status": m.Status(), "outages": m.Outages(), "drainW": m.DrainW(),
 		"keyReady": keyReady, "suggestedHost": m.suggested(), "needsUpdate": m.Config().NeedsUpdate(),
-		"charge": m.ChargeInfo(),
+		"charge": m.ChargeInfo(), "hostReady": m.HostReady(), "manual": m.ManualStatus(),
 	})
 }
 

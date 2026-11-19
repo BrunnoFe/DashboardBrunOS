@@ -30,7 +30,7 @@ A janela *Discos* mostra cada disco do servidor, inclusive os que não estão mo
 
 - A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche, o histórico de CPU, memória, temperatura e rede (5 min, 24 h ou 7 dias) e a lista de processos do servidor.
 - O widget *Internet* mostra a latência e quantas vezes a internet caiu (o sino avisa quando cai e quando volta).
-- O **sino** reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou.
+- O **sino** reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou. Clique num aviso importante (no sino ou no balão que aparece) para ver a explicação, o que fazer e um botão que leva direto ao lugar certo.
 
 ## Apps e Loja
 
@@ -47,6 +47,8 @@ Com o script do servidor atualizado, **instalar acontece na própria Loja**: as 
 O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pacotes do Linux). Um clique abre o painel e já confere; dali dá para atualizar cada app e o Linux sem abrir o terminal, acompanhando o andamento. A atualização roda no próprio servidor e continua mesmo se o BrunOS reiniciar no meio. A frequência da conferência automática fica em *Configurações → Sistema → Procurar atualizações*.
 
 ## Energia e consumo
+
+- **Menu de energia:** o botão no canto da tela (depois do sino) tem Bloquear, Sair, Reiniciar e Desligar. Os mesmos botões estão em *Configurações*, ao lado de *Sair*. Reiniciar e Desligar pedem a senha do BrunOS e esperam 1 minuto, com uma contagem e um botão para cancelar; quando o Ubuntu pede para reiniciar depois de uma atualização, o painel de atualizações mostra *Reiniciar agora*. Usam a mesma conexão do desligamento seguro (abaixo).
 
 - **Consumo:** a janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mês, com projeção) pela tarifa que você informa. O consumo vem de uma tomada inteligente Tuya (integração *Tomada Tuya*, pela rede de casa, sem nuvem), da bateria durante as quedas de energia ou de uma estimativa que o BrunOS aprende.
 - **Desligamento seguro:** em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.

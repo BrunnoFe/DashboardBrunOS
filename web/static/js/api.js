@@ -208,6 +208,9 @@ const real = {
     setup: () => call('GET', '/api/power/setup'),
     test: (b) => call('POST', '/api/power/test', b),
     charge: (b) => call('POST', '/api/power/charge', b),
+    // menu de energia (0.25.0): desligar/reiniciar em 1 minuto, com a senha do BrunOS
+    manual: (action, password) => call('POST', '/api/power/manual', { action, password }),
+    cancelManual: () => call('POST', '/api/power/manual/cancel', {}),
   },
   term: {
     open: (b) => call('POST', '/api/terminal/open', b),
@@ -493,6 +496,8 @@ function makeDemo() {
   const chargeState = location.hash === '#semlimite' || oldSetup ? { kind: 'none', model: 'Acme Notebook 15' }
     : location.hash === '#protecao' ? { kind: 'toggle', model: 'Lenovo IdeaPad 3', on: false, protect: '' }
     : { kind: 'range', model: 'Lenovo ThinkPad T480', current: 100, want: 0 };
+  let demoManual = null, demoNotify = null;
+  const demoHostReady = () => (!!powerCfg.testedAt && powerCfg.hostSetup >= 2) || location.hash === '#energia';
   const demoCharge = () => ({ ...chargeState, ready: !!powerCfg.testedAt && powerCfg.hostSetup >= 2, checkedAt: now });
   const demoKeyConst = () => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstracaoChaveFalsaDoBrunOSqueNaoServe brunos-power';
   const shutCmd = 'sudo -n /usr/bin/systemctl poweroff --check-inhibitors=no --when=+1min';
@@ -810,7 +815,29 @@ function makeDemo() {
     },
     restartSelf: () => wait({ ok: true }, 300),
     power: {
-      get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50', needsUpdate: !!powerCfg.testedAt && powerCfg.hostSetup < 2, charge: demoCharge() }),
+      get: () => wait({ config: powerCfg, status: powerStatus(), outages, drainW: 9.4, keyReady: !!powerCfg.testedAt, suggestedHost: '192.168.1.50', needsUpdate: !!powerCfg.testedAt && powerCfg.hostSetup < 2, charge: demoCharge(),
+        hostReady: demoHostReady(), manual: demoManual && { ...demoManual, remaining: Math.max(0, demoManual.deadline - Math.floor(Date.now() / 1000)) } }),
+      // menu de energia: na demonstração a senha é demo1234 e nada desliga de verdade (#energia = conexão pronta)
+      manual: (action, password) => {
+        if (!demoHostReady()) return Promise.reject(Object.assign(new Error('configure e teste a conexão com o servidor em Configurações → Energia'), { status: 409, data: { setup: true } }));
+        if (password !== 'demo1234') return Promise.reject(Object.assign(new Error('senha do BrunOS incorreta (na demonstração: demo1234)'), { status: 403 }));
+        demoManual = { action, deadline: Math.floor(Date.now() / 1000) + 60 };
+        const verb = action === 'reiniciar' ? 'reiniciar' : 'desligar';
+        const ev = { id: `pm${Date.now()}`, time: Math.floor(Date.now() / 1000), kind: 'power-manual', level: 'critico', title: `O servidor vai ${verb} em 1 minuto`,
+          body: 'Pedido pelo BrunOS. Até lá dá para cancelar pelo botão de energia ou por este aviso.', read: false, meta: { deadline: demoManual.deadline, action } };
+        demoEvents.unshift(ev);
+        setTimeout(() => demoNotify?.(ev), 900);
+        return wait({ manual: { ...demoManual, remaining: 60 } }, 700);
+      },
+      cancelManual: () => {
+        if (!demoManual) return Promise.reject(Object.assign(new Error('não há desligamento nem reinício agendado'), { status: 409 }));
+        const ev = { id: `pc${Date.now()}`, time: Math.floor(Date.now() / 1000), kind: 'power-manual-cancelled', level: 'info',
+          title: `${demoManual.action === 'reiniciar' ? 'Reinício' : 'Desligamento'} cancelado`, body: 'O servidor continua ligado.', read: false };
+        demoManual = null;
+        demoEvents.unshift(ev);
+        setTimeout(() => demoNotify?.(ev), 600);
+        return wait({ manual: null }, 500);
+      },
       charge: (b) => {
         if (b.detect) return wait({ charge: demoCharge() }, 300);
         if (!demoCharge().ready) return Promise.reject(Object.assign(new Error('configure (ou atualize) a conexão com o servidor nesta janela e clique em Testar'), { status: 400, data: { charge: demoCharge() } }));
@@ -833,6 +860,7 @@ function makeDemo() {
         : Promise.reject(Object.assign(new Error('servidor ainda não confirmado'), { status: 409, data: { unknownHost: true, addr: `${b.host}:${b.port || 22}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:q3J8Zf0bVx1nRk2y7Tn5mWcL0aHf9uE4sPd6GiYoXbM' } })),
     },
     streamStats(onInit, onPoint, onNotify, onMetrics) {
+      demoNotify = onNotify; // o menu de energia da demonstração avisa o sino por aqui, como o servidor
       onInit({ snapshot: snap(), history: [...history], metrics: demoViews() });
       const t = setInterval(() => onPoint(tick()), 2000);
       // o AdGuard "responde" a cada 15 s na demonstração

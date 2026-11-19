@@ -271,6 +271,11 @@ Estado de uma Sessão em que o painel fica coberto pela Tela de bloqueio; vale s
 Pode ser só visual (qualquer toque desbloqueia) ou com senha (nada funciona até digitar a senha).
 _Evite_: logout, suspensão, descanso de tela
 
+**Menu de energia**:
+Menu do botão no canto da tela, depois do sino, com Bloquear, Sair, Reiniciar e Desligar. Reiniciar e
+Desligar viram um **Pedido de energia**: o servidor espera 1 minuto, e dá para cancelar até lá.
+_Evite_: menu de desligar, power menu
+
 **Tela de bloqueio**:
 A tela com relógio grande sobre o papel de parede mostrada durante o Bloqueio.
 _Evite_: lock screen, protetor de tela

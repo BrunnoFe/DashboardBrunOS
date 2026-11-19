@@ -72,8 +72,9 @@ const (
 	// "reiniciar-app") e os Ajustes ("ajustes-ler", "ajustes-gravar", com a Senha de configuração), 0.20.0;
 	// 15 = "instalar-app-senha" (instalar com a Senha de configuração e os Ajustes juntos),
 	// "ajustes-desfazer" (tira os Ajustes de uma instalação que falhou) e "ajustes-ler" também de app que
-	// não está instalado (o Runtipi não apaga os Ajustes ao desinstalar), 0.21.0.
-	ScriptVersion = 15
+	// não está instalado (o Runtipi não apaga os Ajustes ao desinstalar), 0.21.0; 16 = "reiniciar" e
+	// "cancelar-desligar" (menu de energia: desligar/reiniciar em 1 minuto, com cancelar), 0.25.0.
+	ScriptVersion = 16
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -83,9 +84,12 @@ const (
 
 // Pedidos aceitos pelo script do servidor.
 const (
-	CmdShutdown  = "desligar"
-	CmdVersion   = "versao"
-	CmdTailscale = "tailscale" // só lê: tailscale status --json (script 3)
+	CmdShutdown = "desligar"
+	CmdVersion  = "versao"
+	// script 16 (0.25.0): menu de energia. Desligar e reiniciar esperam 1 minuto no servidor.
+	CmdReboot         = "reiniciar"
+	CmdCancelShutdown = "cancelar-desligar" // cancela o desligar/reiniciar agendado
+	CmdTailscale      = "tailscale"         // só lê: tailscale status --json (script 3)
 	// script 4 (0.11.0) e 5 (0.11.2), todos só leitura:
 	CmdEnergy  = "energia"      // contador do RAPL (energy_uj) e o limite dele
 	CmdUpdates = "atualizacoes" // apt-check, reboot-required e a lista de pacotes
@@ -323,7 +327,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 15: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 16: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -348,7 +352,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=15
+VERSAO=16
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -425,7 +429,7 @@ case "$acao" in
     # nunca pela chave do BrunOS: quem invadisse o BrunOS cadastraria a senha dele
     [ "$via_ssh" = 0 ] || falha "a Senha de configuração só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
-  desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  desligar|reiniciar|cancelar-desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
     [ $# -eq 2 ] || falha "pedido inválido"
     disco_ok "$valor" || falha "disco inválido" ;;
@@ -669,6 +673,12 @@ feito=0
 case "$acao" in
   desligar)
     exec systemctl poweroff --check-inhibitors=no --when=+1min ;;
+  reiniciar)
+    exec systemctl reboot --check-inhibitors=no --when=+1min ;;
+  cancelar-desligar)
+    # systemd 254+ cancela com --when=cancel; nos mais antigos, o shutdown -c faz o mesmo
+    if systemctl poweroff --when=cancel 2>/dev/null || shutdown -c 2>/dev/null; then echo "cancelado"; exit 0; fi
+    falha "não deu para cancelar no servidor (talvez já não houvesse nada agendado)" 3 ;;
   tailscale)
     command -v tailscale >/dev/null 2>&1 || falha "o Tailscale não está instalado neste servidor" 3
     exec tailscale status --json ;;

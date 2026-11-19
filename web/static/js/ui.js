@@ -174,11 +174,12 @@ export function fileSVG(name, cls = 'file-ico') {
 }
 
 /* ── Notificações ──────────────────────────────────────────────── */
-export function toast(title, sub = '', action, { error = false, ms } = {}) {
-  const t = html(`<div class="toast ${error ? 'toast-error' : ''}" role="status"><span class="t-ico">${error ? svg('info') : '<span class="logo"></span>'}</span><span style="flex:1">${esc(title)}${sub ? `<br><span class="t-sub">${esc(sub)}</span>` : ''}</span>${action ? `<button class="pill-btn">${esc(action.label)}</button>` : ''}</div>`);
+// onClick (0.25.0): clicar no balão faz algo (ex.: abrir os detalhes do aviso no sino) em vez de só fechar.
+export function toast(title, sub = '', action, { error = false, ms, onClick } = {}) {
+  const t = html(`<div class="toast ${error ? 'toast-error' : ''} ${onClick ? 'clickable' : ''}" role="status"><span class="t-ico">${error ? svg('info') : '<span class="logo"></span>'}</span><span style="flex:1">${esc(title)}${sub ? `<br><span class="t-sub">${esc(sub)}</span>` : ''}${onClick ? '<br><span class="t-more">Ver detalhes</span>' : ''}</span>${action ? `<button class="pill-btn">${esc(action.label)}</button>` : ''}</div>`);
   const kill = () => { t.classList.add('out'); setTimeout(() => t.remove(), 250); };
   if (action) $('button', t).addEventListener('click', () => { action.run(); kill(); });
-  t.addEventListener('click', (e) => { if (!e.target.closest('button')) kill(); });
+  t.addEventListener('click', (e) => { if (!e.target.closest('button')) { onClick?.(); kill(); } });
   $('#toast-host').append(t);
   setTimeout(kill, ms || (action ? 9000 : error ? 6000 : 4200));
 }

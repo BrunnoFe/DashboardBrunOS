@@ -60,6 +60,8 @@ jobs:
         run: bash tests/script-loja.sh
       - name: Script do servidor (instalar, editar e Ajustes pela Loja)
         run: bash tests/script-instalar.sh
+      - name: Menu de energia no script do servidor (desligar, reiniciar e cancelar)
+        run: bash tests/script-energia.sh
 
   publish:
     name: publica a imagem

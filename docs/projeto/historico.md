@@ -158,6 +158,11 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   branca sumia no fundo branco. Agora: Catálogo aceita nome ou link, com prévia; **Enviar** arquivo (até
   1 MB); **Ícones guardados** em `/data/icons` (decisão 63), com o CDN como reserva. Lição: o jsDelivr
   responde 403, e não 404, para svg que não existe.
+- 0.25.0: **menu de energia** (botão depois do sino: Bloquear, Sair, Reiniciar, Desligar), os mesmos botões
+  nas Configurações e na busca, "Reiniciar agora" nas Atualizações. Reiniciar/Desligar pedem a senha e o
+  script 16 agenda para +1 min (`reiniciar`, `cancelar-desligar`), com contagem e Cancelar (decisão 64).
+  **Detalhes dos avisos** Aviso/Importante no sino e balão clicável ("Ver detalhes"). Lição: o teste que
+  cruza os avisos do Go com os textos achou o `os-reboot`, que eu não tinha listado.
 
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o

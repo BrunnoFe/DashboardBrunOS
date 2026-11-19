@@ -216,6 +216,8 @@ func TestHostScriptRefuses(t *testing.T) {
 		"smart sda1 sat", "smart nvme0n1p1 auto", "smart sdabc sat", "smart SDA sat", "smart sd* sat",
 		"temperatura sda -d", "temperatura sda sat;reboot", "discos sda", "discos; reboot", "protecao on off",
 		"desligar agora já",
+		// script 16 (menu de energia)
+		"reiniciar agora", "reiniciar 5", "reiniciar; rm -rf /", "cancelar-desligar x", "cancelar-desligar $(id)", "reboot",
 		"executar atualizar-linux", "executar atualizar-app immich:migrated", "atualizar-app", "atualizar-app immich",
 		"atualizar-app Immich:migrated", "atualizar-app a:b:c", "atualizar-app ../x:y", "atualizar-app -x:y",
 		"atualizar-app immich:migrated;reboot", "atualizar-app immich:migrated x", "atualizar-linux agora",
@@ -261,7 +263,7 @@ func TestHostScriptRefuses(t *testing.T) {
 		"tamanho-backup immich:migrated", "atualizar-script QUJDRA==", "atualizar-lojas",
 		"discos-detalhe", "estado sdb", "erros nvme0n1", "velocidade sdab", "ejetar sdc", "smart-teste sda sat curto", "smart-teste nvme0n1 auto longo",
 		"montar 1a2b-3C4D Disco_4", "desmontar Disco4", "rotulo 1a2b fotos", "formatar sdb SN-123_A.b:c ext4 Fotos", "formatar nvme0n1 X btrfs b",
-		"discos-estado",
+		"discos-estado", "reiniciar", "cancelar-desligar",
 		"iniciar-app immich:migrated", "parar-app nextcloud_mini:brunnofe-store", "desinstalar-app immich:migrated",
 		"info-app immich:migrated", "instalar-app alist:casaos", "reconfigurar-app immich:migrated", "reiniciar-app plex:migrated",
 		"ajustes-ler plex:migrated", "ajustes-gravar plex:migrated", "instalar-app-senha alist:casaos", "ajustes-desfazer alist:casaos",
@@ -276,7 +278,7 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("%s pelo SSH: %s", c, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 15") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 16") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa

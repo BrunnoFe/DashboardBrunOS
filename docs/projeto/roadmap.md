@@ -15,11 +15,11 @@ celular.
 
 ## Melhorias de 18/11/2026 (combinadas com o Bruno, três versões)
 
-1. **0.24.0: Ícones** (lançada em 18/11, aguardando teste do Bruno): bug do link colado no campo (virava um nome
+1. **0.24.0: Ícones** (lançada e testada pelo Bruno em 18/11): bug do link colado no campo (virava um nome
    impossível) e do `onerror` inline barrado pela CSP (atalho sem nem a inicial); campo Catálogo aceita
    nome ou link, com prévia; Enviar arquivo (svg/png/ico/jpg, até 1 MB); Ícones guardados no servidor
    (decisão 63).
-2. **0.25.0: Energia e avisos**: botão de energia no canto (depois do sino) com Bloquear, Sair, Reiniciar e
+2. **0.25.0: Energia e avisos** (lançada em 18/11, aguardando teste do Bruno; decisão 64): botão de energia no canto (depois do sino) com Bloquear, Sair, Reiniciar e
    Desligar; os mesmos botões ao lado de "Sair" nas Configurações; Desligar/Reiniciar pedem a senha do
    BrunOS e esperam 1 min com Cancelar no sino; sem chave SSH, levam à janela Energia; pedido novo
    `reiniciar` no script (troca assinada, sem colar nada); "Reiniciar agora" no painel de Atualizações
