@@ -1,6 +1,14 @@
 # Testa a cada push. Na main, publica ghcr.io/<seu-usuario>/brunos:<VERSION> (e latest) quando o
 # arquivo VERSION traz uma versão que ainda não existe no registro. Para lançar: mude VERSION e faça push.
 # Tags v* também publicam. A publicação só acontece se o teste passar.
+#
+# Endurecimento (auditoria de 19/11/2026):
+#   - todas as actions fixadas pelo hash do commit (o comentário diz a versão); uma tag trocada lá fora
+#     não muda o que roda aqui;
+#   - o segredo que assina o script do servidor só existe no job "assina", que não roda nenhuma action de
+#     terceiros e passa por um ambiente ("assinatura": em Settings → Environments dá para exigir aprovação
+#     e limitar a main e às tags v*); o script é gerado ANTES, num passo sem o segredo;
+#   - checkout sem guardar a credencial do GitHub; sem cache no job que publica.
 name: teste e imagem docker
 
 on:
@@ -18,10 +26,13 @@ jobs:
     name: teste com Docker de verdade
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
+          cache: false # este workflow também publica: nada de cache que um PR poderia preparar
       - name: Confere o vendor/ com os módulos oficiais (verificados no sum.golang.org)
         run: |
           set -euo pipefail
@@ -45,7 +56,7 @@ jobs:
       - name: Falhas de segurança conhecidas no Go e nas dependências (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: testes do encaixe dos widgets e das janelas (JS, Node da própria máquina do CI)
-        run: node --version && node --experimental-detect-module --test tests/layout.test.mjs tests/windows.test.mjs tests/icons.test.mjs tests/notifdetails.test.mjs tests/access.test.mjs
+        run: node --version && node --experimental-detect-module --test tests/layout.test.mjs tests/windows.test.mjs tests/icons.test.mjs tests/notifdetails.test.mjs tests/access.test.mjs tests/security.test.mjs
       - name: gofmt
         run: test -z "$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))" || (gofmt -l . && exit 1)
       - name: Gera a imagem
@@ -65,22 +76,28 @@ jobs:
       - name: Menu de energia no script do servidor (desligar, reiniciar e cancelar)
         run: bash tests/script-energia.sh
 
-  publish:
-    name: publica a imagem
+  versao:
+    name: decide a versão
     needs: test
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: read
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      skip: ${{ steps.ver.outputs.skip }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: ver
         name: Decide a versão
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="$(tr -d ' \n' < VERSION)"; fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::versão inválida: $v"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
           img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/brunos:$v"
           if [[ "$GITHUB_REF" != refs/tags/v* ]] && echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1 && docker manifest inspect "$img" >/dev/null 2>&1; then
@@ -88,61 +105,95 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"; echo "publicando $img"
           fi
-      - if: steps.ver.outputs.skip != 'true'
-        uses: docker/setup-qemu-action@v4
-      - if: steps.ver.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@v4
-      - if: steps.ver.outputs.skip != 'true'
-        uses: docker/login-action@v4
+          docker logout ghcr.io >/dev/null 2>&1 || true
+
+  # Assina o script do servidor (decisão 49): o brunos-host instalado só se troca por um script assinado
+  # por esta chave. A chave privada fica só no segredo BRUNOS_SCRIPT_KEY e só este job a vê.
+  assina:
+    name: assina o script do servidor
+    needs: versao
+    if: needs.versao.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment: assinatura
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - if: steps.ver.outputs.skip != 'true'
-        uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
-      # Assina o script do servidor (decisão 49): o brunos-host instalado só se troca por um script
-      # assinado por esta chave. A chave privada fica só no segredo BRUNOS_SCRIPT_KEY.
-      - name: Assina o script do servidor
-        if: steps.ver.outputs.skip != 'true'
+          cache: false
+      - name: Gera o script do servidor (sem o segredo)
+        run: mkdir -p assinatura && go run ./tools/hostscript > assinatura/brunos-host
+      - name: Assina (só este passo vê o segredo)
         env:
           CHAVE: ${{ secrets.BRUNOS_SCRIPT_KEY }}
         run: |
           set -euo pipefail
           if [ -z "$CHAVE" ]; then
             echo "::warning::sem o segredo BRUNOS_SCRIPT_KEY: nesta versão o script do servidor não se atualiza sozinho"
+            cp internal/hostcmd/assinatura.txt assinatura/assinatura.txt
             exit 0
           fi
           umask 077
           d=$(mktemp -d)
           # o segredo pode ter vindo do Windows (CRLF, marca BOM): o ssh-keygen só lê a chave com LF puro
           printf '%s\n' "$CHAVE" | tr -d '\r' | sed '1s/^\xEF\xBB\xBF//' >"$d/chave"
-          head -n 1 "$d/chave" | grep -q '^-----BEGIN OPENSSH PRIVATE KEY-----$' || { echo "::error::o segredo BRUNOS_SCRIPT_KEY não parece uma chave privada OpenSSH"; exit 1; }
-          go run ./tools/hostscript >"$d/brunos-host"
-          ssh-keygen -q -Y sign -f "$d/chave" -n brunos-host "$d/brunos-host"
+          head -n 1 "$d/chave" | grep -q '^-----BEGIN OPENSSH PRIVATE KEY-----$' || { rm -rf "$d"; echo "::error::o segredo BRUNOS_SCRIPT_KEY não parece uma chave privada OpenSSH"; exit 1; }
+          cp assinatura/brunos-host "$d/brunos-host"
+          /usr/bin/ssh-keygen -q -Y sign -f "$d/chave" -n brunos-host "$d/brunos-host"
           # confere com a chave pública que está dentro do próprio script antes de embutir
           printf 'brunos-release %s\n' "$(sed -n "s/^CHAVE_ASSINATURA='\(.*\)'\$/\1/p" "$d/brunos-host")" >"$d/assinantes"
-          ssh-keygen -Y verify -f "$d/assinantes" -I brunos-release -n brunos-host -s "$d/brunos-host.sig" <"$d/brunos-host"
-          base64 -w0 "$d/brunos-host.sig" >internal/hostcmd/assinatura.txt
+          /usr/bin/ssh-keygen -Y verify -f "$d/assinantes" -I brunos-release -n brunos-host -s "$d/brunos-host.sig" <"$d/brunos-host"
+          base64 -w0 "$d/brunos-host.sig" >assinatura/assinatura.txt
           rm -rf "$d"
           echo "script do servidor assinado"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: assinatura
+          path: assinatura/assinatura.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: publica a imagem
+    needs: [versao, assina]
+    if: needs.versao.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: assinatura
+          path: assinatura
+      - name: Embute a assinatura do script
+        run: cp assinatura/assinatura.txt internal/hostcmd/assinatura.txt
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        if: steps.ver.outputs.skip != 'true'
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/brunos
           tags: |
-            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=${{ needs.versao.outputs.version }}
             type=raw,value=latest
-      - if: steps.ver.outputs.skip != 'true'
-        uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.ver.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: VERSION=${{ needs.versao.outputs.version }}
