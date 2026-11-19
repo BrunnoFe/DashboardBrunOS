@@ -8,8 +8,9 @@ IMAGE="${1:-brunos:ci}"
 FIX="${FIX:-/tmp/bt}"
 PORT=8099
 NET=brunos-smoke
-ALLOW_GET='/v1\..{1,2}/(version|containers/json|containers/[a-zA-Z0-9_.-]+/(stats|logs))'
-ALLOW_POST='/v1\..{1,2}/containers/[a-zA-Z0-9_.-]+/(restart|start|stop)'
+# as mesmas regras do runtipi-app/brunos/docker-compose.json (o BrunOS usa sempre o ID completo do container)
+ALLOW_GET='^/v1\.[0-9]{2}/(version|containers/json|containers/[0-9a-f]{64}/(stats|logs))$'
+ALLOW_POST='^/v1\.[0-9]{2}/containers/[0-9a-f]{64}/(restart|start|stop)$'
 
 cleanup() {
   status=$?

@@ -1,0 +1,7 @@
+# Fora do contexto do "docker build": o histórico do git, a memória privada do projeto e coisas que a
+# imagem não usa (a imagem final só leva o binário; isto evita copiar o resto para o cache do build).
+.git
+docs/privado
+tools/codemirror/node_modules
+**/__pycache__
+.claude
