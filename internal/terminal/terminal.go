@@ -37,13 +37,16 @@ const (
 	maxSessions = 4
 	maxBuffered = 256 << 10 // saída ainda não entregue ao leitor
 	// maxHistory: o fim da tela (~2.000 linhas) para mostrar de novo ao reabrir uma Aba minimizada
-	maxHistory   = 256 << 10
-	idleDefault  = 15 * time.Minute
-	dialTimeout  = 10 * time.Second
-	openPerMin   = 12
-	checkEvery   = time.Minute      // Aba minimizada com algo rodando: confere a cada minuto
-	detachGrace  = 10 * time.Second // recarregar a página não conta como minimizar
-	busyDeadline = 8 * time.Second
+	maxHistory  = 256 << 10
+	idleDefault = 15 * time.Minute
+	dialTimeout = 10 * time.Second
+	// handshakeTimeout: prazo para a conversa SSH inicial e o login (as respostas do teclado
+	// interativo são automáticas, ninguém digita nada aqui)
+	handshakeTimeout = 30 * time.Second
+	openPerMin       = 12
+	checkEvery       = time.Minute      // Aba minimizada com algo rodando: confere a cada minuto
+	detachGrace      = 10 * time.Second // recarregar a página não conta como minimizar
+	busyDeadline     = 8 * time.Second
 )
 
 // HostRe valida um nome de host ou IP (também usado pela configuração de energia).
@@ -223,14 +226,25 @@ func (m *Manager) Open(req OpenRequest) (*Session, error) {
 		HostKeyAlgorithms: sshknown.Algorithms(known, addr),
 		ClientVersion:     "SSH-2.0-BrunOS",
 	}
-	client, err := ssh.Dial("tcp", addr, cfg)
+	// ssh.Dial só tem prazo para a conexão TCP: um servidor que aceita e fica calado prenderia este
+	// pedido para sempre. O handshake e o login ganham prazo próprio, que sai depois de entrar.
+	nc, err := (&net.Dialer{Timeout: dialTimeout}).Dial("tcp", addr)
 	if err != nil {
+		slog.Info("terminal: detalhe do erro do ssh", "destino", addr, "erro", err)
+		return nil, sshknown.FriendlyDialError(err, addr)
+	}
+	_ = nc.SetDeadline(time.Now().Add(handshakeTimeout))
+	cc, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
+	if err != nil {
+		nc.Close()
 		slog.Info("terminal: detalhe do erro do ssh", "destino", addr, "erro", err)
 		if keyOK && !sshknown.IsNetErr(err) {
 			return nil, ErrAuth
 		}
 		return nil, sshknown.FriendlyDialError(err, addr)
 	}
+	_ = nc.SetDeadline(time.Time{})
+	client := ssh.NewClient(cc, chans, reqs)
 	sess, err := client.NewSession()
 	if err != nil {
 		client.Close()

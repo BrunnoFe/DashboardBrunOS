@@ -122,7 +122,10 @@ func (m *Manager) hStream(w http.ResponseWriter, r *http.Request) {
 	defer keep.Stop()
 	lockCheck := time.NewTicker(2 * time.Second)
 	defer lockCheck.Stop()
+	rc := http.NewResponseController(w)
 	for {
+		// próximo envio em no máximo 20 s (ping): quem parou de ler é desligado em vez de prender a conexão
+		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
 		select {
 		case <-r.Context().Done():
 			return

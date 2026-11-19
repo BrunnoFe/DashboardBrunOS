@@ -318,6 +318,7 @@ func (s *server) hAppLogsStream(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	pr, pw := io.Pipe()
+	defer pr.Close() // destrava a cópia do Docker se a aba fechar no meio de uma escrita (goroutine presa)
 	go func() {
 		if mux {
 			pw.CloseWithError(dockerc.Demux(body, pw))
@@ -341,10 +342,20 @@ func (s *server) hAppLogsStream(w http.ResponseWriter, r *http.Request) {
 	}()
 	keep := time.NewTicker(25 * time.Second)
 	defer keep.Stop()
+	lockT := time.NewTicker(2 * time.Second) // Bloqueio ou saída com a conexão aberta: para de enviar
+	defer lockT.Stop()
+	sid := session(r).ID
 	for {
+		sseDeadline(w)
 		select {
 		case <-r.Context().Done():
 			return
+		case <-lockT.C:
+			if s.auth.IsLocked(sid) {
+				fmt.Fprint(w, "event: locked\ndata: {}\n\n")
+				flusher.Flush()
+				return
+			}
 		case l, ok := <-lines:
 			if !ok {
 				fmt.Fprint(w, "event: end\ndata: {}\n\n")
