@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strconv"
@@ -56,6 +57,13 @@ func (s *server) setupMonitors(dataDir string) {
 	}
 	s.updates = updates.New(filepath.Join(dataDir, "updates.json"))
 	s.updates.Apps = s.tipi.CheckUpdates
+	// a versão nova pede poderes sobre o servidor que a instalada não tinha: não atualiza por aqui
+	s.updates.AppGuard = func(urn string) error {
+		if p := s.tipi.NewPrivileges(urn); len(p) > 0 {
+			return fmt.Errorf("a versão nova deste app pede poderes sobre o servidor que a instalada não tinha (%s): atualize pelo painel do Runtipi, conferindo o que muda", strings.Join(p, "; "))
+		}
+		return nil
+	}
 	s.updates.Query = host
 	// atualizar Linux e apps pela interface (decisão 47): só os pedidos de atualização
 	s.updates.Act = func(ctx context.Context, cmd string) ([]byte, error) {

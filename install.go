@@ -551,7 +551,9 @@ func (s *server) hStoreInstall(w http.ResponseWriter, r *http.Request) {
 				cfg, withSettings = out, true
 			}
 		}
-		if priv || withSettings {
+		// com a senha digitada (também quando o servidor pediu: loja não confiável, script 18) vai sempre
+		// pelo instalar-app-senha, que o script confere
+		if priv || withSettings || req.Password != "" {
 			if req.Password == "" || len(req.Password) > 200 || strings.ContainsAny(req.Password, "\r\n") {
 				writeJSON(w, 400, map[string]string{"error": "digite a Senha de configuração"})
 				return
@@ -562,6 +564,11 @@ func (s *server) hStoreInstall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if _, err := s.storeRun(r.Context(), cmd+" "+req.URN, in); err != nil {
+		if cmd == hostcmd.CmdAppInstall && strings.Contains(err.Error(), "não foi adicionada pelo BrunOS") {
+			// loja que não entrou pelo BrunOS (ex.: adicionada no painel do Runtipi): a tela pede a senha
+			writeJSON(w, 403, map[string]any{"error": err.Error(), "needPassword": true})
+			return
+		}
 		writeJSON(w, 502, map[string]string{"error": tipiError(err).Error(), "old": strconv.FormatBool(errors.Is(err, hostcmd.ErrOldScript))})
 		return
 	}

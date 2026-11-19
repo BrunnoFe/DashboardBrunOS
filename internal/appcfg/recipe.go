@@ -45,14 +45,19 @@ var capsRecipe = map[string]bool{"ALL": true, "SYS_ADMIN": true, "NET_ADMIN": tr
 
 // recipeHostOK diz se uma pasta da receita é das que todo app usa (do próprio app, mídia do Runtipi,
 // discos e pastas pessoais, hora certa, placa de vídeo) ou um volume com nome.
+//
+// Auditoria de 19/11/2026: o ".." é conferido ANTES de aceitar caminho relativo (com ".." suficientes
+// "../../../.." vira a raiz do servidor), "~" (pasta pessoal) não é aceito, a pasta app-data inteira do
+// Runtipi não é mais "comum" (tem os dados e as senhas de todos os apps, inclusive as chaves do BrunOS)
+// e, dentro de /home, a pasta pessoal inteira e as pastas ocultas (.ssh, .config...) contam como privilégio.
 func recipeHostOK(h string) bool {
-	if !strings.HasPrefix(h, "/") && !strings.HasPrefix(h, "$") {
-		return true // volume com nome ou caminho relativo à pasta do app
-	}
-	if strings.Contains(h, "docker.sock") || strings.Contains(h, "..") {
+	if strings.Contains(h, "docker.sock") || strings.Contains(h, "..") || strings.HasPrefix(h, "~") {
 		return false
 	}
-	for _, p := range []string{"${APP_DATA_DIR}", "$APP_DATA_DIR", "${ROOT_FOLDER_HOST}/media", "${ROOT_FOLDER_HOST}/app-data"} {
+	if !strings.HasPrefix(h, "/") && !strings.HasPrefix(h, "$") {
+		return true // volume com nome (conferido à parte) ou caminho relativo à pasta do app
+	}
+	for _, p := range []string{"${APP_DATA_DIR}", "$APP_DATA_DIR", "${ROOT_FOLDER_HOST}/media"} {
 		if h == p || strings.HasPrefix(h, p+"/") {
 			return true
 		}
@@ -61,7 +66,110 @@ func recipeHostOK(h string) bool {
 		return false // outra variável: não dá para saber onde cai
 	}
 	c := path.Clean(h)
-	return livres[c] || strings.HasPrefix(c, "/mnt/") || strings.HasPrefix(c, "/home/") || strings.HasPrefix(c, "/dev/dri")
+	if rest, ok := strings.CutPrefix(c, "/home/"); ok {
+		parts := strings.Split(rest, "/")
+		if len(parts) < 2 { // /home/<usuário> inteira: tem .ssh, .bashrc...
+			return false
+		}
+		for _, p := range parts {
+			if strings.HasPrefix(p, ".") {
+				return false
+			}
+		}
+		return true
+	}
+	return livres[c] || strings.HasPrefix(c, "/mnt/") || strings.HasPrefix(c, "/dev/dri")
+}
+
+// fileHostOK confere um arquivo do servidor citado pela receita (env_file, secrets/configs file:):
+// só arquivos da própria pasta do app (caminho relativo sem "..").
+func fileHostOK(h string) bool {
+	return h != "" && !strings.HasPrefix(h, "/") && !strings.HasPrefix(h, "$") && !strings.HasPrefix(h, "~") && !strings.Contains(h, "..")
+}
+
+// maxResolved: quantos nós a árvore pode ter depois de resolver as âncoras do YAML (contra "bomba" de aliases).
+const maxResolved = 200000
+
+// resolveYAML devolve uma cópia da árvore com as âncoras (&x / *x) trocadas pelo conteúdo e as chaves de
+// mescla (<<) aplicadas, como o docker compose faz. Sem isso, "privileged: *t" ou "<<: *perigoso"
+// passavam despercebidos. ok = false quando a árvore resolvida passa de maxResolved nós.
+func resolveYAML(n *yaml.Node) (*yaml.Node, bool) {
+	budget := maxResolved
+	var walk func(n *yaml.Node, depth int) *yaml.Node
+	walk = func(n *yaml.Node, depth int) *yaml.Node {
+		budget--
+		if n == nil || budget < 0 || depth > 100 {
+			return nil
+		}
+		if n.Kind == yaml.AliasNode {
+			return walk(n.Alias, depth+1)
+		}
+		cp := *n
+		cp.Content = nil
+		cp.Anchor = ""
+		switch n.Kind {
+		case yaml.DocumentNode, yaml.SequenceNode:
+			for _, c := range n.Content {
+				if r := walk(c, depth+1); r != nil {
+					cp.Content = append(cp.Content, r)
+				}
+			}
+		case yaml.MappingNode:
+			explicit := map[string]bool{}
+			var merged []*yaml.Node
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				k, v := n.Content[i], walk(n.Content[i+1], depth+1)
+				if v == nil {
+					continue
+				}
+				if k.Value == "<<" {
+					srcs := []*yaml.Node{v}
+					if v.Kind == yaml.SequenceNode {
+						srcs = v.Content
+					}
+					for _, m := range srcs {
+						if m.Kind == yaml.MappingNode {
+							merged = append(merged, m.Content...)
+						}
+					}
+					continue
+				}
+				explicit[k.Value] = true
+				cp.Content = append(cp.Content, k, v)
+			}
+			for i := 0; i+1 < len(merged); i += 2 {
+				if !explicit[merged[i].Value] {
+					explicit[merged[i].Value] = true
+					cp.Content = append(cp.Content, merged[i], merged[i+1])
+				}
+			}
+		}
+		return &cp
+	}
+	r := walk(n, 0)
+	return r, budget >= 0 && r != nil
+}
+
+// stringsOf: um valor que pode ser texto ou lista de textos (env_file, aliases...).
+func stringsOf(n *yaml.Node) []string {
+	if n == nil {
+		return nil
+	}
+	if n.Kind == yaml.ScalarNode {
+		return []string{n.Value}
+	}
+	var out []string
+	for _, c := range seqOf(n) {
+		switch c.Kind {
+		case yaml.ScalarNode:
+			out = append(out, c.Value)
+		case yaml.MappingNode: // env_file: - path: x
+			if p := mapGet(c, "path"); p != nil {
+				out = append(out, p.Value)
+			}
+		}
+	}
+	return out
 }
 
 // niceHost escreve a pasta do Runtipi de um jeito que se entende ("${ROOT_FOLDER_HOST}/x" → "do Runtipi /x").
@@ -90,9 +198,61 @@ func Privileges(root *yaml.Node) []string {
 			out = append(out, s)
 		}
 	}
+	root, ok := resolveYAML(root)
+	if !ok {
+		add("Receita com atalhos do YAML demais para o BrunOS conferir")
+		return out
+	}
+	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) == 1 {
+		root = root.Content[0]
+	}
+	if mapGet(root, "include") != nil {
+		add("Inclui outros arquivos (include), que o BrunOS não confere")
+	}
+	// volumes com nome que na verdade apontam para uma pasta do servidor (driver_opts com bind/device)
+	namedHost := map[string]bool{}
+	for _, vname := range mapKeys(mapGet(root, "volumes")) {
+		v := mapGet(mapGet(root, "volumes"), vname)
+		if d := mapGet(v, "driver"); (d != nil && d.Value != "" && d.Value != "local") || mapGet(v, "driver_opts") != nil {
+			namedHost[vname] = true
+		}
+	}
+	for _, top := range []string{"secrets", "configs"} {
+		sec := mapGet(root, top)
+		for _, k := range mapKeys(sec) {
+			if f := mapGet(mapGet(sec, k), "file"); f != nil && !fileHostOK(f.Value) {
+				add("Lê o arquivo " + niceHost(f.Value) + " do servidor (" + top + ")")
+			}
+		}
+	}
 	svcs := mapGet(root, "services")
 	for _, name := range mapKeys(svcs) {
 		s := mapGet(svcs, name)
+		if mapGet(s, "extends") != nil {
+			add("Herda de outro arquivo ou serviço (extends), que o BrunOS não confere")
+		}
+		for _, f := range stringsOf(mapGet(s, "env_file")) {
+			if !fileHostOK(f) {
+				add("Lê variáveis de um arquivo de fora do app (env_file: " + niceHost(f) + ")")
+			}
+		}
+		// um app que se chama "brunos" na rede se passaria pelo BrunOS (ou pelo proxy do Docker dele)
+		names := []string{}
+		for _, k := range []string{"hostname", "container_name"} {
+			if v := mapGet(s, k); v != nil {
+				names = append(names, v.Value)
+			}
+		}
+		if nets := mapGet(s, "networks"); nets != nil && nets.Kind == yaml.MappingNode {
+			for _, nn := range mapKeys(nets) {
+				names = append(names, stringsOf(mapGet(mapGet(nets, nn), "aliases"))...)
+			}
+		}
+		for _, n := range names {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(n)), "brunos") {
+				add("Usa o nome do BrunOS na rede (" + n + ")")
+			}
+		}
 		if v := mapGet(s, "privileged"); v != nil && strings.EqualFold(v.Value, "true") {
 			add("Controle total do servidor (privileged)")
 		}
@@ -149,6 +309,8 @@ func Privileges(root *yaml.Node) []string {
 				add("Controla o Docker do servidor (socket do Docker): equivale a controle total")
 			case !recipeHostOK(h):
 				add("Mexe na pasta " + niceHost(h) + " do servidor")
+			case namedHost[h]:
+				add("Volume que aponta para uma pasta do servidor (" + h + ")")
 			}
 		}
 	}

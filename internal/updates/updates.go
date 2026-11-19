@@ -100,10 +100,13 @@ type state struct {
 
 // Checker faz as conferências e acompanha as atualizações.
 type Checker struct {
-	File  string
-	Apps  func() []runtipi.Update
-	Query func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (leitura)
-	Act   func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (atualizar)
+	File string
+	// AppGuard, se definido, confere um app antes de atualizar (ex.: a versão nova pede privilégios que a
+	// instalada não tinha); erro = não atualiza por aqui.
+	AppGuard func(urn string) error
+	Apps     func() []runtipi.Update
+	Query    func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (leitura)
+	Act      func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (atualizar)
 	// UpgradeScript troca o script do servidor pelo desta versão (assinado). nil = sem assinatura.
 	UpgradeScript func(ctx context.Context) error
 	Events        *events.Store

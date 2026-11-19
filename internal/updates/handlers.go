@@ -50,6 +50,12 @@ func (c *Checker) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 			writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
 			return
 		}
+		if body.Kind == "app" && c.AppGuard != nil {
+			if err := c.AppGuard(body.URN); err != nil {
+				writeJSON(w, 409, map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		if err := c.Start(r.Context(), body.Kind, body.URN, body.Backup); err != nil {
 			code := 502
 			switch {
