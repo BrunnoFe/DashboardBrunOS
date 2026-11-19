@@ -73,8 +73,10 @@ const (
 	// 15 = "instalar-app-senha" (instalar com a Senha de configuração e os Ajustes juntos),
 	// "ajustes-desfazer" (tira os Ajustes de uma instalação que falhou) e "ajustes-ler" também de app que
 	// não está instalado (o Runtipi não apaga os Ajustes ao desinstalar), 0.21.0; 16 = "reiniciar" e
-	// "cancelar-desligar" (menu de energia: desligar/reiniciar em 1 minuto, com cancelar), 0.25.0.
-	ScriptVersion = 16
+	// "cancelar-desligar" (menu de energia: desligar/reiniciar em 1 minuto, com cancelar), 0.25.0;
+	// 17 = o menu de energia espera num temporizador do systemd (o "--when=+1min" cria o /run/nologin, que
+	// barrava a chave do BrunOS e impedia cancelar) e ganha "desligar-agendado", 0.25.1.
+	ScriptVersion = 17
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -89,7 +91,10 @@ const (
 	// script 16 (0.25.0): menu de energia. Desligar e reiniciar esperam 1 minuto no servidor.
 	CmdReboot         = "reiniciar"
 	CmdCancelShutdown = "cancelar-desligar" // cancela o desligar/reiniciar agendado
-	CmdTailscale      = "tailscale"         // só lê: tailscale status --json (script 3)
+	// script 17 (0.25.1): desligar pelo menu, no mesmo temporizador do "reiniciar" (o "desligar" da bateria
+	// continua com o --when=+1min, que não precisa ser cancelado pela chave)
+	CmdShutdownLater = "desligar-agendado"
+	CmdTailscale     = "tailscale" // só lê: tailscale status --json (script 3)
 	// script 4 (0.11.0) e 5 (0.11.2), todos só leitura:
 	CmdEnergy  = "energia"      // contador do RAPL (energy_uj) e o limite dele
 	CmdUpdates = "atualizacoes" // apt-check, reboot-required e a lista de pacotes
@@ -327,7 +332,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 16: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 17: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -352,7 +357,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=16
+VERSAO=17
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -429,7 +434,7 @@ case "$acao" in
     # nunca pela chave do BrunOS: quem invadisse o BrunOS cadastraria a senha dele
     [ "$via_ssh" = 0 ] || falha "a Senha de configuração só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
-  desligar|reiniciar|cancelar-desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  desligar|reiniciar|desligar-agendado|cancelar-desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
     [ $# -eq 2 ] || falha "pedido inválido"
     disco_ok "$valor" || falha "disco inválido" ;;
@@ -673,10 +678,24 @@ feito=0
 case "$acao" in
   desligar)
     exec systemctl poweroff --check-inhibitors=no --when=+1min ;;
-  reiniciar)
-    exec systemctl reboot --check-inhibitors=no --when=+1min ;;
+  reiniciar|desligar-agendado)
+    # menu de energia: espera 1 minuto num temporizador do systemd. Não usa "systemctl --when=+1min": ele
+    # cria o /run/nologin, que barra o login da chave do BrunOS e impedia o pedido de cancelar.
+    command -v systemd-run >/dev/null 2>&1 || falha "este servidor não tem systemd-run" 3
+    if systemctl is-active --quiet brunos-energia.timer; then falha "já tem um desligamento ou reinício agendado" 4; fi
+    systemctl reset-failed brunos-energia.timer brunos-energia.service >/dev/null 2>&1 || true
+    if [ "$acao" = reiniciar ]; then o=reboot; else o=poweroff; fi
+    systemd-run --unit=brunos-energia --on-active=60 --timer-property=AccuracySec=1s --collect --quiet \
+      --description="Pedido de energia do BrunOS" "$(command -v systemctl)" "$o" --check-inhibitors=no
+    echo "agendado"
+    exit 0 ;;
   cancelar-desligar)
-    # systemd 254+ cancela com --when=cancel; nos mais antigos, o shutdown -c faz o mesmo
+    if systemctl is-active --quiet brunos-energia.timer; then
+      if systemctl stop brunos-energia.timer; then echo "cancelado"; exit 0; fi
+      falha "não deu para cancelar o pedido no servidor" 3
+    fi
+    # agendado do jeito antigo (script 16, "--when"): systemd 254+ cancela com --when=cancel; nos mais
+    # antigos, o shutdown -c faz o mesmo
     if systemctl poweroff --when=cancel 2>/dev/null || shutdown -c 2>/dev/null; then echo "cancelado"; exit 0; fi
     falha "não deu para cancelar no servidor (talvez já não houvesse nada agendado)" 3 ;;
   tailscale)

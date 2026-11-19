@@ -59,9 +59,13 @@ func TestManualRebootAndCancel(t *testing.T) {
 	if len(got) != 2 || got[0] != "O servidor vai reiniciar em 1 minuto" || got[1] != "Reinício cancelado" {
 		t.Fatalf("avisos: %v", got)
 	}
-	// depois de cancelar, um pedido novo avisa de novo (a chave saiu dos ativos)
+	// depois de cancelar, um pedido novo avisa de novo (a chave saiu dos ativos); o desligar do menu vai
+	// pelo "desligar-agendado" (temporizador), não pelo "desligar" da bateria
 	if _, err := m.RequestManual(context.Background(), ActShutdown); err != nil {
 		t.Fatal(err)
+	}
+	if last := (*sent)[len(*sent)-1]; last != "desligar-agendado" {
+		t.Fatalf("desligar pelo menu mandou %q", last)
 	}
 	if got := titles(ev); got[len(got)-1] != "O servidor vai desligar em 1 minuto" {
 		t.Fatalf("segundo pedido sem aviso: %v", got)

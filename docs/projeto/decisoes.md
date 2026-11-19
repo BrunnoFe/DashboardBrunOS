@@ -170,10 +170,12 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     (escolha do Bruno: cada ícone é pequeno).
 64. **Desligar e reiniciar pela interface: senha + 1 minuto no próprio servidor** (0.25.0, escolhas do
     Bruno): menu de energia depois do sino, botões nas Configurações e "Reiniciar agora" nas Atualizações.
-    Pede a senha do BrunOS (com o mesmo limite de tentativas do login); o script 16 agenda com
-    `systemctl reboot|poweroff --check-inhibitors=no --when=+1min`, então quem desliga é o servidor (mesmo
-    que o BrunOS caia) e cancelar manda `cancelar-desligar` (`--when=cancel`, ou `shutdown -c` num systemd
-    antigo). Sem a conexão da Energia, os botões aparecem e levam à janela Energia. Não usa o modo
+    Pede a senha do BrunOS (com o mesmo limite de tentativas do login); o script agenda um temporizador do
+    systemd (`systemd-run --unit=brunos-energia --on-active=60 … systemctl reboot|poweroff`), então quem
+    desliga é o servidor (mesmo que o BrunOS caia), e cancelar (`cancelar-desligar`) para o temporizador.
+    Na 0.25.0 era `systemctl --when=+1min`: o logind cria o `/run/nologin`, o PAM barra o login da chave do
+    BrunOS e não dava para cancelar (o servidor do Bruno reiniciou no teste). Por isso o desligar do menu
+    é o `desligar-agendado`; o `desligar` da bateria continua com `--when` (lá ninguém cancela pela chave). Sem a conexão da Energia, os botões aparecem e levam à janela Energia. Não usa o modo
     simulação (é um pedido explícito). Recusado: desligar na hora, sem a espera para cancelar.
     Detalhes dos avisos: só os de nível Aviso/Importante abrem no sino; os textos ficam no frontend
     (`notifdetails.js`, por tipo), e não no servidor como planejado, para valer também para os avisos já

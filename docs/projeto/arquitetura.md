@@ -255,8 +255,8 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   `{protect}` aplica pelo script e grava `chargeLimit`/`chargeProtect` em `power.json`; a cada 10 min,
   só se houver suporte e pedido, relê um arquivo e reaplica (no máximo a cada 30 min).
   **Desligar/reiniciar pela interface** (`manual.go`, 0.25.0, decisão 64): `POST /api/power/manual
-  {action: desligar|reiniciar, password}` (em `main.go`, que confere a senha) → `RequestManual` manda o
-  pedido ao script (agenda para +1 min), guarda `manual {action, deadline}` só na memória e emite o aviso
+  {action: desligar|reiniciar, password}` (em `main.go`, que confere a senha) → `RequestManual` manda
+  `reiniciar` ou `desligar-agendado` ao script (temporizador `brunos-energia.timer` de 1 min, 0.25.1), guarda `manual {action, deadline}` só na memória e emite o aviso
   `power-manual` (Importante, Key `power-manual`, `meta {deadline, action}`); `POST /api/power/manual/cancel`
   → `cancelar-desligar` e o aviso `power-manual-cancelled`. Sem conexão pronta = 409 com `setup: true`;
   script antigo ("pedido inválido") = mensagem de que ele se atualiza sozinho. O pedido some do estado 2 min

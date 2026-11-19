@@ -1,9 +1,10 @@
 package power
 
 // Desligar e reiniciar pedidos pela interface (0.25.0, decisão 64): o menu de energia e as Configurações
-// mandam o pedido com a senha do BrunOS (conferida em main.go). O script do servidor agenda com
-// "systemctl ... --when=+1min", então quem decide desligar é o próprio servidor: mesmo que o BrunOS caia,
-// o desligamento acontece; cancelar manda "cancelar-desligar" ao script.
+// mandam o pedido com a senha do BrunOS (conferida em main.go). O script do servidor agenda um temporizador
+// do systemd para daqui a 1 minuto (0.25.1; antes era "systemctl --when=+1min", que cria o /run/nologin e
+// barrava a chave do BrunOS, então não dava para cancelar). Quem desliga é o próprio servidor: mesmo que o
+// BrunOS caia, o pedido acontece; cancelar manda "cancelar-desligar" ao script.
 
 import (
 	"context"
@@ -89,9 +90,15 @@ func (m *Monitor) RequestManual(ctx context.Context, action string) (*Manual, er
 	cfg := m.cfg
 	m.mu.Unlock()
 
+	// 0.25.1: o desligar do menu é o "desligar-agendado" (temporizador do systemd, dá para cancelar pela
+	// chave); o "desligar" da bateria usa --when=+1min, que barra novos logins até desligar
+	cmd := hostcmd.CmdReboot
+	if action == ActShutdown {
+		cmd = hostcmd.CmdShutdownLater
+	}
 	m.execMu.Lock()
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
-	out, err := m.HostRun(ctx, cfg, action)
+	out, err := m.HostRun(ctx, cfg, cmd)
 	cancel()
 	m.execMu.Unlock()
 	if err != nil {

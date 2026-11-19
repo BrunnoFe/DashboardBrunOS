@@ -163,6 +163,12 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   script 16 agenda para +1 min (`reiniciar`, `cancelar-desligar`), com contagem e Cancelar (decisão 64).
   **Detalhes dos avisos** Aviso/Importante no sino e balão clicável ("Ver detalhes"). Lição: o teste que
   cruza os avisos do Go com os textos achou o `os-reboot`, que eu não tinha listado.
+- 0.25.1: teste do Bruno: **não deu para cancelar o reinício** ("chave recusada") e o servidor reiniciou.
+  O `systemctl --when=+1min` faz o logind criar o `/run/nologin` e o PAM recusa qualquer login de usuário
+  comum até desligar (no registro do ssh: "Access denied ... by PAM account configuration"). Script 17:
+  `reiniciar` e o novo `desligar-agendado` esperam num temporizador do systemd (`brunos-energia.timer`),
+  que não bloqueia logins; cancelar para o temporizador. Lição: o teste com `systemctl` falso não pega
+  efeito colateral do systemd de verdade; conferir num systemd real (deu para fazer no WSL com `--user`).
 
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
