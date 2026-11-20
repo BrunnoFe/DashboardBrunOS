@@ -32,12 +32,31 @@ celular.
    cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão
    direito ("Abrir por…"), em Personalizar e no Monitor de apps.
 
+## Revisão de segurança de 19/11/2026 (branch `seguranca/auditoria-2026-11-19`, ainda sem versão)
+
+Feito na branch, com testes, aguardando revisão do Bruno antes de virar versão (os detalhes ficam no
+relatório privado):
+- Go 1.27 e `x/crypto` atualizado; `govulncheck` no CI.
+- Limite de tentativas de senha mais firme (inclusive na troca de senha) e prazos contra conexões lentas.
+- Lixeira, logos e configurações das lojas não seguem atalhos; integrações com credencial presa ao
+  endereço e destinos internos proibidos.
+- Loja: selo "Requer privilégios" mais rigoroso; adicionar loja passa a pedir a Senha de configuração
+  (o Bruno tinha dito em 17/11 que não precisava; entrou no lote aprovado em 19/11) e instalar sem senha
+  só de loja confiável (script do servidor 18).
+- Regras do proxy do Docker mais estreitas; CI com actions fixadas e assinatura num job separado.
+- Interface: escapes, sandbox na Janela de app, demonstração só onde não há servidor e dados genéricos.
+
+Ficaram para decidir (lotes 3 e 4 do relatório): Arquivos (pastas ocultas da Home e leitura de segredos)
+e Sessão (cookie entre portas, proxies confiáveis, lista de endereços aceitos, senha de novo nas ações
+destrutivas). Também em aberto: o proxy do Docker por arquivo de socket em vez da rede, e a chave do script
+aceitar só a rede do Docker (os dois precisam ser testados no servidor real).
+
 ## Em aberto
 
 - Tirar a conversão das preferências antigas de widgets (`widgets2` v1/v2 → v3, em `app.js`) quando o Bruno
   quiser; a 0.13.0 já foi testada.
-- Senha também para parar app e para adicionar ou remover lojas: o Bruno disse que não precisa por
-  enquanto (17/11/2026).
+- Senha também para parar app e para remover lojas: o Bruno disse que não precisa por enquanto
+  (17/11/2026). Adicionar loja passou a pedir na revisão de segurança de 19/11.
 - Itens do `ideias-futuras.md` que o Bruno pedir passam para cá, com versão.
 
 ## Como lançar uma versão

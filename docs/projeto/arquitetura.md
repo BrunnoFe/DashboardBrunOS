@@ -328,6 +328,11 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     de até 20 pastas), `nextcloud.go` (`/ocs/v2.php/apps/serverinfo/api/v1/info?skipApps&skipUpdate`,
     `NC-Token` sem usuário ou autenticação básica com usuário).
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
+- **`limits.go`** (revisão de segurança de 19/11/2026): prazo para o corpo dos pedidos (anda junto com os
+  dados nos envios de arquivo e sai quando o corpo termina), prazo de escrita nos SSE e teto de conexões
+  abertas. `internal/integrations/ssrf.go`: destinos que as integrações nunca alcançam (o próprio container,
+  link-local, o proxy do Docker), conferidos no IP já resolvido. `web/static/js/safe.js`: `cssVal`,
+  `safeUrl` e `demoAllowed` (funções puras, `tests/security.test.mjs`).
 
 ### API
 

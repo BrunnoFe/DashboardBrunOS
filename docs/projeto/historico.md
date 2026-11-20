@@ -177,6 +177,20 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   todos os testes de JS. Lição: o Traefik responde "404 page not found" para nome desconhecido, o mesmo
   texto do 404 padrão do Go; por isso só esse corpo exato conta como "não roteado".
 
+## Revisão de segurança (19/11/2026, branch, ainda sem versão)
+Auditoria completa (relatório só local, em `docs/privado/`) e correções dos lotes aprovados pelo Bruno: Go
+1.27 e `x/crypto` novo com `govulncheck` no CI, limite de senha e prazos de conexão, atalhos (links
+simbólicos) recusados na lixeira e nos arquivos das lojas, credencial das integrações presa ao endereço,
+selo "Requer privilégios" mais rigoroso, script do servidor 18, proxy do Docker mais estreito, CI com actions
+fixadas por hash e interface com escapes e sandbox. Lições:
+- O Go 1.24 saiu do suporte quando o 1.26 foi lançado: o `govulncheck` agora barra o CI se aparecer falha
+  conhecida, e a versão do Go precisa subir junto.
+- `go run` dentro da VM do Docker Desktop falha com "permission denied" porque o `/tmp` dela não executa
+  programas: usar `GOTMPDIR` fora do `/tmp`.
+- Prazo de leitura no corpo do pedido: tirar o prazo só quando o corpo termina (EOF). Tirar também em erro
+  deixava o servidor esperando para sempre o resto de um corpo que nunca chega.
+- O proxy do Docker (wollomatic) já põe `^...$` sozinho nas regras.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.
