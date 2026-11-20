@@ -32,10 +32,9 @@ celular.
    cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão
    direito ("Abrir por…"), em Personalizar e no Monitor de apps.
 
-## Revisão de segurança de 19/11/2026 (branch `seguranca/auditoria-2026-11-19`, ainda sem versão)
+## Revisão de segurança de 19/11/2026 (0.27.0, lançada em 19/11, aguardando teste do Bruno)
 
-Feito na branch, com testes, aguardando revisão do Bruno antes de virar versão (os detalhes ficam no
-relatório privado):
+Os detalhes ficam no relatório privado. O que entrou:
 - Go 1.27 e `x/crypto` atualizado; `govulncheck` no CI.
 - Limite de tentativas de senha mais firme (inclusive na troca de senha) e prazos contra conexões lentas.
 - Lixeira, logos e configurações das lojas não seguem atalhos; integrações com credencial presa ao

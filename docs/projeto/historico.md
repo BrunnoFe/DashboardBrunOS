@@ -177,7 +177,7 @@ falhava com `x509`; a imagem leva `ca-certificates.crt`); listas vazias vão com
   todos os testes de JS. Lição: o Traefik responde "404 page not found" para nome desconhecido, o mesmo
   texto do 404 padrão do Go; por isso só esse corpo exato conta como "não roteado".
 
-## Revisão de segurança (19/11/2026, branch, ainda sem versão)
+## 0.27.0 (19/11/2026): revisão de segurança
 Auditoria completa (relatório só local, em `docs/privado/`) e correções dos lotes aprovados pelo Bruno: Go
 1.27 e `x/crypto` novo com `govulncheck` no CI, limite de senha e prazos de conexão, atalhos (links
 simbólicos) recusados na lixeira e nos arquivos das lojas, credencial das integrações presa ao endereço,
