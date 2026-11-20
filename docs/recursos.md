@@ -16,7 +16,7 @@ Tudo o que o BrunOS faz, assunto por assunto.
 
 ## Arquivos
 
-Gerenciador completo, com abas: lixeira, envio com retomada, zip, busca, editor de texto, extrair arquivos, caça a duplicados e mapa do espaço. Em *Arquivos → Discos → Mapear* você escolhe quais discos aparecem.
+Gerenciador completo, com abas: lixeira, envio com retomada, zip, busca, editor de texto, extrair arquivos, caça a duplicados e mapa do espaço. Em *Arquivos → Discos → Mapear* você escolhe quais discos aparecem. Por segurança, os arquivos ocultos da pasta pessoal (como `.ssh` e `.bashrc`) só podem ser lidos (para mudar, use o Terminal), e senhas e chaves (dados do BrunOS, configurações secretas dos apps, chaves privadas) nem aparecem.
 
 ## Discos
 
@@ -58,6 +58,6 @@ O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pa
 
 Em *Configurações → Sistema → Terminal* (ou `Ctrl+K` → "terminal"), o BrunOS abre um terminal no servidor por SSH, com o seu usuário e senha (ou chave privada). Na primeira conexão ele mostra a impressão digital da chave do servidor para você conferir com `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
 
-O terminal tem até 4 abas, botão de minimizar (as abas continuam rodando e o ícone aparece na dock), comandos salvos em botões e conexões salvas. Com a *Chave do Terminal* (no ⚙ da janela), ele entra direto no servidor sem pedir a senha do SSH: basta colar uma vez no servidor o comando que a janela mostra. Antes de fechar uma aba, o BrunOS confere se ainda tem algo rodando nela e pergunta; o tempo para fechar abas esquecidas fica em *Configurações → Sistema*.
+O terminal tem até 4 abas, botão de minimizar (as abas continuam rodando e o ícone aparece na dock), comandos salvos em botões e conexões salvas. Com a *Chave do Terminal* (no ⚙ da janela), ele entra direto no servidor sem pedir a senha do SSH: basta colar uma vez no servidor o comando que a janela mostra (a chave fica trancada pela senha do BrunOS, pedida na primeira vez que o Terminal a usa em cada acesso). As abas são de cada navegador: para continuar no celular uma aba aberta no computador, o BrunOS pede a senha. Antes de fechar uma aba, o BrunOS confere se ainda tem algo rodando nela e pergunta; o tempo para fechar abas esquecidas fica em *Configurações → Sistema*.
 
 Precisa do `openssh-server` ligado no servidor. Para desligar o recurso, use `BRUNOS_TERMINAL=false`.

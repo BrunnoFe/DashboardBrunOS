@@ -332,12 +332,25 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
   dados nos envios de arquivo e sai quando o corpo termina), prazo de escrita nos SSE e teto de conexões
   abertas. `internal/integrations/ssrf.go`: destinos que as integrações nunca alcançam (o próprio container,
   link-local, o proxy do Docker), conferidos no IP já resolvido. `web/static/js/safe.js`: `cssVal`,
-  `safeUrl` e `demoAllowed` (funções puras, `tests/security.test.mjs`).
+  `safeUrl`, `demoAllowed` e `withKey` (funções puras, `tests/security.test.mjs`).
+- **`guard.go`** (lote 4 da revisão): proxies confiáveis (`BRUNOS_TRUSTED_PROXIES`, padrão: os nomes do
+  container do Traefik do Runtipi; só deles vale o `X-Forwarded-For`/`-Proto`) e nomes de endereço aceitos
+  (`hostCheck`, 421 para o resto: IPs, nomes sem ponto, `.local .lan .home .internal .home.arpa .localdomain
+  .localhost .ts.net`, domínio local do Runtipi e subdomínios, domínios do app `brunos`, preferência
+  `allowedHosts` e `BRUNOS_HOSTS`). `internal/files/protect.go` (lote 3): ocultos da pasta pessoal
+  (`<raiz place>/<usuário>/.*`) só leitura (`ErrProtected` → 403) e segredos fora do Arquivos (pasta de dados
+  do BrunOS e `app.env`/`.env` do Runtipi reconhecidos pelo caminho real, `~/.ssh/id_*`).
 
 ### API
 
-Todas as rotas `/api/*` exceto health/public exigem sessão (cookie). Métodos que alteram exigem o
-cabeçalho `X-BrunOS: 1` (e origem igual). Erros: `{"error": "mensagem em pt-BR"}`.
+Todas as rotas `/api/*` exceto health/public exigem sessão (cookie) **e o código da aba**: o login/setup
+devolve `key`, a interface guarda no `localStorage` (`brunos.k`, separado por porta, ao contrário do cookie) e
+manda em `X-BrunOS` (nos GET que o navegador faz sozinho, imagem/download/SSE, em `?k=`; logos, ícones e papéis
+de parede não precisam). Sessões gravadas guardam só o hash do código. Métodos que alteram exigem o cabeçalho
+`X-BrunOS` (qualquer valor; `1` antes do login) e origem igual. Ações destrutivas (`sudoRoutes` em `main.go`,
+remover loja, trocar o servidor da Energia) respondem `403 {"reauth": true}` sem a senha confirmada nos últimos
+5 min (`POST /api/auth/reauth {password}`; toda senha certa confirmada também conta). Abas do Terminal são da
+Sessão que abriu (`mine` na lista; `POST /api/terminal/adopt {ids, password}`). Erros: `{"error": "mensagem em pt-BR"}`.
 
 ```
 GET  /api/health                      GET  /api/public · /api/public/wallpaper

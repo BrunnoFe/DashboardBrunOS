@@ -189,6 +189,22 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     precisa resolver `*.server.lan`), sem conferir o certificado (é do próprio Runtipi; só se testa a
     rota, nada é enviado). Antes, o Automático escolhia o domínio sempre que o Runtipi o anotava, mesmo
     quando o Traefik não roteava o app.
+66. **Sessão presa à aba e senha de novo no que é destrutivo** (revisão de segurança, lote 4, escolhido
+    pelo Bruno em 19/11/2026): (a) o cookie vai para qualquer porta do mesmo IP, então um app em outra porta
+    usaria a Sessão do BrunOS; agora todo pedido leva também o código da aba, guardado no `localStorage`
+    (separado por porta). Sessões antigas não têm código: depois de atualizar, entra-se de novo uma vez.
+    (b) A Chave do Terminal não abre mais no login nem no desbloqueio: pede a senha ao usar. (c) Ações
+    destrutivas pedem a senha se ela não foi confirmada nos últimos 5 min ("modo sudo"). (d) Abas do
+    Terminal são de cada Sessão; trazer de outro navegador pede a senha. (e) `X-Forwarded-For` só do
+    Traefik. (f) Nomes de endereço fora da lista de casa recebem 421 (DNS rebinding); IPs sempre valem,
+    então errar a lista não tranca ninguém fora. Recusado: CSRF por token em formulário (o cabeçalho próprio
+    já resolve) e pedir a senha em toda ação (incômodo demais no dia a dia).
+67. **Arquivos: ocultos da Home só leitura, segredos invisíveis** (lote 3, escolhido pelo Bruno em
+    19/11/2026): escrever em `.ssh/authorized_keys` ou `.bashrc` daria entrada no servidor a quem roubasse
+    uma Sessão; mudar esses arquivos fica para o Terminal. A pasta de dados do BrunOS, o `app.env` de cada
+    app, o `.env` do Runtipi e as chaves privadas de `.ssh` somem da lista, da busca, do zip, dos duplicados,
+    do mapa do espaço e das cópias. A conferência é no caminho real (atalhos e montagens repetidas não
+    escapam). Recusado: esconder todos os ocultos (o Bruno usa o Arquivos para consultar configurações).
 
 ## Loja, Garimpo, instalação
 

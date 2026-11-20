@@ -45,10 +45,17 @@ Os detalhes ficam no relatório privado. O que entrou:
 - Regras do proxy do Docker mais estreitas; CI com actions fixadas e assinatura num job separado.
 - Interface: escapes, sandbox na Janela de app, demonstração só onde não há servidor e dados genéricos.
 
-Ficaram para decidir (lotes 3 e 4 do relatório): Arquivos (pastas ocultas da Home e leitura de segredos)
-e Sessão (cookie entre portas, proxies confiáveis, lista de endereços aceitos, senha de novo nas ações
-destrutivas). Também em aberto: o proxy do Docker por arquivo de socket em vez da rede, e a chave do script
-aceitar só a rede do Docker (os dois precisam ser testados no servidor real).
+## Revisão de segurança, lotes 3 e 4 (prontos em 20/11/2026, ainda não lançados)
+
+Escolhas do Bruno em 19/11: ocultos da Home só leitura; segredos somem do Arquivos (pasta de dados do
+BrunOS, app.env dos apps, .env do Runtipi, chaves privadas de .ssh); código da aba + Terminal (a Chave do
+Terminal pede a senha ao abrir o Terminal, não no login); senha de novo nas ações destrutivas (5 min); IP
+só do Traefik; Abas do Terminal por Sessão; nomes de endereço aceitos (Configurações → Sistema → Endereços
+aceitos). Depois de atualizar, todo mundo precisa entrar de novo uma vez.
+
+Também em aberto: o proxy do Docker por arquivo de socket em vez da rede, e a chave do script aceitar só a
+rede do Docker (os dois precisam ser testados no servidor real). Os processos com a linha de comando inteira
+(V13 do relatório) não entraram em nenhum lote.
 
 ## Em aberto
 
