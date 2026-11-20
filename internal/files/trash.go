@@ -88,6 +88,9 @@ func (s *Service) Trash(rootID string, rels []string) error {
 		if err != nil {
 			return err
 		}
+		if err := r.guardWrite(src); err != nil { // ocultos da pasta pessoal: só leitura (protect.go)
+			return err
+		}
 		st, err := os.Lstat(src)
 		if err != nil {
 			return mapErr(err)
@@ -183,6 +186,9 @@ func (s *Service) TrashRestore(rootID, id string) (string, error) {
 		dir, dirRel = r.real, "." // a pasta original sumiu (ou virou link para fora): volta para a raiz
 	}
 	name := uniqueName(dir, it.Name)
+	if err := r.guardWrite(filepath.Join(dir, name)); err != nil {
+		return "", err
+	}
 	holder := filepath.Join(r.trashDir(), id)
 	if err := os.Rename(filepath.Join(holder, it.Name), filepath.Join(dir, name)); err != nil {
 		return "", mapErr(err)

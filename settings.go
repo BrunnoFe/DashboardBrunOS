@@ -91,6 +91,7 @@ func (s *server) hSettingsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.integ.SetUsage(m) // os widgets dizem quais integrações precisam ser buscadas
+	s.hostsChanged()    // "Endereços aceitos" pode ter mudado
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -188,5 +189,6 @@ func (s *server) hSettingsRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.integ.SetUsage(m)
+	s.hostsChanged()
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

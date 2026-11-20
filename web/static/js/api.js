@@ -1,13 +1,40 @@
 // Cliente da API do BrunOS. Sem backend (ex.: abrindo o HTML direto, ou no artefato
 // de pré-visualização) cai num modo demonstração com dados simulados.
-import { emit } from './ui.js';
-import { demoAllowed } from './safe.js';
+import { emit, promptDialog } from './ui.js';
+import { demoAllowed, withKey } from './safe.js';
 import { cdnIcon, ICON_MAX } from './icons.js';
 
-const H = { 'X-BrunOS': '1' };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* sem storage: só não retoma depois de recarregar */ } };
 
-async function call(method, path, body, { raw = false } = {}) {
-  const opts = { method, headers: { ...H }, credentials: 'same-origin' };
+// Código da aba (revisão de segurança, lote 4): o servidor entrega no login e confere em todo pedido.
+// Fica no localStorage, que (ao contrário do cookie) é separado por porta: um app aberto em outra porta
+// do mesmo servidor não consegue lê-lo, então não consegue usar a Sessão do BrunOS.
+const KEY_LS = 'brunos.k';
+// (lido a cada pedido: entrar de novo em outra aba deste navegador troca o código de todas)
+let memKey = '';
+const tabKey = () => lsGet(KEY_LS) || memKey;
+const setKey = (k) => { memKey = k || ''; lsSet(KEY_LS, memKey || null); };
+const hdr = () => ({ 'X-BrunOS': tabKey() || '1' });
+// endereços que o navegador busca sozinho (imagens, downloads, EventSource) levam o código em ?k=
+const K = (url) => withKey(url, tabKey());
+
+// Ações destrutivas pedem a senha de novo ("modo sudo" de 5 minutos): o servidor responde 403 com
+// reauth; aqui pede a senha, confirma e repete o pedido uma vez.
+let reauthing = null;
+function askReauth() {
+  reauthing ||= (async () => {
+    const pw = await promptDialog('Confirme sua senha', { password: true, okLabel: 'Continuar', label: 'Senha do BrunOS',
+      text: 'Esta ação mexe no servidor. Por segurança, digite a senha do BrunOS (vale por 5 minutos).' });
+    if (pw == null) return false;
+    await call('POST', '/api/auth/reauth', { password: pw });
+    return true;
+  })().finally(() => { reauthing = null; });
+  return reauthing;
+}
+
+async function call(method, path, body, { raw = false, retried = false } = {}) {
+  const opts = { method, headers: hdr(), credentials: 'same-origin' };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -19,6 +46,10 @@ async function call(method, path, body, { raw = false } = {}) {
   let data = null;
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('json')) data = await res.json();
+  if (res.status === 403 && data?.reauth && !retried && path !== '/api/auth/reauth') {
+    if (await askReauth()) return call(method, path, body, { raw, retried: true });
+    const e = new Error('Cancelado'); e.status = 403; e.cancelled = true; throw e;
+  }
   if (!res.ok) { const e = new Error(data?.error || `Erro ${res.status}`); e.status = res.status; e.data = data; throw e; }
   return data;
 }
@@ -27,15 +58,13 @@ const q = (o) => new URLSearchParams(o).toString();
 /* ── Envio em pedaços com retomada ───────────────────────────────── */
 const BIG_UPLOAD = 16 << 20, CHUNK = 8 << 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* sem storage: só não retoma depois de recarregar */ } };
 
 function sendChunk(id, offset, blob, onProgress, setXhr) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     setXhr(xhr);
     xhr.open('PUT', `/api/files/upload/chunk?${q({ id, offset })}`);
-    xhr.setRequestHeader('X-BrunOS', '1');
+    xhr.setRequestHeader('X-BrunOS', tabKey() || '1');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
@@ -89,9 +118,10 @@ function chunkedUpload(root, path, name, file, onProgress) {
 const real = {
   demo: false,
   public: () => call('GET', '/api/public'),
-  setup: (b) => call('POST', '/api/auth/setup', b),
-  login: (b) => call('POST', '/api/auth/login', b),
-  logout: () => call('POST', '/api/auth/logout', {}),
+  setup: async (b) => { const r = await call('POST', '/api/auth/setup', b); setKey(r?.key); return r; },
+  login: async (b) => { const r = await call('POST', '/api/auth/login', b); setKey(r?.key); return r; },
+  logout: () => call('POST', '/api/auth/logout', {}).finally(() => setKey('')),
+  reauth: (password) => call('POST', '/api/auth/reauth', { password }),
   me: () => call('GET', '/api/auth/me'),
   updateMe: (b) => call('PUT', '/api/auth/me', b),
   password: (b) => call('POST', '/api/auth/password', b),
@@ -127,7 +157,7 @@ const real = {
   wallpaperUrl: (name) => `/api/wallpapers/${encodeURIComponent(name)}`,
   publicWallpaperUrl: () => '/api/public/wallpaper',
   async uploadWallpaper(file) {
-    const res = await fetch('/api/wallpapers', { method: 'PUT', headers: { ...H, 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+    const res = await fetch('/api/wallpapers', { method: 'PUT', headers: { ...hdr(), 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Falha no envio');
     return data;
@@ -137,7 +167,7 @@ const real = {
   iconUrl: (name) => `/api/icons/${encodeURIComponent(name)}`,
   catalogIconUrl: (slug) => `/api/icons/di/${encodeURIComponent(slug)}`,
   async uploadIcon(file) {
-    const res = await fetch('/api/icons', { method: 'PUT', headers: { ...H, 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+    const res = await fetch('/api/icons', { method: 'PUT', headers: { ...hdr(), 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Falha no envio do ícone');
     return data;
@@ -148,7 +178,7 @@ const real = {
   streamStats(onInit, onPoint, onNotify, onMetrics, { onNote, onLocked } = {}) {
     let es, stopped = false, retry;
     const open = () => {
-      es = new EventSource('/api/stats/stream');
+      es = new EventSource(K('/api/stats/stream'));
       es.addEventListener('init', (e) => onInit(JSON.parse(e.data)));
       es.addEventListener('notify', (e) => onNotify?.(JSON.parse(e.data)));
       es.addEventListener('metrics', (e) => onMetrics?.(JSON.parse(e.data)));
@@ -168,7 +198,7 @@ const real = {
   historyNames: (prefixo) => call('GET', `/api/history/series?${q({ prefixo })}`),
   internet: () => call('GET', '/api/internet'),
   metricSeries: (id, range) => call('GET', `/api/metrics/series?${q({ id, range })}`),
-  integrationImage: (id, ref) => `/api/integrations/${encodeURIComponent(id)}/image?${q({ ref })}`,
+  integrationImage: (id, ref) => K(`/api/integrations/${encodeURIComponent(id)}/image?${q({ ref })}`),
   integrations: {
     kinds: () => call('GET', '/api/integrations/kinds'),
     list: () => call('GET', '/api/integrations'),
@@ -221,6 +251,8 @@ const real = {
     forget: (host, port) => call('POST', '/api/terminal/forget', { host, port }),
     list: () => call('GET', '/api/terminal/sessions'),
     busy: (id) => call('POST', '/api/terminal/busy', { id }),
+    // Abas abertas por outra Sessão (outro navegador): passam para esta com a senha do BrunOS
+    adopt: (ids, password) => call('POST', '/api/terminal/adopt', { ids, password }),
     key: {
       get: () => call('GET', '/api/terminal/key'),
       create: (password) => call('POST', '/api/terminal/key', { password }),
@@ -232,7 +264,7 @@ const real = {
     stream(id, { onData, onExit, onReplaced, onError, onLocked, replay = false }) {
       let es, stopped = false, fails = 0, first = true;
       const open = () => {
-        es = new EventSource(`/api/terminal/stream?${q({ id, ...(first && replay ? { replay: 1 } : {}) })}`);
+        es = new EventSource(K(`/api/terminal/stream?${q({ id, ...(first && replay ? { replay: 1 } : {}) })}`));
         first = false;
         es.addEventListener('ready', () => { fails = 0; });
         es.onmessage = (e) => { const bin = atob(e.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); onData(u8); };
@@ -272,7 +304,7 @@ const real = {
     containers: (urn) => call('GET', `/api/apps/containers?${q({ urn })}`),
     history: (urn, range = '24h') => call('GET', `/api/apps/history?${q({ urn, range })}`),
     async logs(urn, id, tail = 300) {
-      const res = await fetch(`/api/apps/logs?${q({ urn, id, tail })}`, { headers: H, credentials: 'same-origin' });
+      const res = await fetch(`/api/apps/logs?${q({ urn, id, tail })}`, { headers: hdr(), credentials: 'same-origin' });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erro ${res.status}`); }
       return res.text();
     },
@@ -280,7 +312,7 @@ const real = {
     logsPrev: (urn) => call('GET', `/api/apps/logs/prev?${q({ urn })}`),
     // linhas novas dos logs (SSE); devolve a função que para de acompanhar
     follow(urn, id, onLine, onEnd) {
-      const es = new EventSource(`/api/apps/logs/stream?${q({ urn, id })}`);
+      const es = new EventSource(K(`/api/apps/logs/stream?${q({ urn, id })}`));
       es.onmessage = (e) => onLine(JSON.parse(e.data));
       es.addEventListener('end', () => { es.close(); onEnd?.(); });
       es.onerror = () => { if (es.readyState === EventSource.CLOSED) onEnd?.(); };
@@ -302,11 +334,11 @@ const real = {
     restore: (root, id) => call('POST', '/api/files/trash/restore', { root, id }),
     trashDelete: (root, id) => call('POST', '/api/files/trash/delete', { root, id }),
     trashEmpty: (root = '') => call('POST', '/api/files/trash/empty', { root }),
-    rawUrl: (root, path, download) => `/api/files/raw?${q({ root, path, ...(download ? { download: 1 } : {}) })}`,
-    zipUrl: (root, paths) => `/api/files/zip?${new URLSearchParams([['root', root], ...paths.map((p) => ['p', p])])}`,
+    rawUrl: (root, path, download) => K(`/api/files/raw?${q({ root, path, ...(download ? { download: 1 } : {}) })}`),
+    zipUrl: (root, paths) => K(`/api/files/zip?${new URLSearchParams([['root', root], ...paths.map((p) => ['p', p])])}`),
     text: (root, path) => call('GET', `/api/files/text?${q({ root, path })}`),
     async saveText(root, path, text, mtime) {
-      const res = await fetch(`/api/files/text?${q({ root, path, mtime })}`, { method: 'PUT', headers: { ...H, 'Content-Type': 'text/plain; charset=utf-8' }, body: text, credentials: 'same-origin' });
+      const res = await fetch(`/api/files/text?${q({ root, path, mtime })}`, { method: 'PUT', headers: { ...hdr(), 'Content-Type': 'text/plain; charset=utf-8' }, body: text, credentials: 'same-origin' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { const e = new Error(data.error || `Erro ${res.status}`); e.status = res.status; throw e; }
       return data;
@@ -322,7 +354,7 @@ const real = {
       const xhr = new XMLHttpRequest();
       const promise = new Promise((resolve, reject) => {
         xhr.open('PUT', `/api/files/upload?${q({ root, path, name })}`);
-        xhr.setRequestHeader('X-BrunOS', '1');
+        xhr.setRequestHeader('X-BrunOS', tabKey() || '1');
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
         xhr.onload = () => {
@@ -1309,7 +1341,7 @@ function waitNote(show) {
 export async function initApi() {
   for (let i = 0; ; i++) {
     try {
-      const res = await fetch('/api/public', { headers: H, credentials: 'same-origin' });
+      const res = await fetch('/api/public', { headers: hdr(), credentials: 'same-origin' });
       if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
         const pub = await res.json();
         api = real;

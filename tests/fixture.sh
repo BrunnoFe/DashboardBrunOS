@@ -10,6 +10,12 @@ mkdir -p "$T"/data "$T"/files/home/usuario/{Documentos,Fotos} "$T"/files/mnt/Dis
 echo segredo > "$T"/outside/secret.txt
 echo "oi" > "$T"/files/home/usuario/Documentos/notas.md
 ln -s "$T"/outside "$T"/files/home/usuario/fuga
+# ocultos da pasta pessoal (revisão de segurança, lote 3): só leitura; a chave privada nem aparece
+mkdir -p "$T"/files/home/usuario/.ssh
+echo 'CHAVE-PRIVADA-DE-MENTIRA' > "$T"/files/home/usuario/.ssh/id_ed25519
+echo 'ssh-ed25519 AAAA-de-mentira usuario@exemplo' > "$T"/files/home/usuario/.ssh/id_ed25519.pub
+echo 'ssh-ed25519 AAAA-de-mentira outro@exemplo' > "$T"/files/home/usuario/.ssh/authorized_keys
+echo 'alias ll="ls -l"' > "$T"/files/home/usuario/.bashrc
 echo '{"name":"Syncthing","id":"syncthing","port":8384,"short_desc":"Sincronização de arquivos","categories":["utilities"],"version":"1.27"}' > "$T"/runtipi/apps/migrated/syncthing/config.json
 printf 'APP_PORT=8384\nAPP_LOCAL_DOMAIN=syncthing-migrated.server.lan\nAPP_PROTOCOL=https\nSOME_PASSWORD=supersecreto\nLOCAL_DOMAIN=server.lan\nINTERNAL_IP=192.168.1.50\n' > "$T"/runtipi/app-data/migrated/syncthing/app.env
 echo '{"name":"Dashdot Lite","id":"dashdot-lite","port":3001}' > "$T"/runtipi/apps/personal-store/dashdot-lite/config.json

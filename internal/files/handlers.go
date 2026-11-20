@@ -181,7 +181,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrUnknownRoot):
 		code, msg = http.StatusNotFound, err.Error()
-	case errors.Is(err, ErrReadOnly):
+	case errors.Is(err, ErrReadOnly), errors.Is(err, ErrProtected):
 		code, msg = http.StatusForbidden, err.Error()
 	case errors.Is(err, ErrExists):
 		code, msg = http.StatusConflict, err.Error()
@@ -352,6 +352,10 @@ func (s *Service) hZip(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, mapErr(err))
 			return
 		}
+		if s.isSecret(root, c) {
+			writeErr(w, ErrNotFound)
+			return
+		}
 		rels = append(rels, c)
 	}
 	if len(rels) == 0 {
@@ -373,6 +377,12 @@ func (s *Service) hZip(w http.ResponseWriter, r *http.Request) {
 		base := path.Dir(rel)
 		_ = fs.WalkDir(fsys, rel, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || r.Context().Err() != nil {
+				return nil
+			}
+			if s.hideEntry(root, p, d) { // segredo: fica fora do zip
+				if d.IsDir() {
+					return fs.SkipDir
+				}
 				return nil
 			}
 			if d.IsDir() && d.Name() == trashDirName {

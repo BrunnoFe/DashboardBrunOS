@@ -1774,6 +1774,7 @@ function settingsRows() {
       ctrl: `<label class="win-lim">Computador <select class="text-input sm" data-select="winLimitPc" aria-label="Limite no computador">${[2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => `<option value="${v}" ${(st.winLimitPc ?? 8) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="win-lim">Celular <select class="text-input sm" data-select="winLimitMobile" aria-label="Limite no celular">${[1, 2, 3, 4, 5, 6, 8].map((v) => `<option value="${v}" ${(st.winLimitMobile ?? 5) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` },
     { group: 'Sistema', cat: 'system', icon: 'folder', title: 'Pastas do gerenciador', desc: S.roots.length ? esc(S.roots.map((r) => r.name + (r.readOnly ? ' (só leitura)' : '')).join(' · ')) : 'Nenhuma pasta montada em /files', ctrl: `<button class="pill-btn" data-act="map-disks">${svg('disks')}Mapear discos</button>` },
+    { group: 'Sistema', cat: 'system', icon: 'shield', title: 'Endereços aceitos', desc: `O BrunOS só abre pelo IP, por nomes da rede de casa (.local, .lan, domínio do Runtipi) e pelo domínio do app no Runtipi. ${typeof st.allowedHosts === 'string' && st.allowedHosts.trim() ? `Também: ${esc(st.allowedHosts.trim())}` : 'Outro endereço (ex.: um domínio seu) precisa entrar aqui'}`, ctrl: `<button class="pill-btn" data-act="hosts">Editar</button>` },
     { group: 'Sistema', cat: 'system', icon: 'globe', title: 'Monitor de internet', desc: 'A cada minuto mede a latência até a Cloudflare, Google e Quad9 e avisa no sino quando a internet cai e volta. Mostre no widget Internet', ctrl: sw('netMonitor', 'Monitor de internet') },
     { group: 'Sistema', cat: 'system', icon: 'disks', title: 'Previsão de disco cheio', desc: 'Mostra em Uso ao vivo quando cada disco deve encher, pelo ritmo das últimas semanas, e avisa no sino se faltar menos de 30 dias', ctrl: sw('diskForecast', 'Previsão de disco cheio') },
     { group: 'Sistema', cat: 'system', icon: 'clock', title: 'Cópias das preferências', desc: 'O servidor guarda uma cópia por dia (últimos 14 dias) de widgets, páginas, dock e aparência. Volte para uma delas se algo se perder', ctrl: `<button class="pill-btn" data-act="backups">Ver cópias</button>` },
@@ -1905,6 +1906,11 @@ function wireSettings(body) {
       else if (a === 'updates') { closeSheet(); setTimeout(showUpdates, 230); }
       else if (a === 'os-list') osUpdatesDialog();
       else if (a === 'backups') backupsDialog();
+      else if (a === 'hosts') {
+        promptDialog('Endereços aceitos', { label: 'Outros endereços (separe com vírgula)', value: typeof st.allowedHosts === 'string' ? st.allowedHosts : '', placeholder: 'painel.meudominio.com.br', okLabel: 'Salvar', select: false,
+          text: 'Proteção contra sites maliciosos que se passam pelo BrunOS (DNS rebinding). O IP do servidor e os nomes da rede de casa sempre funcionam, então um erro aqui não tranca você para fora.' })
+          .then((v) => { if (v == null) return; st.allowedHosts = v.split(/[\s,]+/).filter(Boolean).join(', '); save(); redraw(); });
+      }
       else if (a === 'script') import('./energy.js').then((m) => m.scriptDialog());
       else if (a === 'map-disks') import('./files.js').then((m) => m.mapDisksDialog(filesCtx, () => { renderWidgets(); redraw(); }));
       else if (a === 'unhide') { for (const k of Object.keys(st.apps)) if (st.apps[k].hidden) st.apps[k].hidden = false; save(); renderApps(); redraw(); }

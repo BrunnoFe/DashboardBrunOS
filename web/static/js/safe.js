@@ -19,3 +19,7 @@ export const safeUrl = (u) => {
 // arquivo local, servidor de desenvolvimento (python3 -m http.server 8765) ou ?demo no endereço.
 export const demoAllowed = (loc) => loc.protocol === 'file:' || /(^|\.)github\.io$/i.test(loc.hostname) ||
   loc.port === '8765' || new URLSearchParams(loc.search).has('demo');
+
+// withKey: acrescenta o código da aba (?k=) a um endereço da API que o navegador busca sozinho
+// (imagem, download, EventSource), onde não dá para mandar cabeçalho. Sem código, o endereço fica igual.
+export const withKey = (url, key) => (key ? `${url}${url.includes('?') ? '&' : '?'}k=${encodeURIComponent(key)}` : url);

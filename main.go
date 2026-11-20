@@ -146,6 +146,19 @@ type server struct {
 	usage   []appUsage
 	usageAt time.Time
 	started time.Time
+
+	// "modo sudo" (revisão de segurança de 19/11/2026): até quando cada Sessão pode fazer ações
+	// destrutivas sem digitar a senha de novo (5 min depois da última senha certa)
+	elevMu sync.Mutex
+	elev   map[string]time.Time
+	hosts  hostList // nomes de endereço aceitos (guard.go)
+}
+
+// hostsChanged faz a lista de endereços aceitos ser montada de novo no próximo pedido (preferências mudaram).
+func (s *server) hostsChanged() {
+	s.hosts.mu.Lock()
+	s.hosts.at = time.Time{}
+	s.hosts.mu.Unlock()
 }
 
 func main() {
@@ -271,6 +284,7 @@ func main() {
 	s.power = power.New(filepath.Join(cfg.DataDir, "power.json"), filepath.Join(cfg.DataDir, "power-events.json"), s.events,
 		hostcmd.New(filepath.Join(cfg.DataDir, "hostcmd_key_v2"), known))
 	s.power.SuggestHost = func() string { _, info := s.tipi.Apps(); return info.InternalIP }
+	s.power.Elevated = func(r *http.Request) bool { return s.elevated(session(r).ID) }
 	s.setupMonitors(cfg.DataDir)
 	s.stats.SetDrain(s.power.DrainW())
 	fsvc.MapFile = filepath.Join(cfg.DataDir, "disks.json")
@@ -279,6 +293,7 @@ func main() {
 	}
 	fsvc.MaxUpload = cfg.MaxUploadGB << 30
 	fsvc.LoadUploads(filepath.Join(cfg.DataDir, "uploads.json")) // envios em pedaços que ficaram pela metade
+	fsvc.Protect(cfg.DataDir, cfg.RuntipiDir)                    // segredos somem do Arquivos (protect.go)
 	s.files = fsvc
 	for _, r := range fsvc.Roots() {
 		slog.Info("pasta disponível", "nome", r.Name, "id", r.ID, "somenteLeitura", r.ReadOnly)
@@ -373,12 +388,14 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/auth/lock", a(s.hLockState))
 	mux.HandleFunc("POST /api/auth/lock", a(s.hLock))
 	mux.HandleFunc("POST /api/auth/unlock", a(s.hUnlock))
+	mux.HandleFunc("POST /api/auth/reauth", a(s.hReauth)) // "modo sudo" (revisão de segurança de 19/11/2026)
 	s.notes.Register(mux, a)
 	if s.term != nil {
 		mux.HandleFunc("GET /api/terminal/key", a(s.hTermKey))
 		mux.HandleFunc("POST /api/terminal/key", a(s.hTermKeyCreate))
 		mux.HandleFunc("POST /api/terminal/key/unlock", a(s.hTermKeyUnlock))
 		mux.HandleFunc("DELETE /api/terminal/key", a(s.hTermKeyDelete))
+		mux.HandleFunc("POST /api/terminal/adopt", a(s.hTermAdopt))
 	}
 
 	mux.HandleFunc("GET /api/settings", a(s.hSettingsGet))
@@ -443,7 +460,7 @@ func (s *server) routes() http.Handler {
 		writeJSON(w, 404, map[string]string{"error": "rota desconhecida"})
 	})
 	mux.Handle("/", web.Handler(version))
-	return securityHeaders(bodyDeadline(mux))
+	return securityHeaders(s.hostCheck(bodyDeadline(mux)))
 }
 
 // frame-src aceita http: e https: para as Janelas de app (0.17.0); o BrunOS continua recusando ser
@@ -485,15 +502,12 @@ func isPrivate(ip net.IP) bool {
 	return false
 }
 
-// clientIP: atrás do Traefik do Runtipi o endereço remoto é o do proxy (rede privada);
-// nesse caso usamos o último IP do X-Forwarded-For, que é o que o Traefik acrescentou.
+// clientIP: atrás do Traefik do Runtipi o endereço remoto é o do proxy; só nesse caso usamos o último IP do
+// X-Forwarded-For, que é o que o Traefik acrescentou. De qualquer outro remetente (aparelho da rede local
+// na porta direta, Tailscale) vale o IP da conexão: o cabeçalho é ignorado (guard.go, trustedProxy).
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(host)
-	if ip != nil && isPrivate(ip) {
+	ip := remoteIP(r)
+	if ip != nil && trustedProxy(ip) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
 			if last := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); last != nil {
@@ -502,6 +516,10 @@ func clientIP(r *http.Request) string {
 		}
 	}
 	if ip == nil {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			return r.RemoteAddr
+		}
 		return host
 	}
 	return ip.String()
@@ -511,8 +529,7 @@ func isHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip := net.ParseIP(host); ip != nil && isPrivate(ip) {
+	if ip := remoteIP(r); ip != nil && trustedProxy(ip) {
 		return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	}
 	return false
@@ -529,10 +546,11 @@ type reqSession struct {
 
 // csrf: requisições que mudam algo precisam do cabeçalho X-BrunOS (um site de fora não
 // consegue enviá-lo sem CORS, que o BrunOS não habilita) e, se houver Origin, do mesmo host.
+// O valor é "1" antes do login e o código da aba depois (conferido no requireAuth).
 func (s *server) csrf(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if r.Header.Get("X-BrunOS") != "1" {
+			if r.Header.Get("X-BrunOS") == "" {
 				writeJSON(w, 403, map[string]string{"error": "requisição recusada"})
 				return
 			}
@@ -561,13 +579,112 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, 401, map[string]string{"error": "sessão expirada"})
 			return
 		}
+		// código da aba (revisão de segurança de 19/11/2026): o cookie sozinho não basta. Outro app no mesmo
+		// IP (outra porta) recebe o cookie, mas não o código, que fica no armazenamento do endereço do
+		// BrunOS. Vem no cabeçalho X-BrunOS; em GET (imagem, download, SSE), também em ?k=.
+		key := r.Header.Get("X-BrunOS")
+		if (key == "" || key == "1") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			key = r.URL.Query().Get("k")
+		}
+		if !keyFree(r) && !auth.KeyOK(sess, key) {
+			// não apaga o cookie: um pedido de fora (sem o código) não pode derrubar a Sessão do dono
+			writeJSON(w, 401, map[string]string{"error": "entre de novo para continuar"})
+			return
+		}
 		// Bloqueio com senha (decisão 39): só dá para ver o estado, desbloquear ou sair
 		if sess.Locked && !lockAllowed[r.Method+" "+r.URL.Path] {
 			writeJSON(w, 423, map[string]any{"error": "a tela está bloqueada: digite a senha", "locked": true})
 			return
 		}
+		// ações destrutivas pedem a senha do BrunOS de novo (vale 5 min)
+		if sudoRoutes[r.Method+" "+r.URL.Path] && !s.elevated(sess.ID) {
+			writeJSON(w, 403, map[string]any{"error": "digite a senha do BrunOS para continuar", "reauth": true})
+			return
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, reqSession{sess, c.Value})))
 	})
+}
+
+// keyFree: imagens que o navegador busca sozinho (<img>), sem dado sensível: não precisam do código da aba.
+func keyFree(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	p := r.URL.Path
+	return p == "/api/apps/logo" || p == "/api/store/logo" || strings.HasPrefix(p, "/api/icons/") || strings.HasPrefix(p, "/api/wallpapers/")
+}
+
+// sudoRoutes: ações destrutivas que pedem a senha do BrunOS de novo (escolhidas pelo Bruno em 19/11/2026).
+// Remover loja e mudar o destino do SSH da Energia são conferidos nos próprios handlers (dependem do pedido).
+var sudoRoutes = map[string]bool{
+	"DELETE /api/terminal/key": true, "POST /api/terminal/forget": true, "POST /api/power/test": true,
+	"POST /api/updates/run": true, "POST /api/disks/unmount": true, "POST /api/settings/restore": true,
+}
+
+const elevateFor = 5 * time.Minute
+
+func (s *server) elevate(id string) {
+	s.elevMu.Lock()
+	defer s.elevMu.Unlock()
+	if s.elev == nil {
+		s.elev = map[string]time.Time{}
+	}
+	now := time.Now()
+	for k, t := range s.elev { // limpa as vencidas
+		if now.After(t) {
+			delete(s.elev, k)
+		}
+	}
+	s.elev[id] = now.Add(elevateFor)
+}
+
+func (s *server) elevated(id string) bool {
+	s.elevMu.Lock()
+	defer s.elevMu.Unlock()
+	t, ok := s.elev[id]
+	return ok && time.Now().Before(t)
+}
+
+func (s *server) dropElevation(id string) {
+	s.elevMu.Lock()
+	defer s.elevMu.Unlock()
+	delete(s.elev, id)
+}
+
+// hReauth: POST /api/auth/reauth {password}: digita a senha para as ações destrutivas dos próximos 5 min.
+func (s *server) hReauth(w http.ResponseWriter, r *http.Request) {
+	var req credReq
+	if err := decode(r, &req, 8<<10); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	if !s.verifyPassword(w, r, req.Password) {
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// hTermAdopt: POST /api/terminal/adopt {ids, password}: continuar nesta Sessão Abas abertas em outro
+// aparelho (as Abas são de cada Sessão: pede a senha do BrunOS).
+func (s *server) hTermAdopt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs      []string `json:"ids"`
+		Password string   `json:"password"`
+	}
+	if err := decode(r, &req, 8<<10); err != nil || len(req.IDs) == 0 || len(req.IDs) > 16 {
+		writeJSON(w, 400, map[string]string{"error": "requisição inválida"})
+		return
+	}
+	if !s.verifyPassword(w, r, req.Password) {
+		return
+	}
+	n := 0
+	for _, id := range req.IDs {
+		if s.term.Adopt(id, session(r).ID) == nil {
+			n++
+		}
+	}
+	writeJSON(w, 200, map[string]int{"adopted": n})
 }
 
 func session(r *http.Request) reqSession { return r.Context().Value(ctxKey{}).(reqSession) }
@@ -591,6 +708,7 @@ func (s *server) hLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tkey.Forget(sess.ID)
+	s.dropElevation(sess.ID)
 	writeJSON(w, 200, map[string]bool{"locked": true})
 }
 
@@ -618,18 +736,7 @@ func (s *server) hUnlock(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.openTermKey(sess.ID, req.Password)
-	writeJSON(w, 200, map[string]bool{"locked": false})
-}
-
-// openTermKey abre a Chave do Terminal para a Sessão com a senha que acabou de ser digitada.
-func (s *server) openTermKey(sessionID, password string) {
-	if s.term == nil || !s.tkey.Exists() {
-		return
-	}
-	if err := s.tkey.Unlock(sessionID, password); err != nil {
-		slog.Warn("Chave do Terminal não abriu com a senha do BrunOS", "erro", err)
-	}
+	writeJSON(w, 200, map[string]bool{"locked": false}) // a Chave do Terminal só abre ao abrir o Terminal
 }
 
 // termIdle: tempo para encerrar uma Aba sem ninguém olhando (Configurações → Terminal).
@@ -745,6 +852,7 @@ func (s *server) verifyPassword(w http.ResponseWriter, r *http.Request, password
 	err := s.auth.VerifySession(sess.ID, password, clientIP(r))
 	switch {
 	case err == nil:
+		s.elevate(sess.ID) // senha certa: as ações destrutivas dos próximos 5 min não pedem de novo
 		return true
 	case errors.Is(err, auth.ErrSessionEnded):
 		s.tkey.Forget(sess.ID)
@@ -833,8 +941,13 @@ func (s *server) hSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("usuário criado na primeira execução", "usuario", req.Username, "ip", ip)
 	s.logins.Learn(ip, r.UserAgent(), time.Now())
+	key, err := s.auth.IssueKey(auth.SessionID(token))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "não foi possível abrir a sessão"})
+		return
+	}
 	setSessionCookie(w, r, token)
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, map[string]any{"ok": true, "key": key})
 }
 
 func (s *server) hLogin(w http.ResponseWriter, r *http.Request) {
@@ -855,15 +968,24 @@ func (s *server) hLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.loginSeen(ip, r.UserAgent())
-	s.openTermKey(auth.SessionID(token), req.Password)
+	slog.Info("auditoria: login", "usuario", req.Username, "ip", ip)
+	// a Chave do Terminal NÃO abre mais no login (revisão de segurança de 19/11/2026): pede a senha ao
+	// abrir o Terminal. Assim um cookie roubado não vira terminal no servidor.
+	key, err := s.auth.IssueKey(auth.SessionID(token))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "não foi possível abrir a sessão"})
+		return
+	}
 	setSessionCookie(w, r, token)
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, map[string]any{"ok": true, "key": key})
 }
 
 func (s *server) hLogout(w http.ResponseWriter, r *http.Request) {
 	sess := session(r)
 	s.auth.Logout(sess.token)
 	s.tkey.Forget(sess.ID)
+	s.dropElevation(sess.ID)
+	slog.Info("auditoria: logout", "usuario", sess.Username, "ip", clientIP(r))
 	if s.term != nil {
 		s.term.CloseOwner(sess.ID)
 	}

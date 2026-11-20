@@ -2,7 +2,14 @@
 // preferências e o modo demonstração só onde não há servidor de verdade.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cssVal, safeUrl, demoAllowed } from '../web/static/js/safe.js';
+import { cssVal, safeUrl, demoAllowed, withKey } from '../web/static/js/safe.js';
+
+test('withKey acrescenta o código da aba (?k=) sem estragar o endereço', () => {
+  assert.equal(withKey('/api/stats/stream', 'abc'), '/api/stats/stream?k=abc');
+  assert.equal(withKey('/api/files/raw?root=home&path=a%20b', 'a-b_c'), '/api/files/raw?root=home&path=a%20b&k=a-b_c');
+  assert.equal(withKey('/api/x?y=1', 'a+b/='), '/api/x?y=1&k=a%2Bb%2F%3D');
+  assert.equal(withKey('/api/x?y=1', ''), '/api/x?y=1');
+});
 
 test('cssVal deixa passar cor, matiz, var() e gradiente', () => {
   for (const v of ['#2a2a30', 210, '210', 'var(--brand)', 'linear-gradient(160deg, var(--brand-lightest), var(--brand))', 'hsl(210, 80%, 50%)']) {

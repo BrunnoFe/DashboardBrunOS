@@ -252,6 +252,11 @@ func (s *server) hStoreStores(w http.ResponseWriter, r *http.Request) {
 		in = []byte(req.Password + "\n")
 		cmd, title = hostcmd.CmdStoreAdd+" "+name+" "+u, "Loja "+name+" adicionada"
 	case "remove":
+		// remover loja pede a senha do BrunOS de novo ("modo sudo", revisão de segurança de 19/11/2026)
+		if !s.elevated(session(r).ID) {
+			writeJSON(w, 403, map[string]any{"error": "digite a senha do BrunOS para continuar", "reauth": true})
+			return
+		}
 		if !hostcmd.ValidStoreName(name) {
 			writeJSON(w, 400, map[string]string{"error": "nome de loja inválido"})
 			return

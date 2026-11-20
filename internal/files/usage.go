@@ -69,12 +69,19 @@ func (c *usageCache) get(rootID, rel string) *usageScan {
 	return nil
 }
 
-func scanUsage(fsys fs.FS, rel string) *usageScan {
+// skip (se dado) tira itens da conta (segredos, protect.go).
+func scanUsage(fsys fs.FS, rel string, skip func(p string, d fs.DirEntry) bool) *usageScan {
 	sc := &usageScan{rel: rel, at: time.Now(), dirs: map[string]dirTotal{rel: {}}}
 	start, n := time.Now(), 0
 	stop := errors.New("stop")
 	_ = fs.WalkDir(fsys, rel, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return nil
+		}
+		if skip != nil && p != rel && skip(p, d) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		n++
@@ -133,7 +140,7 @@ func (s *Service) Usage(rootID, rel string, refresh bool) (UsageResult, error) {
 	if sc == nil || refresh {
 		s.usage.scan.Lock()
 		if sc = s.usage.get(rootID, rel); sc == nil || refresh {
-			sc = scanUsage(fsys, rel)
+			sc = scanUsage(fsys, rel, func(p string, d fs.DirEntry) bool { return s.hideEntry(r, p, d) })
 			s.usage.mu.Lock()
 			if s.usage.scans == nil {
 				s.usage.scans = map[string]*usageScan{}
@@ -158,6 +165,9 @@ func (s *Service) Usage(rootID, rel string, refresh bool) (UsageResult, error) {
 			continue
 		}
 		p := path.Join(rel, e.Name())
+		if s.hideEntry(r, p, e) {
+			continue
+		}
 		switch {
 		case e.IsDir():
 			t := sc.dirs[p]

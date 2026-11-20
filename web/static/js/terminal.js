@@ -304,6 +304,25 @@ export function terminalWindow(ctx) {
     if (c.method === 'key') return openTab({ ...base, useKey: true });
     showForm('', base);
   }
+  // Abas de outro navegador: com a senha do BrunOS passam para esta Sessão (e saem da outra)
+  function adoptTabs(others) {
+    return new Promise((resolve) => {
+      let done = false;
+      const n = others.length;
+      const dd = openDialog(`<h2>${svg('terminal')} ${n === 1 ? 'Aba aberta' : `${n} abas abertas`} em outro navegador</h2><p>Para continuar ${n === 1 ? 'nela' : 'nelas'} aqui, digite a senha do BrunOS. ${n === 1 ? 'Ela sai' : 'Elas saem'} do outro navegador.</p>
+        <form class="form-grid"><label>Senha do BrunOS<input class="text-input" type="password" name="pw" autocomplete="current-password" autofocus></label><p class="term-err" role="alert"></p>
+        <div class="dlg-actions"><button type="button" class="pill-btn" data-c="no">Agora não</button><button class="pill-btn primary">${svg('check')}Trazer para cá</button></div></form>`,
+      { closeBtn: false, width: 440, onClose: () => { if (!done) resolve(false); } });
+      const f = $('form', dd.el);
+      $('[data-c="no"]', dd.el).onclick = () => dd.close();
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        try { await api.term.adopt(others.map((s) => s.id), f.pw.value); done = true; dd.close(); resolve(true); }
+        catch (x) { $('.term-err', f).textContent = x.message; f.pw.select(); }
+      };
+    });
+  }
+
   // senha do BrunOS → abre a Chave do Terminal para esta Sessão (a chave fica no servidor)
   function unlockKey() {
     return new Promise((resolve) => {
@@ -558,7 +577,8 @@ export function terminalWindow(ctx) {
       const list = await api.term.list();
       for (const t of tabs) {
         const s = list.find((y) => y.id === t.id);
-        if (!s && !t.ended) t.ended = 'sessão encerrada';
+        if (s?.mine === false && !t.ended) t.ended = 'aba levada para outro navegador';
+        else if (!s && !t.ended) t.ended = 'sessão encerrada';
         else if (s) { t.running = s.running; if (tabs[active] !== t) api.term.resize(t.id, term?.cols || 100, term?.rows || 30).catch(() => {}); }
       }
       setCount(); drawTabs();
@@ -571,7 +591,13 @@ export function terminalWindow(ctx) {
     let list = [];
     try { list = await api.term.list(); } catch { /* sem terminal no servidor */ }
     if (!openWin) return;
-    tabs = list.map((s) => ({ id: s.id, addr: s.addr, user: s.user, created: s.created, running: s.running }));
+    // Abas abertas em outro navegador (outra Sessão) só passam para cá com a senha do BrunOS
+    const others = list.filter((s) => s.mine === false);
+    if (others.length && await adoptTabs(others)) {
+      try { list = await api.term.list(); } catch { /* fica com a lista anterior */ }
+      if (!openWin) return;
+    }
+    tabs = list.filter((s) => s.mine !== false).map((s) => ({ id: s.id, addr: s.addr, user: s.user, created: s.created, running: s.running }));
     setCount();
     if (tabs.length) showTab(tabs.length - 1);
     else startEmpty();

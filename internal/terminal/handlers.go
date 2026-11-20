@@ -62,7 +62,17 @@ func writeErr(w http.ResponseWriter, err error) {
 	}
 }
 
-func (m *Manager) hList(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, m.List()) }
+// owner: a Sessão do BrunOS de quem pede ("" nos testes sem OwnerOf).
+func (m *Manager) owner(r *http.Request) string {
+	if m.OwnerOf == nil {
+		return ""
+	}
+	return m.OwnerOf(r)
+}
+
+func (m *Manager) hList(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, m.ListFor(m.owner(r)))
+}
 
 func (m *Manager) hOpen(w http.ResponseWriter, r *http.Request) {
 	var req OpenRequest
@@ -97,7 +107,7 @@ func (m *Manager) hOpen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Manager) hStream(w http.ResponseWriter, r *http.Request) {
-	s, err := m.Get(r.URL.Query().Get("id"))
+	s, err := m.GetFor(r.URL.Query().Get("id"), m.owner(r))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -173,7 +183,7 @@ func (m *Manager) hInput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, ErrBadRequest)
 		return
 	}
-	s, err := m.Get(body.ID)
+	s, err := m.GetFor(body.ID, m.owner(r))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -195,7 +205,7 @@ func (m *Manager) hResize(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, ErrBadRequest)
 		return
 	}
-	s, err := m.Get(body.ID)
+	s, err := m.GetFor(body.ID, m.owner(r))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -212,6 +222,10 @@ func (m *Manager) hClose(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, ErrBadRequest)
 		return
 	}
+	if _, err := m.GetFor(body.ID, m.owner(r)); err != nil {
+		writeErr(w, err)
+		return
+	}
 	m.Close(body.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -223,6 +237,10 @@ func (m *Manager) hBusy(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &body, 4<<10); err != nil {
 		writeErr(w, ErrBadRequest)
+		return
+	}
+	if _, err := m.GetFor(body.ID, m.owner(r)); err != nil {
+		writeErr(w, err)
 		return
 	}
 	b, err := m.CheckBusy(body.ID)

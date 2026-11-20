@@ -71,6 +71,7 @@ type Service struct {
 	up        uploads         // envios em pedaços pendentes (resumable.go)
 	usage     usageCache      // mapa do espaço (usage.go)
 	released  map[string]bool // discos soltos para desmontar (0.16.0): não reabre até o BrunOS reiniciar
+	secrets   secretDirs      // pastas e arquivos com segredos que o Arquivos não mostra (protect.go)
 }
 
 // Release fecha a pasta de um disco (pelo nome) e não reabre mais até o BrunOS reiniciar. Antes de
@@ -516,6 +517,9 @@ func (s *Service) List(rootID, rel string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	if rel != "." && s.isSecret(r, rel) { // pasta de segredos (dados do BrunOS): não existe para o Arquivos
+		return nil, ErrNotFound
+	}
 	f, err := r.r.Open(rel)
 	if err != nil {
 		return nil, mapErr(err)
@@ -530,6 +534,9 @@ func (s *Service) List(rootID, rel string) ([]Entry, error) {
 		name := de.Name()
 		if rel == "." && name == trashDirName {
 			continue
+		}
+		if s.hideEntry(r, path.Join(rel, name), de) {
+			continue // segredo (protect.go)
 		}
 		e := Entry{Name: name, Hidden: strings.HasPrefix(name, ".")}
 		info, err := de.Info()
@@ -569,6 +576,9 @@ func (s *Service) Open(rootID, rel string) (*os.File, fs.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if s.isSecret(r, rel) { // segredo (protect.go): "não encontrado", sem dizer que existe
+		return nil, nil, ErrNotFound
+	}
 	f, err := r.r.Open(rel)
 	if err != nil {
 		return nil, nil, mapErr(err)
@@ -599,6 +609,11 @@ func (s *Service) Mkdir(rootID, rel, name string) (string, error) {
 		return "", err
 	}
 	target := path.Join(rel, name)
+	if base, err := r.realDir(rel); err == nil {
+		if err := r.guardWrite(filepath.Join(base, name)); err != nil {
+			return "", err
+		}
+	}
 	return target, mapErr(r.r.Mkdir(target, 0o755))
 }
 
@@ -622,6 +637,9 @@ func (s *Service) Rename(rootID, rel, newName string) error {
 		return err
 	}
 	dst := filepath.Join(filepath.Dir(src), newName)
+	if err := r.guardWrite(src, dst); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(dst); err == nil && !strings.EqualFold(src, dst) {
 		return ErrExists
 	}
@@ -689,8 +707,20 @@ func (s *Service) Paste(srcRoot string, rels []string, dstRoot, dstRel string, c
 			return ErrBadName // uma ".brunos-trash" de outra pasta viraria a lixeira de verdade no destino
 		}
 		dst := filepath.Join(dstDir, uniqueName(dstDir, filepath.Base(src)))
+		// ocultos da pasta pessoal são só leitura (mover tira da origem); segredos não são copiados
+		if err := dr.guardWrite(dst); err != nil {
+			return err
+		}
+		if !copyMode {
+			if err := sr.guardWrite(src); err != nil {
+				return err
+			}
+		}
+		if s.isSecretReal(src) {
+			return ErrNotFound
+		}
 		if copyMode {
-			if err := copyTree(src, dst); err != nil {
+			if err := copyTree(src, dst, s.isSecretReal); err != nil {
 				return mapErr(err)
 			}
 			continue
@@ -700,7 +730,7 @@ func (s *Service) Paste(srcRoot string, rels []string, dstRoot, dstRel string, c
 				return mapErr(err)
 			}
 			// discos diferentes: copia e depois apaga a origem
-			if err := copyTree(src, dst); err != nil {
+			if err := copyTree(src, dst, nil); err != nil {
 				_ = os.RemoveAll(dst)
 				return mapErr(err)
 			}
@@ -712,11 +742,15 @@ func (s *Service) Paste(srcRoot string, rels []string, dstRoot, dstRel string, c
 	return nil
 }
 
-// copyTree copia arquivos e pastas; links simbólicos são ignorados por segurança.
-func copyTree(src, dst string) error {
+// copyTree copia arquivos e pastas; links simbólicos são ignorados por segurança. skip (se dado) pula
+// segredos: copiar a pasta do Runtipi para um disco não leva as senhas dos apps junto.
+func copyTree(src, dst string, skip func(string) bool) error {
 	st, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+	if skip != nil && skip(src) {
+		return nil
 	}
 	switch {
 	case st.Mode()&fs.ModeSymlink != 0:
@@ -730,7 +764,7 @@ func copyTree(src, dst string) error {
 			return err
 		}
 		for _, de := range des {
-			if err := copyTree(filepath.Join(src, de.Name()), filepath.Join(dst, de.Name())); err != nil {
+			if err := copyTree(filepath.Join(src, de.Name()), filepath.Join(dst, de.Name()), skip); err != nil {
 				return err
 			}
 		}
@@ -776,6 +810,9 @@ func (s *Service) Delete(rootID string, rels []string) error {
 		if err != nil {
 			return err
 		}
+		if err := r.guardWrite(p); err != nil {
+			return err
+		}
 		if err := os.RemoveAll(p); err != nil {
 			return mapErr(err)
 		}
@@ -808,6 +845,13 @@ func (s *Service) Upload(rootID, rel, relName string, body io.Reader) (string, e
 		}
 	}
 	dirRel := path.Join(append([]string{rel}, parts[:len(parts)-1]...)...)
+	base, err := r.realDir(rel)
+	if err != nil {
+		return "", err
+	}
+	if err := r.guardWrite(filepath.Join(base, filepath.FromSlash(relName))); err != nil {
+		return "", err
+	}
 	// cria subpastas uma a uma, sempre pelo os.Root
 	cur := rel
 	for _, p := range parts[:len(parts)-1] {
@@ -876,6 +920,12 @@ func (s *Service) Search(rootID, rel, q string, limit int) ([]Hit, bool, error) 
 		}
 		if d.IsDir() && (d.Name() == trashDirName || d.Name() == "node_modules" || d.Name() == ".git") {
 			return fs.SkipDir
+		}
+		if s.hideEntry(r, p, d) { // segredo (protect.go): fora da busca
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		visited++
 		if visited > 50000 || time.Now().After(deadline) || len(hits) >= limit {

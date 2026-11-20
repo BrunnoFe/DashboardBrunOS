@@ -92,6 +92,12 @@ func (s *Service) Duplicates(rootID, rel string, minSize int64) (DupResult, erro
 		if d.IsDir() && (d.Name() == trashDirName || d.Name() == ".git" || d.Name() == "node_modules") {
 			return fs.SkipDir
 		}
+		if s.hideEntry(r, p, d) { // segredo (protect.go)
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if !d.Type().IsRegular() {
 			return nil
 		}

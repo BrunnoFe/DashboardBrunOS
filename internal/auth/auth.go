@@ -62,8 +62,37 @@ type Session struct {
 	// Locked: Bloqueio com senha (CONTEXT.md). Gravado em disco: recarregar a página ou reiniciar o
 	// BrunOS não desbloqueia.
 	Locked bool `json:"locked,omitempty"`
+	// Key: SHA-256 do "código da aba" (revisão de segurança de 19/11/2026). O navegador guarda o código no
+	// armazenamento do endereço do BrunOS (que outros apps, em outras portas, não leem) e manda em todo
+	// pedido; o cookie sozinho não basta mais. Sessão sem Key (de antes da 0.28.0) precisa entrar de novo.
+	Key string `json:"key,omitempty"`
 	// ID identifica a Sessão sem revelar o token (é o SHA-256 dele, a mesma chave do sessions.json).
 	ID string `json:"-"`
+}
+
+// IssueKey cria o código da aba de uma Sessão recém-aberta e devolve o código (só o resumo fica guardado).
+func (m *Manager) IssueKey(id string) (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	key := base64.RawURLEncoding.EncodeToString(raw)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return "", ErrSessionEnded
+	}
+	s.Key = hashToken(key)
+	return key, m.saveSessionsLocked()
+}
+
+// KeyOK confere o código da aba de uma Sessão (comparação em tempo constante).
+func KeyOK(s *Session, key string) bool {
+	if s == nil || s.Key == "" || key == "" || len(key) > 100 {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hashToken(key)), []byte(s.Key)) == 1
 }
 
 type authFile struct {

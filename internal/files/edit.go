@@ -78,6 +78,9 @@ func (s *Service) SaveText(rootID, rel string, body io.Reader, expect int64) (in
 	if err != nil {
 		return 0, err
 	}
+	if err := r.guardWrite(p); err != nil { // ocultos da pasta pessoal: só leitura (protect.go)
+		return 0, err
+	}
 	st, err := os.Lstat(p)
 	if err != nil {
 		return 0, mapErr(err)
@@ -149,6 +152,11 @@ func (s *Service) NewFile(rootID, rel, name string) (string, error) {
 		return "", err
 	}
 	target := path.Join(rel, name)
+	if base, err := r.realDir(rel); err == nil {
+		if err := r.guardWrite(filepath.Join(base, name)); err != nil {
+			return "", err
+		}
+	}
 	f, err := r.r.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return "", mapErr(err)

@@ -297,6 +297,52 @@ func (m *Manager) Get(id string) (*Session, error) {
 	return s, nil
 }
 
+// GetFor devolve a Aba só se ela for da Sessão do BrunOS que pede (revisão de segurança de 19/11/2026):
+// uma Sessão não lê nem digita na Aba de outra. Aba de outra Sessão = "não existe" (ErrNoSession).
+func (m *Manager) GetFor(id, owner string) (*Session, error) {
+	s, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if owner != "" && s.Owner != "" && s.Owner != owner {
+		return nil, ErrNoSession
+	}
+	return s, nil
+}
+
+// Adopt passa a Aba para outra Sessão (continuar no celular uma Aba aberta no PC). Quem chama confere a
+// senha do BrunOS antes.
+func (m *Manager) Adopt(id, owner string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return ErrNoSession
+	}
+	s.Owner = owner
+	return nil
+}
+
+// ListFor lista as Abas dizendo quais são da Sessão que pede (mine). As de outras Sessões aparecem só com o
+// endereço, para a interface oferecer "continuar aqui" (com a senha).
+func (m *Manager) ListFor(owner string) []SessionInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []SessionInfo{}
+	for _, s := range m.sessions {
+		mine := owner == "" || s.Owner == "" || s.Owner == owner
+		s.mu.Lock()
+		in := SessionInfo{ID: s.ID, Addr: s.Addr, User: s.User, Created: s.Created.UnixMilli(), Mine: mine}
+		if mine {
+			in.Running = s.running
+		}
+		s.mu.Unlock()
+		out = append(out, in)
+	}
+	sortInfos(out)
+	return out
+}
+
 func (m *Manager) Close(id string) {
 	m.mu.Lock()
 	s, ok := m.sessions[id]
@@ -340,6 +386,7 @@ type SessionInfo struct {
 	User    string   `json:"user"`
 	Created int64    `json:"created"`
 	Running []string `json:"running,omitempty"` // o que estava rodando na última conferência
+	Mine    bool     `json:"mine"`              // a Aba é desta Sessão do BrunOS (as outras pedem a senha para continuar)
 }
 
 // List devolve as Abas abertas, da mais antiga para a mais nova (a ordem das Abas na janela).

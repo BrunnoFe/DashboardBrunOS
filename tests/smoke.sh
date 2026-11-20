@@ -68,13 +68,14 @@ python3 - "$PORT" <<'EOF'
 import json, sys, time, urllib.request, urllib.error, http.cookiejar
 B = f"http://127.0.0.1:{sys.argv[1]}"
 op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+KEY = "1"  # código da aba (vem no login)
 def req(m, p, b=None):
     r = urllib.request.Request(B + p, data=json.dumps(b).encode() if b is not None else None, method=m,
-                               headers={"X-BrunOS": "1", "Content-Type": "application/json"})
+                               headers={"X-BrunOS": KEY, "Content-Type": "application/json"})
     with op.open(r) as x:
         return json.loads(x.read() or b"null")
 time.sleep(61)  # o bloqueio de 1 min do teste de força bruta precisa expirar
-req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})
+KEY = req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})["key"]
 apps = req("GET", "/api/apps")
 assert apps["docker"] is True, f"Docker não conectou pelo proxy: {apps}"
 print("✓ Docker conectado pelo proxy")
@@ -93,12 +94,12 @@ urn = "syncthing:migrated"
 cts = req("GET", f"/api/apps/containers?urn={urn}")
 assert len(cts) == 1 and cts[0]["state"] == "running" and cts[0]["service"] == "syncthing", f"containers do app: {cts}"
 cid = cts[0]["id"]
-with op.open(urllib.request.Request(f"{B}/api/apps/logs?urn={urn}&id={cid}&tail=20")) as x:
+with op.open(urllib.request.Request(f"{B}/api/apps/logs?urn={urn}&id={cid}&tail=20&k={KEY}")) as x:
     logs = x.read().decode()
 assert "ola-brunos-log" in logs and "\x01\x00\x00\x00" not in logs, f"logs: {logs[:300]!r}"
 print("✓ apps: logs do container pelo proxy (sem os cabeçalhos do Docker)")
 try:
-    op.open(urllib.request.Request(f"{B}/api/apps/logs?urn=plex:migrated&id={cid}"))
+    op.open(urllib.request.Request(f"{B}/api/apps/logs?urn=plex:migrated&id={cid}&k={KEY}"))
     raise AssertionError("leu logs de um container que não é do app")
 except urllib.error.HTTPError as e:
     assert e.code == 404
@@ -132,15 +133,16 @@ python3 - "$PORT" "$FP" <<'EOF'
 import base64, json, sys, threading, time, urllib.request, urllib.error, http.cookiejar
 B, FP = f"http://127.0.0.1:{sys.argv[1]}", sys.argv[2]
 op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+KEY = "1"
 def req(m, p, b=None):
     r = urllib.request.Request(B + p, data=json.dumps(b).encode() if b is not None else None, method=m,
-                               headers={"X-BrunOS": "1", "Content-Type": "application/json"})
+                               headers={"X-BrunOS": KEY, "Content-Type": "application/json"})
     try:
         with op.open(r) as x:
             return x.status, json.loads(x.read() or b"null")
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"null")
-req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})
+KEY = req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})[1]["key"]
 target = {"host": "brunos-ssh", "port": 2222, "user": "teste", "password": "segredo-ssh", "cols": 100, "rows": 30}
 for _ in range(10):  # o sshd pode levar alguns segundos para aceitar conexões
     code, r = req("POST", "/api/terminal/open", target)
@@ -157,7 +159,7 @@ assert code == 200 and r["id"], f"não abriu a sessão: {code} {r}"
 sid = r["id"]
 out = []
 def reader():
-    s = op.open(urllib.request.Request(f"{B}/api/terminal/stream?id={sid}"), timeout=30)
+    s = op.open(urllib.request.Request(f"{B}/api/terminal/stream?id={sid}&k={KEY}"), timeout=30)
     for line in s:
         line = line.decode().strip()
         if line.startswith("data: ") and line != "data: {}":
@@ -173,6 +175,26 @@ for _ in range(50):
 text = "".join(out)
 assert "brunos-42" in text and "teste" in text, f"comando não rodou no shell remoto: {text[-400:]!r}"
 print("✓ terminal: comando rodou no servidor pelo SSH (saída chegou pelo stream)")
+# Abas por Sessão (lote 4): outra Sessão não lê nem digita nesta Aba; com a senha, pode trazê-la
+op2 = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+def req2(m, p, b=None, key="1"):
+    r = urllib.request.Request(B + p, data=json.dumps(b).encode() if b is not None else None, method=m,
+                               headers={"X-BrunOS": key, "Content-Type": "application/json"})
+    try:
+        with op2.open(r) as x:
+            return x.status, json.loads(x.read() or b"null")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"null")
+K2 = req2("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})[1]["key"]
+code, lst2 = req2("GET", "/api/terminal/sessions", key=K2)
+assert code == 200 and [x["mine"] for x in lst2 if x["id"] == sid] == [False] and not any(x.get("running") for x in lst2), f"outra Sessão: {lst2}"
+code, _ = req2("POST", "/api/terminal/input", {"id": sid, "data": "echo invasor\r"}, key=K2)
+assert code == 404, f"outra Sessão digitou na Aba: {code}"
+code, _ = req2("POST", "/api/terminal/adopt", {"ids": [sid], "password": "errada"}, key=K2)
+assert code == 403, f"trazer a Aba com a senha errada: {code}"
+code, lst = req("GET", "/api/terminal/sessions")
+assert [x["mine"] for x in lst if x["id"] == sid] == [True], f"a Aba continua da Sessão que abriu: {lst}"
+print("✓ terminal: Aba de outra Sessão não aparece como sua, não aceita digitação e pede a senha para trazer")
 code, _ = req("POST", "/api/terminal/resize", {"id": sid, "cols": 140, "rows": 40})
 assert code == 204, f"resize falhou: {code}"
 # "ainda está rodando?" (0.10.0): ps por um canal SSH extra na mesma conexão
@@ -215,15 +237,20 @@ python3 - "$PORT" "$FP" <<'EOF'
 import json, subprocess, sys, urllib.request, urllib.error, http.cookiejar
 B, FP = f"http://127.0.0.1:{sys.argv[1]}", sys.argv[2]
 op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+KEY = "1"
 def req(m, p, b=None):
     r = urllib.request.Request(B + p, data=json.dumps(b).encode() if b is not None else None, method=m,
-                               headers={"X-BrunOS": "1", "Content-Type": "application/json"})
+                               headers={"X-BrunOS": KEY, "Content-Type": "application/json"})
     try:
         with op.open(r) as x:
             return x.status, json.loads(x.read() or b"null")
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"null")
-req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})
+KEY = req("POST", "/api/auth/login", {"username": "bruno", "password": "nova-senha-123"})[1]["key"]
+code, r = req("POST", "/api/power/test", {"host": "brunos-ssh", "port": 2222, "user": "teste"})
+assert code == 403 and r.get("reauth"), f"testar a conexão sem confirmar a senha deveria pedir a senha: {code} {r}"
+code, r = req("POST", "/api/auth/reauth", {"password": "nova-senha-123"})
+assert code == 200, r
 code, su = req("GET", "/api/power/setup")
 assert code == 200, su
 line = 'restrict,command="touch /tmp/rodou-desligar" ' + su["publicKey"]

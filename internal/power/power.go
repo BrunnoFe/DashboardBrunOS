@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -114,6 +115,9 @@ type Monitor struct {
 	Shutdown func(ctx context.Context, cfg Config) (string, error)
 	// SuggestHost sugere o endereço do servidor (IP do Runtipi) quando ainda não há um.
 	SuggestHost func() string
+	// Elevated diz se a Sessão do pedido digitou a senha do BrunOS há pouco ("modo sudo", revisão de
+	// segurança de 19/11/2026): mudar o destino do SSH do script do servidor pede a senha de novo.
+	Elevated func(*http.Request) bool
 
 	// HostRun faz um pedido ao script do servidor (limite de carga). Padrão: hostcmd.Runner.Run.
 	HostRun func(ctx context.Context, cfg Config, cmd string) (string, error)

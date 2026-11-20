@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -155,6 +156,9 @@ func (s *Service) Extract(rootID, rel string) (string, error) {
 	parentRel := path.Dir(rel)
 	parent, err := r.realDir(parentRel)
 	if err != nil {
+		return "", err
+	}
+	if err := r.guardWrite(filepath.Join(parent, base)); err != nil { // protect.go
 		return "", err
 	}
 	free, _ := freeSpace(parent)

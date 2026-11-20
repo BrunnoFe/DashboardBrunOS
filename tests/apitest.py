@@ -5,17 +5,25 @@ B=os.environ.get('BASE','http://127.0.0.1:8099')
 FIX=os.environ.get('FIX','/tmp/bt')
 cj=http.cookiejar.CookieJar(); op=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 ok=0; bad=0
-def req(method, path, body=None, raw=None, hdr=True, ctype='application/json', ua=None, hdrs=None):
+KEY=''  # código da aba (lote 4): vem no login/setup e vai no cabeçalho X-BrunOS de todo pedido
+PW='senha-forte-1'
+def req(method, path, body=None, raw=None, hdr=True, ctype='application/json', ua=None, hdrs=None, key=None):
+    global KEY
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     r=urllib.request.Request(B+path, data=data, method=method)
     if data is not None: r.add_header('Content-Type', ctype)
-    if hdr: r.add_header('X-BrunOS','1')
+    if hdr: r.add_header('X-BrunOS', (KEY if key is None else key) or '1')
     if ua: r.add_header('User-Agent', ua)
     for k,v in (hdrs or {}).items(): r.add_header(k, v)
     try:
-        resp=op.open(r); return resp.status, resp.read(), resp.headers
+        resp=op.open(r); st, out, h = resp.status, resp.read(), resp.headers
     except urllib.error.HTTPError as e:
-        return e.code, e.read(), e.headers
+        st, out, h = e.code, e.read(), e.headers
+    if st==200 and method=='POST' and path in ('/api/auth/setup','/api/auth/login') and key is None:
+        KEY=json.loads(out).get('key','')
+    return st, out, h
+def elev():  # "modo sudo": confirma a senha antes das ações destrutivas (vale 5 min)
+    s,b,_=req('POST','/api/auth/reauth',{'password':PW}); assert s==200, (s,b)
 def check(name, cond, extra=''):
     global ok,bad
     if cond: ok+=1; print('  ok ', name)
@@ -29,6 +37,27 @@ s,b,_=req('POST','/api/auth/setup',{'username':'bruno','displayName':'Bruno','pa
 check('cookie HttpOnly gravado', any(c.name=='brunos_session' for c in cj))
 s,b,_=req('POST','/api/auth/setup',{'username':'outro','password':'senha-forte-2'}); check('setup de novo → 409', s==409)
 s,b,_=req('GET','/api/auth/me'); check('me', json.loads(b)['displayName']=='Bruno')
+# revisão de segurança, lote 4: o cookie sozinho não basta (outra porta do mesmo IP recebe o cookie)
+check('setup devolve o código da aba', len(KEY)>=40, KEY)
+s,b,_=req('GET','/api/auth/me',key='1'); check('código da aba: só o cookie (cabeçalho "1") → 401', s==401 and 'entre de novo' in json.loads(b)['error'], (s,b))
+s,b,_=req('GET','/api/auth/me',key='codigo-errado'); check('código da aba: código errado → 401', s==401, (s,b))
+s,b,_=req('GET','/api/auth/me?k='+KEY,key='1'); check('código da aba: em ?k= vale nos GET (imagens, downloads, SSE)', s==200, (s,b))
+s,b,_=req('PUT','/api/settings?k='+KEY,{'x':1},key='1'); check('código da aba: ?k= não vale fora do GET', s==401, (s,b))
+s,b,_=req('GET','/api/auth/me'); check('código da aba: os pedidos sem código não derrubam a Sessão', s==200, (s,b))
+s,b,_=req('GET','/api/apps/logo?urn=syncthing:migrated',key='1'); check('código da aba: logos e papéis de parede não precisam (só imagem)', s==200, s)
+# modo sudo: ações destrutivas pedem a senha de novo
+s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: desmontar disco sem confirmar a senha → 403 reauth', s==403 and json.loads(b).get('reauth') is True, (s,b))
+s,b,_=req('POST','/api/auth/reauth',{'password':'errada'}); check('sudo: confirmar com a senha errada → 403', s==403, (s,b))
+s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: senha errada não libera', s==403 and json.loads(b).get('reauth') is True, (s,b))
+s,b,_=req('POST','/api/auth/reauth',{'password':PW}); check('sudo: confirmar a senha', s==200, (s,b))
+s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: depois de confirmar, a ação passa', s>=400 and 'não há disco montado' in json.loads(b)['error'], (s,b))
+# endereços aceitos (DNS rebinding): só IP, nomes da rede de casa, domínio do Runtipi e os da lista
+for hh,want in (('attacker.example.com',421),('192.168.1.50:8099',200),('brunos.local',200),('servidor',200),('brunos.server.lan',200),('meu.dominio.com.br',421),('[::1]:8099',200)):
+    s,b,_=req('GET','/api/public',hdrs={'Host':hh}); check(f'endereço {hh} → {want}', s==want, (s,b[:120]))
+s,b,_=req('GET','/',hdrs={'Host':'attacker.example.com'}); check('endereço estranho na página: 421 em HTML, sem refletir o nome sem escapar', s==421 and b'<script' not in b.lower(), b[:200])
+s,b,_=req('PUT','/api/settings',{'allowedHosts':'meu.dominio.com.br, outro.com'}); check('endereços aceitos: salvar a lista', s==200, b)
+s,b,_=req('GET','/api/public',hdrs={'Host':'meu.dominio.com.br'}); check('endereços aceitos: o domínio da lista passa na hora', s==200, (s,b[:120]))
+s,b,_=req('PUT','/api/settings',{}); s,b,_=req('GET','/api/public',hdrs={'Host':'meu.dominio.com.br'}); check('endereços aceitos: tirou da lista, volta a recusar', s==421, (s,b[:120]))
 s,b,_=req('GET','/api/files/roots'); roots=json.loads(b); check('sem mapeamento: só Home (pastas de /mnt sem disco ficam fora)', [r['id'] for r in roots]==['home'] and roots[0]['kind']=='place', b)
 s,b,_=req('GET','/api/files/list?root=disco1&path='); check('disco não mapeado → 404', s==404, (s,b))
 s,b,_=req('GET','/api/files/disks'); disks=json.loads(b); check('lista de discos de /mnt', [d['name'] for d in disks]==['Disco1','Disco2'] and not any(d['mapped'] or d['mounted'] for d in disks), b)
@@ -130,12 +159,13 @@ s,b,_=req('GET','/api/apps'); check('loja: nada foi desinstalado', b'syncthing:m
 for nm,u in (('Minha','https://github.com/a/b'),('minha','http://github.com/a/b'),('minha','https://u:p@github.com/a/b'),('minha','https://github.com/a/../b'),('minha','https://github.com/a/b;reboot'),('minha','')):
     s,b,_=req('POST','/api/store/stores',{'action':'add','name':nm,'url':u}); check(f'loja: adicionar loja inválida ({nm} {u}) → 400', s==400, b)
 s,b,_=req('POST','/api/store/stores',{'action':'add','name':'migrated','url':'https://github.com/a/b'}); check('loja: loja repetida → 409', s==409, b)
+elev()
 s,b,_=req('POST','/api/store/stores',{'action':'remove','name':'migrated'}); check('loja: remover loja com app instalado → 409', s==409, b)
 s,b,_=req('POST','/api/store/stores',{'action':'remove','name':'../x'}); check('loja: remover loja inválida → 400', s==400, b)
 s,b,_=req('POST','/api/store/stores',{'action':'apagar'}); check('loja: ação de loja desconhecida → 400', s==400, b)
 # 0.6.0: vídeo com Range, editor, envio em pedaços, extrair, duplicados, mapa do espaço
 s,b,_=req('PUT','/api/files/upload?root=home&path=usuario&name=clip.mp4', raw=b'\x00\x00\x00\x18ftypmp42'+b'x'*100, ctype='application/octet-stream')
-r=urllib.request.Request(B+'/api/files/raw?root=home&path=usuario/clip.mp4'); r.add_header('Range','bytes=0-3')
+r=urllib.request.Request(B+'/api/files/raw?root=home&path=usuario/clip.mp4'); r.add_header('Range','bytes=0-3'); r.add_header('X-BrunOS', KEY)
 try: resp=op.open(r); rs,rh,rb=resp.status,resp.headers,resp.read()
 except urllib.error.HTTPError as e: rs,rh,rb=e.code,e.headers,e.read()
 check('vídeo: Range → 206, video/mp4, inline', rs==206 and rh['Content-Type']=='video/mp4' and rh.get('Accept-Ranges')=='bytes' and len(rb)==4 and 'inline' in rh.get('Content-Disposition',''), (rs,dict(rh)))
@@ -166,6 +196,31 @@ for n in ('dup1.bin','dup2.bin'): req('PUT','/api/files/upload?root=home&path=us
 s,b,_=req('GET','/api/files/duplicates?root=home&path=usuario/Dups&min=1'); dp=json.loads(b); check('duplicados', s==200 and len(dp['groups'])==1 and sorted(f['path'] for f in dp['groups'][0]['files'])==['usuario/Dups/dup1.bin','usuario/Dups/dup2.bin'] and dp['wasted']==14, b)
 s,b,_=req('GET','/api/files/usage?root=home&path=usuario'); us=json.loads(b); check('mapa do espaço', s==200 and us['size']>0 and any(i['name']=='Dups' and i['dir'] and i['size']==28 for i in us['items']), b[:300])
 s,b,_=req('GET','/api/files/usage?root=home&path=../..'); check('mapa do espaço: caminho preso na raiz', s==200 and json.loads(b)['path']=='', (s,b[:200]))
+# revisão de segurança, lote 3: ocultos da pasta pessoal só leitura; a chave privada some de tudo
+H0=FIX+'/files/home/usuario'
+s,b,_=req('GET','/api/files/list?root=home&path=usuario/.ssh'); nm=[e['name'] for e in json.loads(b)['entries']]
+check('ocultos: .ssh aparece, sem a chave privada', s==200 and 'authorized_keys' in nm and 'id_ed25519.pub' in nm and 'id_ed25519' not in nm, (s,nm))
+s,b,_=req('GET','/api/files/raw?root=home&path=usuario/.ssh/id_ed25519'); check('segredos: ler a chave privada → 404', s==404 and b'CHAVE-PRIVADA' not in b, (s,b))
+s,b,_=req('GET','/api/files/text?root=home&path=usuario/.ssh/id_ed25519'); check('segredos: abrir a chave privada no editor → 404', s==404 and b'CHAVE-PRIVADA' not in b, (s,b))
+s,b,_=req('GET','/api/files/raw?root=home&path=usuario/.bashrc'); check('ocultos: dá para ler', s==200 and b'alias' in b, (s,b))
+s,b,_=req('PUT','/api/files/text?root=home&path=usuario/.bashrc', raw=b'curl mau | sh\n', ctype='text/plain'); check('ocultos: salvar .bashrc → 403', s==403 and 'alias' in open(H0+'/.bashrc').read(), (s,b))
+s,b,_=req('PUT','/api/files/upload?root=home&path=usuario/.ssh&name=authorized_keys', raw=b'ssh-ed25519 INVASOR', ctype='application/octet-stream'); check('ocultos: enviar para .ssh → 403', s==403 and os.listdir(H0+'/.ssh').__len__()==3, (s,b))
+s,b,_=req('PUT','/api/files/upload?root=home&path=usuario&name=.profile', raw=b'x', ctype='application/octet-stream'); check('ocultos: criar .profile na pasta pessoal → 403', s==403 and not os.path.exists(H0+'/.profile'), (s,b))
+s,b,_=req('PUT','/api/files/upload?root=home&path=usuario&name=.ssh/rc', raw=b'x', ctype='application/octet-stream'); check('ocultos: envio de pasta para dentro de .ssh → 403', s==403 and not os.path.exists(H0+'/.ssh/rc'), (s,b))
+s,b,_=req('POST','/api/files/upload/start',{'root':'home','path':'usuario/.ssh','name':'authorized_keys','size':3}); check('ocultos: envio em pedaços para .ssh → 403', s==403, (s,b))
+s,b,_=req('POST','/api/files/newfile',{'root':'home','path':'usuario','name':'.bash_logout'}); check('ocultos: novo arquivo oculto → 403', s==403 and not os.path.exists(H0+'/.bash_logout'), (s,b))
+s,b,_=req('POST','/api/files/mkdir',{'root':'home','path':'usuario/.ssh','name':'x'}); check('ocultos: criar pasta em .ssh → 403', s==403, (s,b))
+s,b,_=req('POST','/api/files/rename',{'root':'home','path':'usuario/.bashrc','name':'bashrc'}); check('ocultos: renomear → 403', s==403 and os.path.exists(H0+'/.bashrc'), (s,b))
+s,b,_=req('POST','/api/files/rename',{'root':'home','path':'usuario/novo.md','name':'.bashrc2'}); check('ocultos: renomear algo para oculto → 403', s==403 and os.path.exists(H0+'/novo.md'), (s,b))
+s,b,_=req('POST','/api/files/trash',{'root':'home','paths':['usuario/.ssh/authorized_keys']}); check('ocultos: mandar para a lixeira → 403', s==403 and os.path.exists(H0+'/.ssh/authorized_keys'), (s,b))
+s,b,_=req('POST','/api/files/delete',{'root':'home','paths':['usuario/.bashrc']}); check('ocultos: apagar → 403', s==403 and os.path.exists(H0+'/.bashrc'), (s,b))
+s,b,_=req('POST','/api/files/paste',{'root':'home','paths':['usuario/Documentos/notas.md'],'destRoot':'home','destPath':'usuario/.ssh','copy':True}); check('ocultos: colar dentro de .ssh → 403', s==403 and not os.path.exists(H0+'/.ssh/notas.md'), (s,b))
+s,b,_=req('POST','/api/files/paste',{'root':'home','paths':['usuario/.bashrc'],'destRoot':'home','destPath':'usuario/Documentos','copy':False}); check('ocultos: mover para fora → 403', s==403 and os.path.exists(H0+'/.bashrc'), (s,b))
+s,b,_=req('POST','/api/files/paste',{'root':'home','paths':['usuario/.ssh'],'destRoot':'home','destPath':'usuario/Documentos','copy':True}); check('ocultos: copiar .ssh para fora deixa a chave privada para trás', s==200 and sorted(os.listdir(H0+'/Documentos/.ssh'))==['authorized_keys','id_ed25519.pub'], (s,b))
+s,b,_=req('POST','/api/files/paste',{'root':'home','paths':['usuario/.ssh/id_ed25519'],'destRoot':'home','destPath':'usuario/Documentos','copy':True}); check('segredos: copiar a chave privada → 404', s==404 and not os.path.exists(H0+'/Documentos/id_ed25519'), (s,b))
+s,b,_=req('GET','/api/files/zip?root=home&p=usuario/.ssh'); zn=zipfile.ZipFile(io.BytesIO(b)).namelist() if s==200 else []; check('segredos: zip de .ssh sem a chave privada', s==200 and '.ssh/authorized_keys' in zn and not any(n.endswith('/id_ed25519') for n in zn), (s,zn))
+s,b,_=req('GET','/api/files/zip?root=home&p=usuario/.ssh/id_ed25519'); check('segredos: zip só da chave privada → 404', s==404 and b'CHAVE-PRIVADA' not in b, (s,b[:80]))
+s,b,_=req('GET','/api/files/search?root=home&path=&q=id_ed'); hn=[h['path'] for h in json.loads(b)['hits']]; check('segredos: a busca não acha a chave privada', s==200 and any(p.endswith('id_ed25519.pub') for p in hn) and not any(p.endswith('/id_ed25519') for p in hn), hn)
 # central de notificações
 s,b,_=req('GET','/api/events'); ev=json.loads(b); check('eventos: lista e contador', s==200 and isinstance(ev['events'],list) and 'unread' in ev, b)
 s,b,_=req('POST','/api/events/read',{'ids':[]},hdr=False); check('eventos: marcar lido sem X-BrunOS → 403', s==403)
@@ -176,6 +231,7 @@ s,b,_=req('GET','/api/disks/forecast'); check('discos: previsão responde com li
 check('logins.json (acessos conhecidos) só para o dono', oct(os.stat(FIX+'/data/logins.json').st_mode & 0o777)=='0o600' and len(json.load(open(FIX+'/data/logins.json'))['devices'])==1)
 # energia e desligamento seguro
 s,b,_=req('GET','/api/power'); pw=json.loads(b); check('energia: padrão desativado e em simulação', s==200 and pw['config']['enabled'] is False and pw['config']['simulate'] is True and pw['config']['threshold']==20 and pw['keyReady'] is False, b)
+elev()
 s,b,_=req('PUT','/api/power/config',{'threshold':2,'graceSec':120}); check('energia: limite fora da faixa → 400', s==400, b)
 s,b,_=req('PUT','/api/power/config',{'enabled':True,'simulate':False,'threshold':20,'graceSec':120,'host':'10.0.0.1'}); check('energia: sair da simulação sem testar → 400', s==400 and 'teste' in json.loads(b)['error'], b)
 s,b,_=req('PUT','/api/power/config',{'enabled':True,'simulate':True,'threshold':25,'graceSec':120,'testedAt':123}); c=json.loads(b).get('config',{}); check('energia: ativar em simulação', s==200 and c.get('enabled') and c.get('testedAt')==0, b)
@@ -273,6 +329,7 @@ s,b,_=req('POST','/api/updates/check',{}); u=json.loads(b); check('atualizaçõe
 s,b,_=req('GET','/api/updates'); check('atualizações: estado guardado', s==200 and json.loads(b)['checkedAt']>0 and json.loads(b)['every']=='24h', b)
 s,b,_=req('PUT','/api/updates/config',{'every':'12h'}); check('atualizações: frequência a cada 12 h', s==200 and json.loads(b)['every']=='12h', b)
 s,b,_=req('PUT','/api/updates/config',{'every':'1m'}); check('atualizações: frequência inválida → 400', s==400, b)
+elev()
 s,b,_=req('POST','/api/updates/run',{'kind':'tudo'}); check('atualizar: tipo inválido → 400', s==400, b)
 s,b,_=req('POST','/api/updates/run',{'kind':'app','urn':'nao-existe:migrated'}); check('atualizar: app sem atualização → 400', s==400, b)
 s,b,_=req('POST','/api/updates/run',{'kind':'linux'}); check('atualizar Linux sem conexão com o servidor → erro amigável', s==502 and 'Energia' in json.loads(b)['error'], b)
@@ -295,6 +352,7 @@ s,b,_=req('POST','/api/smart/selftest',{'key':'NAO-EXISTE','kind':'curto'}); che
 # 0.16.0: montar, desmontar, rótulo, Formatar e reiniciar o próprio BrunOS
 s,b,_=req('POST','/api/disks/mount',{'uuid':'abcd','folder':'../etc'}); check('montar: pasta inválida → erro', s>=400 and 'pasta' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/disks/mount',{'uuid':'abcd','folder':'Disco9'}); check('montar: partição fora da lista → 404', s==404, b)
+elev()
 s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('desmontar: pasta sem disco → erro', s>=400 and 'não há disco montado' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/disks/label',{'uuid':'abcd','label':'a b'}); check('rótulo inválido → erro', s>=400 and 'rótulo' in json.loads(b)['error'], b)
 s,b,_=req('POST','/api/disks/format',{'dev':'sdb','fs':'ext4','label':'X','password':'errada','formatPassword':'x'}); check('formatar: senha do BrunOS errada → 403', s==403, b)
@@ -324,13 +382,18 @@ s,b,_=req('GET','/api/terminal/key'); check('bloqueio: Chave do Terminal inacess
 s,b,_=req('POST','/api/auth/unlock',{'password':'errada'}); check('bloqueio: senha errada → 403', s==403, b)
 s,b,_=req('POST','/api/auth/unlock',{'password':'senha-forte-1'}); check('bloqueio: desbloquear', s==200 and json.loads(b)['locked'] is False, b)
 s,b,_=req('GET','/api/files/roots'); check('bloqueio: depois de desbloquear a API volta', s==200, b)
-s,b,_=req('GET','/api/terminal/key'); check('chave do terminal: o desbloqueio abre a chave de novo', json.loads(b)['unlocked'] is True, b)
+s,b,_=req('GET','/api/terminal/key'); check('chave do terminal: o desbloqueio não abre a chave (pede a senha ao abrir o Terminal)', json.loads(b)['unlocked'] is False, b)
+s,b,_=req('POST','/api/terminal/open',{'host':'127.0.0.1','port':1,'user':'a','useKey':True}); check('chave do terminal: trancada → pede a senha (keyLocked)', s>=400 and json.loads(b).get('keyLocked') is True, (s,b))
+s,b,_=req('POST','/api/terminal/key/unlock',{'password':PW}); check('chave do terminal: abrir com a senha', s==200 and json.loads(b)['unlocked'] is True, b)
 s,b,_=req('POST','/api/auth/password',{'current':'errada','next':'nova-senha-123'}); check('troca de senha com senha atual errada → 403', s==403)
 s,b,_=req('POST','/api/auth/password',{'current':'senha-forte-1','next':'nova-senha-123'}); check('troca de senha', s==200, b)
 FF='Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0'
 s,b,_=req('GET','/api/terminal/key'); check('chave do terminal: continua aberta nesta sessão depois de trocar a senha', json.loads(b)['unlocked'] is True, b)
 s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},ua=FF); check('login com outro navegador', s==200, b)
-s,b,_=req('GET','/api/terminal/key'); check('chave do terminal: o login com a senha nova abre a chave (recifrada)', json.loads(b)['unlocked'] is True, b)
+PW='nova-senha-123'
+s,b,_=req('GET','/api/terminal/key'); check('chave do terminal: o login não abre a chave', json.loads(b)['unlocked'] is False, b)
+s,b,_=req('DELETE','/api/terminal/key'); check('sudo: apagar a Chave do Terminal sem confirmar a senha → 403 reauth', s==403 and json.loads(b).get('reauth') is True and os.path.exists(FIX+'/data/terminal_key.json'), (s,b))
+s,b,_=req('POST','/api/terminal/key/unlock',{'password':PW}); check('chave do terminal: a senha nova abre a chave (recifrada)', s==200 and json.loads(b)['unlocked'] is True, b)
 s,b,_=req('DELETE','/api/terminal/key'); s2,b2,_=req('GET','/api/terminal/key'); check('chave do terminal: apagar', s==200 and json.loads(b2)['exists'] is False and not os.path.exists(FIX+'/data/terminal_key.json'), b2)
 s,b,_=req('GET','/api/events'); ev=[e for e in json.loads(b)['events'] if e['kind']=='login-new']; check('aviso de acesso novo (Firefox no Linux) na central', len(ev)==1 and ev[0]['title']=='Novo acesso: Firefox no Linux', b)
 s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},ua=FF); s,b,_=req('GET','/api/events'); check('o mesmo navegador não avisa de novo', len([e for e in json.loads(b)['events'] if e['kind']=='login-new'])==1, b)
@@ -341,6 +404,9 @@ s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-12
 cs=[req('POST','/api/auth/password',{'current':'chute%d'%i,'next':'outra-senha-123'},hdrs={'X-Forwarded-For':'203.0.113.%d'%i})[0] for i in range(5)]
 check('troca de senha: 5 chutes (cada um de um IP) → a Sessão acaba no 5º', cs[:4]==[403]*4 and cs[4]==401, cs)
 s,b,_=req('GET','/api/files/roots'); check('troca de senha: depois dos chutes a Sessão não vale mais', s==401)
+# lote 4: X-Forwarded-For só vale vindo do Traefik; aqui o pedido vem direto, então os 5 chutes contaram
+# para o IP de verdade, que ficou bloqueado (antes, cada IP inventado tinha só 1 erro)
+s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'},hdrs={'X-Forwarded-For':'198.51.100.7'}); check('X-Forwarded-For de fora do Traefik é ignorado (o IP real ficou bloqueado)', s==429, (s,b))
 for i in range(5): req('POST','/api/auth/login',{'username':'bruno','password':'errada'})
 s,b,_=req('POST','/api/auth/login',{'username':'bruno','password':'nova-senha-123'}); check('5 erros → bloqueio 429 (mesmo com a senha certa)', s==429, (s,b))
 auth=json.load(open(FIX+'/data/auth.json')); check('auth.json sem senha em texto', 'nova-senha-123' not in json.dumps(auth) and auth['users'][0]['iterations']==600000)

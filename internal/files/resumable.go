@@ -138,6 +138,13 @@ func (s *Service) StartUpload(rootID, rel, relName string, size int64) (string, 
 			return "", err
 		}
 	}
+	base, err := r.realDir(rel)
+	if err != nil {
+		return "", err
+	}
+	if err := r.guardWrite(filepath.Join(base, filepath.FromSlash(relName))); err != nil { // protect.go
+		return "", err
+	}
 	cur := rel
 	for _, p := range parts[:len(parts)-1] {
 		cur = path.Join(cur, p)
@@ -270,6 +277,9 @@ func (s *Service) FinishUpload(id string) (string, error) {
 	dir, err := r.realDir(u.Dir)
 	if err != nil || filepath.Dir(u.Part) != dir {
 		return "", ErrBadPath
+	}
+	if err := r.guardWrite(filepath.Join(dir, u.Name)); err != nil {
+		return "", err
 	}
 	_ = os.Chmod(u.Part, 0o644)
 	final := uniqueName(dir, u.Name)

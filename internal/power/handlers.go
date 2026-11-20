@@ -119,6 +119,12 @@ func (m *Monitor) hConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Host = strings.TrimSpace(c.Host)
+	// mudar para onde vai o SSH do script do servidor pede a senha do BrunOS (quem trocasse o destino
+	// receberia a Senha de configuração nos próximos pedidos)
+	if cur := m.Config(); (c.Host != cur.Host || c.Port != cur.Port || c.User != cur.User) && m.Elevated != nil && !m.Elevated(r) {
+		writeJSON(w, 403, map[string]any{"error": "digite a senha do BrunOS para continuar", "reauth": true})
+		return
+	}
 	if err := m.SetConfig(c); err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
