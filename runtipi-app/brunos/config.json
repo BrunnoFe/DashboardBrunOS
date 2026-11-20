@@ -8,8 +8,8 @@
   "port": 8790,
   "categories": ["utilities"],
   "description": "",
-  "tipi_version": 44,
-  "version": "0.27.0",
+  "tipi_version": 45,
+  "version": "0.28.0",
   "source": "https://github.com/BrunnoFe/DashboardBrunOS",
   "exposable": true,
   "dynamic_config": true,
@@ -57,5 +57,5 @@
     }
   ],
   "created_at": 1794018606000,
-  "updated_at": 1795139953393
+  "updated_at": 1795144241671
 }

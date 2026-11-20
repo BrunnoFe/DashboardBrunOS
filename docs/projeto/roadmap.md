@@ -32,7 +32,7 @@ celular.
    cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão
    direito ("Abrir por…"), em Personalizar e no Monitor de apps.
 
-## Revisão de segurança de 19/11/2026 (0.27.0, lançada em 19/11, aguardando teste do Bruno)
+## Revisão de segurança de 19/11/2026 (0.27.0, lançada em 19/11, testada pelo Bruno em 20/11)
 
 Os detalhes ficam no relatório privado. O que entrou:
 - Go 1.27 e `x/crypto` atualizado; `govulncheck` no CI.
@@ -45,7 +45,7 @@ Os detalhes ficam no relatório privado. O que entrou:
 - Regras do proxy do Docker mais estreitas; CI com actions fixadas e assinatura num job separado.
 - Interface: escapes, sandbox na Janela de app, demonstração só onde não há servidor e dados genéricos.
 
-## Revisão de segurança, lotes 3 e 4 (prontos em 20/11/2026, ainda não lançados)
+## Revisão de segurança, lotes 3 e 4 (0.28.0, lançada em 20/11/2026, aguardando teste do Bruno)
 
 Escolhas do Bruno em 19/11: ocultos da Home só leitura; segredos somem do Arquivos (pasta de dados do
 BrunOS, app.env dos apps, .env do Runtipi, chaves privadas de .ssh); código da aba + Terminal (a Chave do

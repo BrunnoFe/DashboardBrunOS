@@ -191,6 +191,17 @@ fixadas por hash e interface com escapes e sandbox. Lições:
   deixava o servidor esperando para sempre o resto de um corpo que nunca chega.
 - O proxy do Docker (wollomatic) já põe `^...$` sozinho nas regras.
 
+## 0.28.0 (20/11/2026): revisão de segurança, lotes 3 e 4
+Arquivos: ocultos da pasta pessoal só leitura; pasta de dados do BrunOS, `app.env` dos apps, `.env` do Runtipi
+e chaves privadas de `.ssh` somem do Arquivos. Sessão: código da aba além do cookie (todos entram de novo uma
+vez), a Chave do Terminal pede a senha ao abrir o Terminal, senha de novo nas ações destrutivas (5 min), Abas
+do Terminal por Sessão, `X-Forwarded-For` só do Traefik e nomes de endereço aceitos (Configurações →
+Sistema). Decisões 66 e 67. Lições:
+- O cookie vai para qualquer porta do mesmo IP; o `localStorage` não. Por isso o código fica no
+  `localStorage` e vai no cabeçalho (e em `?k=` só nos GET que o navegador faz sozinho).
+- Consulta de DNS dentro de um cadeado precisa de prazo: um nome que não existe na rede travaria os pedidos.
+- O pacote runtipi só lê o domínio local quando existe a pasta `apps` (cuidado ao montar testes).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.
