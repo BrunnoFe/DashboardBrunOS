@@ -215,6 +215,17 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     rede mudar (reinstalação), a chave para até colar de novo os comandos da Energia, que gravam a linha sem
     a trava; o BrunOS refaz a trava na volta. Recusado: valor fixo (errar trancaria fora) e faixas largas
     (172.16.0.0/12 incluiria redes de outros apps).
+69. **Assistente de tomadas Tuya: nuvem só para configurar** (0.31.0, combinado com o Bruno em
+    24/11/2026): a chave local só existe na nuvem da Tuya, então o BrunOS fala com a API dela (assinatura
+    HMAC-SHA256 igual à do tinytuya, só biblioteca padrão) para listar as tomadas da conta do app. Access ID
+    e Access Secret ficam cifrados em `tuya-cloud.json`; guardar, usar e esquecer pedem a senha (modo
+    sudo). A busca na rede testa a porta 6668 em cada endereço da faixa /24 do IP interno do servidor e das
+    tomadas já cadastradas (o container não ouve os avisos de rede das tomadas) e tenta a chave de cada
+    tomada (3.5, 3.4, 3.3; um pedido por vez em cada endereço). A chave local nunca vai ao navegador (fica 15
+    minutos na memória para "Atualizar"/"Adicionar"). "Atualizar" grava no mesmo cadastro (widgets, Medidor
+    e histórico seguem). IP mudou: o aviso "não está respondendo" manda procurar de novo no assistente, e
+    gravar pede a senha (a chave continua presa ao IP). Recusado: trocar o IP sozinho (abriria o furo
+    fechado na revisão de segurança) e guardar a credencial sem senha.
 
 ## Loja, Garimpo, instalação
 

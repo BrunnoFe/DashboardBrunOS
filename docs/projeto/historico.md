@@ -220,6 +220,16 @@ da chave, com o endereço lido do próprio sshd; o BrunOS pede uma vez cada vez 
 - O socket-proxy apaga o socket velho ao ligar e pula o `-allowfrom` quando usa socket.
 - Root sem capabilities não cria arquivo em pasta de outro dono: o CI (pasta do runner) pegou o que o teste
   local como root escondia; o proxy ganhou `DAC_OVERRIDE` e o smoke usa pasta de usuário comum.
+
+## 0.31.0 (24/11/2026): Assistente de tomadas Tuya
+Widgets → Integrações → Assistente de tomadas: Access ID e Access Secret do projeto da Tuya (cifrados, com
+senha), lista das tomadas da conta do app, busca na rede de casa (porta 6668 na faixa do servidor) testando a
+chave de cada uma, consumo de agora para conferir, "Atualizar" o cadastro que já existe ou "Adicionar como
+nova"; passo a passo do projeto da Tuya com os erros comuns; o aviso de tomada sem responder manda procurar de
+novo. Decisão 69. Lições:
+- A assinatura da Tuya é a mesma do tinytuya (apiKey + token + t + método, hash, cabeçalhos, caminho); um
+  "exemplo da documentação" lembrado de cabeça estava errado: conferir no código de quem já funciona.
+- O cliente das integrações recusa 127.0.0.1: nos testes, a nuvem de mentira usa o cliente do httptest.
 - Testes de script e o smoke rodam no Windows num contêiner `golang:1.27-bookworm` com o socket do Docker
   Desktop, `-v /tmp:/tmp`, `--network host` e o docker CLI estático.
 

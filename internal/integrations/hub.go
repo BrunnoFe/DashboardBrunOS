@@ -252,8 +252,12 @@ func (h *Hub) checkAlerts(it Integration, prev, vals map[string]Value, ferr erro
 				h.Events.Resolve(key, &events.Event{Kind: "integration-up", Level: events.Info,
 					Title: it.Name + " voltou a responder"})
 			case !downSince.IsZero() && now.Sub(downSince) >= downAfter:
+				body := errText(ferr)
+				if it.Kind == "tuya" { // o roteador pode ter dado outro IP para a tomada (0.31.0)
+					body += ". Se ela mudou de IP, abra Widgets → Integrações → Assistente de tomadas e procure de novo."
+				}
 				h.Events.Emit(events.Event{Kind: "integration-down", Level: def.Level, Key: key,
-					Title: it.Name + " não está respondendo", Body: errText(ferr)})
+					Title: it.Name + " não está respondendo", Body: body})
 			}
 			continue
 		}

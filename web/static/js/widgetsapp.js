@@ -337,7 +337,7 @@ async function drawIntegrations() {
   const list = st.ctx.integrations;
   const metrics = st.ctx.metrics;
   main().innerHTML = `<div class="wapp-head"><div><h3>Integrações</h3><p>Os apps de onde os widgets tiram dados. A senha ou o token fica guardado cifrado no servidor e nunca vem para o navegador.</p></div>
-    <span class="f-spacer"></span><button class="pill-btn primary" data-act="new-integ">${svg('plus')}Nova integração</button></div>
+    <span class="f-spacer"></span><button class="pill-btn" data-act="tuya-assist">${svg('plug')}Assistente de tomadas</button><button class="pill-btn primary" data-act="new-integ">${svg('plus')}Nova integração</button></div>
     <div class="wapp-suggest"></div>
     <div class="winteg-list">${list.length ? list.map((it) => {
       const v = metrics[it.id];
@@ -393,7 +393,8 @@ function drawIntegration() {
   main().innerHTML = `<div class="wapp-head"><span class="winteg-ico big">${kindIcon(k.id)}</span><div><h3>${g.id ? esc(g.name) : `Nova integração: ${esc(k.name)}`}</h3><p>${esc(k.desc)}</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
     <form class="form-grid winteg-form" onsubmit="return false">
       <label>Nome<input class="text-input" data-g="name" value="${esc(g.name)}" maxlength="60"><small class="hint">Aparece nas métricas, ex.: “${esc(g.name || k.name)} › ${esc(k.metrics?.[0]?.name || '')}”.</small></label>
-      ${k.note ? `<div class="wapp-note">${svg('info')}<span>${esc(k.note)}</span></div>` : ''}
+      ${k.id === 'tuya' ? `<div class="wapp-note">${svg('plug')}<span>Mais fácil: o <b>Assistente de tomadas</b> acha o IP, o ID, a versão e a chave local sozinho, pela conta do app Smart Life.</span><button type="button" class="pill-btn sm" data-act="tuya-assist">Abrir</button></div>`
+        : k.note ? `<div class="wapp-note">${svg('info')}<span>${esc(k.note)}</span></div>` : ''}
       ${k.id === 'tailscale' ? `<div class="wts-cmds"><button type="button" class="pill-btn" data-act="ts-cmds">${svg('terminal')}Mostrar os comandos de atualização</button><pre class="pw-cmds" hidden tabindex="0"></pre></div>` : ''}
       ${(k.fields || []).map(field).join('')}
       <label>Buscar a cada<select class="text-input" data-g="interval">${INTERVALS.map(([s, l]) => `<option value="${s}" ${g.interval === s ? 'selected' : ''}>${l}${s === k.interval ? ' (recomendado)' : ''}</option>`).join('')}</select>
@@ -506,6 +507,10 @@ async function onClick(e) {
     else if (a === 'save') saveDraft();
     else if (a === 'remove') { if (await confirmDialog('Remover este widget?', 'Ele sai da tela inicial.', 'Remover', { danger: true })) { st.ctx.remove(st.editId); st.editId = null; show('mine'); } }
     else if (a === 'new-integ') openIntegration(null);
+    else if (a === 'tuya-assist') { // 0.31.0: carrega sob demanda, como as outras janelas
+      const { tuyaAssistant } = await import('./tuya.js');
+      tuyaAssistant({ onDone: async () => { await st.ctx.reloadIntegrations(); if (st.view === 'integrations') show('integrations'); } });
+    }
     else if (a === 'ts-cmds') {
       const pre = el.parentElement.querySelector('pre');
       try { pre.textContent = (await api.power.setup()).updateCommands; pre.hidden = false; el.hidden = true; }

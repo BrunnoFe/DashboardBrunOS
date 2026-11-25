@@ -208,6 +208,14 @@ const real = {
     del: (id) => call('DELETE', `/api/integrations/${encodeURIComponent(id)}`),
     test: (b) => call('POST', '/api/integrations/test', b),
   },
+  // Assistente de tomadas Tuya (0.31.0): a credencial da nuvem e a busca pedem a senha (modo sudo)
+  tuya: {
+    cloud: () => call('GET', '/api/tuya/cloud'),
+    saveCloud: (b) => call('PUT', '/api/tuya/cloud', b),
+    forget: () => call('DELETE', '/api/tuya/cloud'),
+    scan: () => call('POST', '/api/tuya/scan', {}),
+    apply: (b) => call('POST', '/api/tuya/apply', b),
+  },
   processes: (kernel = false) => call('GET', `/api/processes${kernel ? '?kernel=1' : ''}`),
   processCmd: (pid) => call('GET', `/api/processes/cmd?pid=${encodeURIComponent(pid)}`),
   events: {
@@ -929,6 +937,23 @@ function makeDemo() {
       test: (b) => (/^https?:\/\//.test(b.url || '') || demoKinds.find((k) => k.id === (b.kind || demoInteg.find((x) => x.id === b.id)?.kind))?.noUrl ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
         : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
     },
+    tuya: (() => { // Assistente de tomadas: conta e rede de mentira, dados genéricos
+      let cloud = { configured: false };
+      const regions = [{ id: 'us', name: 'Américas (Western America)' }, { id: 'eu', name: 'Europa Central' }, { id: 'in', name: 'Índia' }, { id: 'cn', name: 'China' }];
+      return {
+        cloud: () => wait({ cloud, regions }, 80),
+        saveCloud: (b) => (/^[A-Za-z0-9]{8,64}$/.test(b.accessId || '') && /^[A-Za-z0-9]{8,64}$/.test(b.secret || '')
+          ? wait({ cloud: (cloud = { configured: true, region: b.region, accessId: `${b.accessId.slice(0, 4)}••••${b.accessId.slice(-4)}`, savedAt: Math.floor(Date.now() / 1000) }) }, 600)
+          : Promise.reject(new Error('Access ID inválido (só letras e números, como aparece no projeto da Tuya)'))),
+        forget: () => { cloud = { configured: false }; return wait({ ok: true }, 100); },
+        scan: () => wait({ plugs: [
+          { id: 'bf0000000000demo01', name: 'Tomada do servidor', product: 'Smart Plug 16A', online: true, ip: '192.168.1.60', version: '3.5', power: 16.9, known: demoInteg.find((x) => x.kind === 'tuya')?.id, knownAs: demoInteg.find((x) => x.kind === 'tuya')?.name, same: true },
+          { id: 'bf0000000000demo02', name: 'Abajur da sala', product: 'Smart Plug', online: true, ip: '192.168.1.61', version: '3.4', power: 4.2 },
+          { id: 'bf0000000000demo03', name: 'Tomada da varanda', product: 'Smart Plug', online: false, notFound: true },
+        ] }, 2500),
+        apply: (b) => wait({ id: 'demo', kind: 'tuya', name: b.name || 'Tomada' }, 400),
+      };
+    })(),
     statsHistory: (range) => {
       const { step, n } = DEMO_P[range] || DEMO_P['24h'], long = step > 60;
       const t0 = Math.floor(Date.now() / 1000 / step) * step;

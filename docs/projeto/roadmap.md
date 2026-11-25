@@ -21,13 +21,13 @@ celular.
    - saiu a conversão das preferências antigas dos widgets (`widgets2` v1/v2 → v3); instalação nova monta
      os widgets direto no formato atual;
    - branches antigas apagadas; Tuya fora das pendências (funcionando).
-2. **0.30.0: Docker por socket e trava na chave** (lançada em 24/11, aguardando teste do Bruno; decisão 68):
+2. **0.30.0: Docker por socket e trava na chave** (lançada em 24/11, testada; decisão 68):
    - o BrunOS e o proxy do Docker conversam por um arquivo de socket compartilhado só entre os dois, em vez
      da rede (nenhum outro container fala com o proxy);
    - `from=` na chave do script: o próprio script descobre a faixa da rede do BrunOS ao instalar/atualizar a
      chave (e regrava se o Runtipi recriar a rede); comando de socorro em `docs/privado/`;
    - testar antes com o `smoke.sh` (Docker real); se falhar no servidor, voltar para a 0.29.0 pelo Runtipi.
-3. **0.31.0: Assistente de tomadas Tuya**:
+3. **0.31.0: Assistente de tomadas Tuya** (lançada em 24/11, aguardando teste do Bruno; decisão 69):
    - nuvem da Tuya só para configurar: Access ID + Access Secret + região guardados cifrados, e usar pede a
      senha do BrunOS (5 min); as leituras continuam só pela rede de casa;
    - lista as tomadas da conta com nome, ID e chave local; busca na rede de casa (porta 6668 na faixa da

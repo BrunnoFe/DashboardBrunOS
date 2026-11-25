@@ -1820,6 +1820,36 @@ body.has-sheet #sheet-host { z-index: 36; }
 .win-loading { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; background: hsl(var(--bh) 14% 10%); transition: opacity .3s; }
 .win-loading::after { content: ''; width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.18); border-top-color: var(--brand-lightest); animation: spin .9s linear infinite; }
 .win-body.loaded .win-loading { opacity: 0; pointer-events: none; }
+
+/* Assistente de tomadas Tuya (0.31.0) */
+.ty h2 { display: flex; align-items: center; gap: 8px; }
+.ty h2 .svg { width: 22px; height: 22px; }
+.ty-guide { margin: 10px 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--brand-soft); font-size: 12.5px; line-height: 1.55; }
+.ty-guide summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.ty-guide summary .svg { width: 16px; height: 16px; flex: none; }
+.ty-guide ol { margin: 8px 0 6px; padding-left: 20px; }
+.ty-guide li { margin: 3px 0; }
+.ty-err { color: #ffb3b3; font-size: 12.5px; min-height: 1em; margin: 0; }
+.ty-acct { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); font-size: 13px; margin-bottom: 12px; }
+.ty-acct > span { flex: 1; min-width: 180px; }
+.ty-acct > .svg { width: 16px; height: 16px; opacity: .8; }
+.ty-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow: auto; }
+.ty-plug { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.04); box-shadow: var(--shadow-btn-hl-soft); flex-wrap: wrap; }
+.ty-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: #fff; color: #333; flex: none; }
+.ty-ico .svg { width: 20px; height: 20px; }
+.ty-txt { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.ty-txt small { opacity: .65; font-size: 11.5px; }
+.ty-ok, .ty-warn, .ty-same { font-size: 12px; display: block; line-height: 1.45; }
+.ty-ok { color: #8ff0b1; }
+.ty-warn { color: #ffd38f; }
+.ty-same { color: #c7f7d6; opacity: .9; }
+.ty-ok .svg, .ty-same .svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+.ty-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.ty-empty { text-align: center; padding: 22px 12px; opacity: .75; font-size: 13px; }
+.ty-empty .svg { width: 26px; height: 26px; opacity: .7; }
+.ty .hint .svg { width: 14px; height: 14px; vertical-align: -2px; }
+.ty .svg.spin { animation: spin .9s linear infinite; }
+@media (max-width: 560px) { .ty-acts { width: 100%; justify-content: flex-start; } }
 .win-blocked { margin: auto; max-width: 420px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; height: 100%; justify-content: center; }
 .win-blocked .win-app-ico { width: 56px; height: 56px; border-radius: 27%; overflow: hidden; display: grid; place-items: center; background: var(--tile, #333); }
 .win-blocked .win-app-ico img { width: 70%; height: 70%; object-fit: contain; }

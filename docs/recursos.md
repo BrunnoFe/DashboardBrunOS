@@ -51,7 +51,7 @@ O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pa
 
 - **Menu de energia:** o botão no canto da tela (depois do sino) tem Bloquear, Sair, Reiniciar e Desligar. Os mesmos botões estão em *Configurações*, ao lado de *Sair*. Reiniciar e Desligar pedem a senha do BrunOS e esperam 1 minuto, com uma contagem e um botão para cancelar; quando o Ubuntu pede para reiniciar depois de uma atualização, o painel de atualizações mostra *Reiniciar agora*. Usam a mesma conexão do desligamento seguro (abaixo).
 
-- **Consumo:** a janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mês, com projeção) pela tarifa que você informa. O consumo vem de uma tomada inteligente Tuya (integração *Tomada Tuya*, pela rede de casa, sem nuvem), da bateria durante as quedas de energia ou de uma estimativa que o BrunOS aprende.
+- **Consumo:** a janela *Energia* mostra quanto o servidor gasta (W, kWh e R$ por dia e por mês, com projeção) pela tarifa que você informa. O consumo vem de uma tomada inteligente Tuya (integração *Tomada Tuya*, pela rede de casa, sem nuvem; o *Assistente de tomadas*, em Widgets → Integrações, acha e configura a tomada pela conta do app Smart Life, sem tinytuya), da bateria durante as quedas de energia ou de uma estimativa que o BrunOS aprende.
 - **Desligamento seguro:** em notebooks usados como servidor, *Configurações → Sistema → Energia* registra as quedas de energia e pode desligar o servidor com segurança quando a bateria chegar a um limite sem energia da tomada. Antes de desligar aparece uma contagem regressiva com botão para cancelar. O recurso começa em modo simulação e tem um assistente que mostra os comandos para preparar o servidor e testa a conexão.
 
 ## Terminal

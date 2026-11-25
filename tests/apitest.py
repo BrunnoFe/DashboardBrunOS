@@ -47,6 +47,8 @@ s,b,_=req('GET','/api/auth/me'); check('código da aba: os pedidos sem código n
 s,b,_=req('GET','/api/apps/logo?urn=syncthing:migrated',key='1'); check('código da aba: logos e papéis de parede não precisam (só imagem)', s==200, s)
 # modo sudo: ações destrutivas pedem a senha de novo
 s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: desmontar disco sem confirmar a senha → 403 reauth', s==403 and json.loads(b).get('reauth') is True, (s,b))
+for m,p in (('PUT','/api/tuya/cloud'),('DELETE','/api/tuya/cloud'),('POST','/api/tuya/scan'),('POST','/api/tuya/apply')):
+    s,b,_=req(m,p,{}); check('sudo: assistente de tomadas %s %s sem confirmar a senha → 403 reauth'%(m,p), s==403 and json.loads(b).get('reauth') is True, (s,b))
 s,b,_=req('GET','/api/processes/cmd?pid=1'); check('sudo: comando inteiro de um processo sem confirmar a senha → 403 reauth (V13)', s==403 and json.loads(b).get('reauth') is True, (s,b))
 s,b,_=req('POST','/api/auth/reauth',{'password':'errada'}); check('sudo: confirmar com a senha errada → 403', s==403, (s,b))
 s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: senha errada não libera', s==403 and json.loads(b).get('reauth') is True, (s,b))
@@ -123,6 +125,12 @@ elev()
 s,b,_=req('GET','/api/processes/cmd?pid=%d'%pid0); check('processos: comando inteiro com a senha confirmada', s==200 and isinstance(json.loads(b)['cmd'],str), (s,b[:200]))
 s,b,_=req('GET','/api/processes/cmd?pid=abc'); check('processos: pid inválido → 400', s==400, (s,b))
 s,b,_=req('GET','/api/processes/cmd?pid=999999999'); check('processos: processo que não existe → 404', s==404, (s,b))
+# Assistente de tomadas (0.31.0): ler o estado é livre; credencial, busca e gravar pedem a senha de novo
+s,b,_=req('GET','/api/tuya/cloud'); h=json.loads(b); check('tuya: estado sem credencial e com as regiões', s==200 and h['cloud']['configured'] is False and any(r['id']=='us' for r in h['regions']), b[:200])
+s,b,_=req('PUT','/api/tuya/cloud',{'region':'us','accessId':'x;rm -rf','secret':'abc'}); check('tuya: credencial inválida → 400', s==400 and 'Access ID' in json.loads(b)['error'], (s,b))
+s,b,_=req('POST','/api/tuya/scan',{}); check('tuya: procurar sem credencial pede o Access ID', s==400 and 'Access ID' in json.loads(b)['error'], (s,b))
+s,b,_=req('POST','/api/tuya/apply',{'id':'bf1','mode':'add'}); check('tuya: gravar sem busca → 400', s==400 and 'procure' in json.loads(b)['error'], (s,b))
+check('tuya: credencial não fica gravada se for inválida', not os.path.exists(FIX+'/data/tuya-cloud.json'))
 s,b,_=req('GET','/api/apps/history?urn=syncthing:migrated'); h=json.loads(b); check('apps: histórico de 24 h', s==200 and h['step']==60 and isinstance(h['points'],list) and h['health'] in ('up','down','unknown'), b)
 s,b,_=req('GET','/api/apps/history?urn=nao:existe'); check('apps: histórico de app desconhecido → 404', s==404)
 s,b,_=req('GET','/api/apps/history?urn=syncthing:migrated&range=30d'); h=json.loads(b); check('apps: histórico de 30 dias', s==200 and h['step']==1200 and h['range']=='30d', b[:200])

@@ -126,6 +126,7 @@ type server struct {
 	procs     *procs.Reader
 	netmon    *netmon.Monitor
 	integ     *integrations.Hub
+	tuya      *integrations.TuyaAssist // Assistente de tomadas (0.31.0)
 	tkey      *termkey.Vault
 	notes     *notes.Store
 	icons     *icons.Store // Ícones guardados (0.24.0)
@@ -267,6 +268,12 @@ func main() {
 		integrations.NewSeriesStore(filepath.Join(cfg.DataDir, "metric-history.json")), s.events)
 	s.integ.SetUsage(s.readSettings())
 	s.integ.ImageDir = filepath.Join(cfg.DataDir, "img-cache") // fotos do Immich e capas do Plex já mostradas
+	// Assistente de tomadas Tuya: procura na faixa da rede do IP interno do servidor e do host da Energia
+	s.tuya = integrations.NewTuyaAssist(s.integ, filepath.Join(cfg.DataDir, "tuya-cloud.json"))
+	s.tuya.LAN = func() []string {
+		_, info := s.tipi.Apps()
+		return []string{info.InternalIP, s.power.Config().Host}
+	}
 	// as integrações nunca falam com o proxy do Docker (por ele dá para parar e ligar containers)
 	if u, err := url.Parse(cfg.DockerHost); err == nil && u.Scheme == "tcp" && u.Hostname() != "" {
 		proxyHost := u.Hostname()
@@ -446,6 +453,7 @@ func (s *server) routes() http.Handler {
 	s.tsdb.Register(mux, a) // GET /api/history (várias séries, períodos de 5 min a 30 dias)
 	s.netmon.Register(mux, a)
 	s.integ.Register(mux, a, s.integrationApps)
+	s.tuya.Register(mux, a)
 	s.energy.Register(mux, a)
 	s.smart.Register(mux, a)
 	s.disks.Register(mux, a) // janela Discos (GET /api/disks e as ações)
@@ -621,6 +629,8 @@ var sudoRoutes = map[string]bool{
 	"DELETE /api/terminal/key": true, "POST /api/terminal/forget": true, "POST /api/power/test": true,
 	"POST /api/updates/run": true, "POST /api/disks/unmount": true, "POST /api/settings/restore": true,
 	"GET /api/processes/cmd": true, // comando inteiro de um processo, com os segredos (V13, 0.29.0)
+	// Assistente de tomadas (0.31.0): guardar/apagar a credencial da nuvem da Tuya, usá-la e gravar a chave
+	"PUT /api/tuya/cloud": true, "DELETE /api/tuya/cloud": true, "POST /api/tuya/scan": true, "POST /api/tuya/apply": true,
 }
 
 const elevateFor = 5 * time.Minute

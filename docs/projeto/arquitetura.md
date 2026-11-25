@@ -398,6 +398,12 @@ POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min ·
 GET  /api/integrations/kinds · /api/integrations ({integrations:[Public],views}) · /api/integrations/suggest
 POST /api/integrations {kind,name,url,user,secret?,interval,alerts}   PUT/DELETE /api/integrations/{id}
 POST /api/integrations/test {…, id?}  (busca uma vez sem salvar; com id usa o token guardado; 502 {error})
+GET  /api/tuya/cloud                  Assistente de tomadas (0.31.0): {cloud:{configured,region,accessId(mascarado)},regions}
+PUT  /api/tuya/cloud {region,accessId,secret}  confere na nuvem da Tuya e guarda cifrado (tuya-cloud.json) · sudo
+DELETE /api/tuya/cloud                esquece a credencial · sudo
+POST /api/tuya/scan                   lista da nuvem + busca na rede (porta 6668, faixa /24) → {plugs:[{id,name,ip,version,
+                                      power,known,knownAs,same,notFound,noKey}]} (sem a chave local) · sudo
+POST /api/tuya/apply {id,mode:update|add,name}  grava a tomada achada (chave da memória, 15 min) · sudo
 GET  /api/metrics/series?id=<integração>.<métrica>&range=1h|24h|7d ({range,series:{step,start,points}})
 ```
 
