@@ -202,6 +202,16 @@ Sistema). Decisões 66 e 67. Lições:
 - Consulta de DNS dentro de um cadeado precisa de prazo: um nome que não existe na rede travaria os pedidos.
 - O pacote runtipi só lê o domínio local quando existe a pasta `apps` (cuidado ao montar testes).
 
+## 0.29.0 (24/11/2026): fechamentos da revisão de segurança
+Processos (V13): a lista mostra o comando com senhas, tokens, `usuario:senha@` e chaves longas trocados por
+`••••`; o olho ao lado abre o comando inteiro depois de confirmar a senha do BrunOS. Proxy do Docker
+congelado em versão + digest (`smoke.sh` lê a mesma imagem do compose e falha sem digest). Saiu a conversão
+das preferências antigas dos widgets (anteriores à 0.13); instalação nova monta os widgets direto no formato
+atual. Lições:
+- A tag `:1` do proxy pulou para uma versão de 3 dias: congelar numa com pelo menos 2 semanas.
+- Mascarar por padrão erra para mais (esconde um caminho de `--key-file`), nunca para menos: por isso o
+  "ver completo" com senha, em vez de tentar acertar todos os formatos.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

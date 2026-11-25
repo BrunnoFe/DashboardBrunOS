@@ -29,7 +29,7 @@ A janela *Discos* mostra cada disco do servidor, inclusive os que não estão mo
 
 ## Uso ao vivo e notificações
 
-- A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche, o histórico de CPU, memória, temperatura e rede (5 min, 24 h ou 7 dias) e a lista de processos do servidor.
+- A janela *Uso ao vivo* mostra a temperatura de cada disco e, se ligada, a previsão de quando ele enche, o histórico de CPU, memória, temperatura e rede (5 min, 24 h ou 7 dias) e a lista de processos do servidor (senhas e chaves passadas nos comandos aparecem como `••••`; o comando inteiro só com a senha do BrunOS).
 - O widget *Internet* mostra a latência e quantas vezes a internet caiu (o sino avisa quando cai e quando volta).
 - O **sino** reúne os avisos do servidor: queda e volta da energia, desligamento seguro, disco mapeado que se desmontou, disco quente, disco quase cheio (ou que deve encher em breve, se a previsão estiver ligada em *Configurações → Sistema*) e acesso ao BrunOS de um navegador ou rede que nunca entrou. Clique num aviso importante (no sino ou no balão que aparece) para ver a explicação, o que fazer e um botão que leva direto ao lugar certo.
 

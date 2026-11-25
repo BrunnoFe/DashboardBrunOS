@@ -386,6 +386,22 @@ func (s *server) hAppLogsStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// hProcessCmd devolve o comando inteiro de um processo, sem esconder os segredos. Pede a senha do BrunOS
+// de novo (sudoRoutes): a lista mostra o comando com os segredos trocados por "••••".
+func (s *server) hProcessCmd(w http.ResponseWriter, r *http.Request) {
+	pid, err := strconv.Atoi(r.URL.Query().Get("pid"))
+	if err != nil || pid <= 0 {
+		writeJSON(w, 400, map[string]string{"error": "processo inválido"})
+		return
+	}
+	cmd, ok := s.procs.Cmdline(pid)
+	if !ok {
+		writeJSON(w, 404, map[string]string{"error": "esse processo já terminou"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"pid": pid, "cmd": cmd})
+}
+
 // hProcesses lista os processos do servidor, com o nome do app quando o processo é de um container.
 func (s *server) hProcesses(w http.ResponseWriter, r *http.Request) {
 	list, sum := s.procs.List(r.URL.Query().Get("kernel") == "1")

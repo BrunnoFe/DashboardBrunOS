@@ -1,6 +1,6 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { paintBattery, batteryDialog } from './battery.js';
-import { BRUNOS_METRICS, brunosValue, normalize, migrate, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
+import { BRUNOS_METRICS, brunosValue, normalize, defaultWidgets, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
 import {
   fits, firstFree, place, dragPlan, compact, usedRows, Q, iconSizeKey, iconMetrics, appCols, ICON_SIZES, ICON_GAPS, LAST_ROW, HOME_FIT,
   MOBILE_W, areaUtil, reguaFor, fitStack, fitSide, rowsFit,
@@ -359,35 +359,24 @@ function pageCfg(p) {
 function setPageCfg(p, patch) { (set().pageCfg ||= {})[p] = { ...pageCfg(p), ...patch }; }
 function W2() {
   const st = set();
-  if (!st.widgets2 || typeof st.widgets2 !== 'object' || !st.widgets2.items) { st.widgets2 = migrate(st.widgets); save(); }
+  if (!st.widgets2 || typeof st.widgets2 !== 'object' || !st.widgets2.items) { st.widgets2 = firstWidgets(st); save(); }
   st.widgets2.areas ||= {};
-  if ((st.widgets2.v || 1) < 3) { migrateAreas(st); save(); }
   return st.widgets2;
 }
-const OLD_W = 6, OLD_H = 4; // limites da 0.13.0: a conversão antiga continua igual
-// v1/v2 → v3: cada Página vira uma grade (colunas fixas de antes, ou a soma das larguras, até 6; até 4
-// linhas) e os widgets são encaixados na ordem de hoje; o que não couber vai para uma Página nova.
-function migrateAreas(st) {
-  const w = st.widgets2, oldCols = w.cols || {}, cfg = (st.pageCfg ||= {}), areas = {};
-  const pages = Object.keys(w.areas).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
-  let next = Math.max(-1, ...pages, ...Object.values(st.appPlace || {}).filter(Number.isInteger)) + 1;
-  for (const p of pages) {
-    const ids = (w.areas[p] || []).map((x) => (typeof x === 'string' ? x : x?.id)).filter((id) => id && w.items[id]);
-    const items = ids.map((id) => { const it = normalize(w.items[id]); return { id, w: it.w, h: it.h, full: w.items[id].size === 'f' }; });
-    const cols = clamp(oldCols[p] || items.reduce((s, it) => s + (it.full ? 1 : it.w), 0), Math.max(1, ...items.map((it) => (it.full ? 1 : it.w))), OLD_W);
-    for (const it of items) if (it.full) it.w = cols; // a Faixa antiga ocupa a largura da Área
-    let rest = items, page = p;
-    while (rest.length) {
-      const { list, overflow } = place([], cols, OLD_H, rest);
-      if (!list.length) break;
-      areas[page] = list.map(({ id, x, y }) => ({ id, x, y }));
-      for (const o of list) { Object.assign(w.items[o.id], { w: o.w, h: o.h }); delete w.items[o.id].size; }
-      // linhas: as usadas + 1 vazia para crescer (2 a 4); a Medida dá para mudar depois
-      cfg[page] = { disp: 'wtop', wm: [cols, clamp(usedRows(list) + 1, 2, OLD_H)], am: 'auto', ...(cfg[page] || {}) };
-      rest = overflow; page = next++;
-    }
-  }
-  w.areas = areas; w.v = 3; delete w.cols;
+// Primeira vez (instalação nova): os Modelos da lista padrão lado a lado na Página 1, numa grade da
+// largura deles (até 6) com uma linha livre para crescer. A conversão das preferências antigas
+// (v1/v2 da 0.12 → v3) saiu na 0.29.0, combinado com o Bruno.
+function firstWidgets(st) {
+  const w = defaultWidgets(st.widgets);
+  const items = Object.keys(w.items).map((id) => { const it = normalize(w.items[id]); return { id, w: it.w, h: it.h }; });
+  if (!items.length) return w;
+  const cols = clamp(items.reduce((s, it) => s + it.w, 0), Math.max(...items.map((it) => it.w)), 6);
+  const placed = place([], cols, 4, items).list;
+  for (const o of placed) Object.assign(w.items[o.id], { w: o.w, h: o.h });
+  for (const id of Object.keys(w.items)) if (!placed.some((o) => o.id === id)) delete w.items[id];
+  w.areas = { 0: placed.map(({ id, x, y }) => ({ id, x, y })) };
+  (st.pageCfg ||= {})[0] ||= { disp: 'wtop', wm: [cols, clamp(usedRows(placed) + 1, 2, 4)], am: 'auto' };
+  return w;
 }
 const widgetById = (id) => { const it = W2().items[id]; return it ? normalize(it) : null; };
 const areaOf = (p) => { const w = W2(); return (w.areas[p] || []).filter((o) => o && w.items[o.id]); };
@@ -2213,6 +2202,7 @@ function liveUsageDialog() {
     const max = Math.max(5, ...list.map((p) => p.cpu));
     $('.proc-list', d.el).innerHTML = list.length ? list.map((p) => `<div class="proc pr-row" title="${esc(p.cmd || p.name)}\nPID ${p.pid} · ${esc(p.user)} · ${p.threads} thread(s)">
         <span class="pr-name"><b>${esc(p.name)}</b><small>${esc(p.cmd || '')}</small></span>
+        ${p.masked ? `<button class="icon-btn pr-full" data-pr-full="${p.pid}" title="Ver o comando completo (pede a senha do BrunOS)" aria-label="Ver o comando completo">${svg('eye')}</button>` : ''}
         ${p.app ? `<span class="pr-app">${esc(p.app)}</span>` : ''}<span class="pr-user">${esc(p.user)}</span>
         <span class="track"><i style="width:${clamp((p.cpu / max) * 100, 0, 100)}%"></i></span><span class="pct">${fmt(p.cpu, 1)}%</span><span class="mem">${fmtBytes(p.mem)}</span></div>`).join('')
       : `<div class="empty-note">${q ? 'Nenhum processo com esse nome' : 'Nenhum processo'}</div>`;
@@ -2243,6 +2233,15 @@ function liveUsageDialog() {
     const row = e.target.closest('[data-open-dev]');
     if (row) { d.close(); openDisks({ dev: row.dataset.openDev, tab: e.target.closest('.smart-badge') ? 'health' : undefined }); return; }
     const pa = e.target.closest('[data-proc-app]'); if (pa) { openAppDetails(appById(pa.dataset.procApp)); return; }
+    const pf = e.target.closest('[data-pr-full]');
+    if (pf) { // V13 (0.29.0): a lista esconde os segredos; o comando inteiro pede a senha do BrunOS
+      api.processCmd(pf.dataset.prFull).then((r) => openDialog(`<h2>Comando completo</h2>
+        <p class="dlg-text">Processo ${esc(String(r.pid))}. Pode conter senhas ou chaves: não compartilhe prints desta tela.</p>
+        <pre class="pw-cmds" tabindex="0">${esc(r.cmd)}</pre><div class="dlg-actions"><button class="pill-btn primary" data-c="ok" autofocus>Fechar</button></div>`, { width: 560 }))
+        .then((dl) => dl && $('[data-c="ok"]', dl.el).addEventListener('click', () => dl.close()))
+        .catch((err) => toastError(err, 'Não deu para ler o comando'));
+      return;
+    }
     const pe = e.target.closest('[data-period]');
     if (pe) { period = pe.dataset.period; $$('[data-period]', d.el).forEach((x) => x.classList.toggle('on', x === pe)); if (period === 'live') { clearTimeout(longTimer); drawChart(); } else loadLong(); return; }
     const lm = e.target.closest('[data-list]');

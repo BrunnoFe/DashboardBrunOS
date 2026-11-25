@@ -11,6 +11,9 @@ NET=brunos-smoke
 # as mesmas regras do runtipi-app/brunos/docker-compose.json (o BrunOS usa sempre o ID completo do container)
 ALLOW_GET='^/v1\.[0-9]{2}/(version|containers/json|containers/[0-9a-f]{64}/(stats|logs))$'
 ALLOW_POST='^/v1\.[0-9]{2}/containers/[0-9a-f]{64}/(restart|start|stop)$'
+# a mesma imagem (versão + digest) do compose, lida de lá para os dois nunca ficarem diferentes
+PROXY_IMAGE="$(grep -o '"wollomatic/socket-proxy:[^"]*"' "$(dirname "$0")/../runtipi-app/brunos/docker-compose.json" | tr -d '"')"
+case "$PROXY_IMAGE" in *@sha256:*) ;; *) echo "imagem do proxy sem digest no compose: '$PROXY_IMAGE'" >&2; exit 1 ;; esac
 
 cleanup() {
   status=$?
@@ -30,7 +33,7 @@ docker network create "$NET" >/dev/null
 docker run -d --name brunos-docker-proxy --network "$NET" \
   --user 0:0 --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 32m \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  wollomatic/socket-proxy:1 \
+  "$PROXY_IMAGE" \
   -loglevel=info -listenip=0.0.0.0 -allowfrom=brunos \
   "-allowGET=$ALLOW_GET" "-allowPOST=$ALLOW_POST" -shutdowngracetime=5 >/dev/null
 

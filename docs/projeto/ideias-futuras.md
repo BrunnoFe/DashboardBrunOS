@@ -46,10 +46,10 @@ importante" (por isso a interface já é testada em tamanho de celular).
 
 ## Limpezas e conferências pendentes
 
-- Tirar a conversão das preferências antigas de widgets (`widgets2` v1/v2 → v3, em `app.js`) quando o Bruno
-  confirmar a tela inicial nova no servidor.
-- Tomada Tuya: ainda sem confirmação de uso diário; apagar no servidor os arquivos temporários do tinytuya
-  usados para pegar a chave local.
+- Apagar no servidor os arquivos temporários do tinytuya usados para pegar a chave local (a tomada funciona
+  desde 21/11/2026; depois do Assistente de tomadas da 0.31.0 eles não fazem mais falta).
+- **Tomadas Shelly e Tasmota** (24/11/2026): leem o consumo pela rede de casa só com o IP, sem conta nem
+  chave. Fazer quando o Bruno comprar uma tomada dessas.
 
 ## Recusado (não propor de novo)
 

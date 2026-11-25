@@ -22,7 +22,8 @@ type Proc struct {
 	PID       int     `json:"pid"`
 	PPID      int     `json:"ppid"`
 	Name      string  `json:"name"`
-	Cmd       string  `json:"cmd"`
+	Cmd       string  `json:"cmd"`              // com os segredos trocados por "••••" (mask.go)
+	Masked    bool    `json:"masked,omitempty"` // escondeu algo: o comando inteiro sai por Cmdline, com senha
 	User      string  `json:"user"`
 	State     string  `json:"state"`
 	Threads   int     `json:"threads"`
@@ -174,8 +175,8 @@ func (r *Reader) scan() (map[int]raw, uint64, int) {
 				break
 			}
 		}
-		cmd := bytes.TrimRight(readFile(filepath.Join(dir, "cmdline")), "\x00")
-		p.Cmd = string(bytes.ReplaceAll(cmd, []byte{0}, []byte{' '}))
+		args, masked := maskArgs(splitCmdline(readFile(filepath.Join(dir, "cmdline"))))
+		p.Cmd, p.Masked = strings.Join(args, " "), masked
 		if len(p.Cmd) > 400 {
 			p.Cmd = p.Cmd[:400] + "…"
 		}

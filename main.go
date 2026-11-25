@@ -451,6 +451,7 @@ func (s *server) routes() http.Handler {
 	s.disks.Register(mux, a) // janela Discos (GET /api/disks e as ações)
 	s.updates.Register(mux, a)
 	mux.HandleFunc("GET /api/processes", a(s.hProcesses))
+	mux.HandleFunc("GET /api/processes/cmd", a(s.hProcessCmd))
 	mux.HandleFunc("POST /api/system/restart", a(s.hRestartSelf)) // 0.16.0: ver/soltar um disco montado ou desmontado
 	if s.term != nil {
 		s.term.Register(mux, a)
@@ -619,6 +620,7 @@ func keyFree(r *http.Request) bool {
 var sudoRoutes = map[string]bool{
 	"DELETE /api/terminal/key": true, "POST /api/terminal/forget": true, "POST /api/power/test": true,
 	"POST /api/updates/run": true, "POST /api/disks/unmount": true, "POST /api/settings/restore": true,
+	"GET /api/processes/cmd": true, // comando inteiro de um processo, com os segredos (V13, 0.29.0)
 }
 
 const elevateFor = 5 * time.Minute

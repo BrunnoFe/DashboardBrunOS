@@ -209,6 +209,7 @@ const real = {
     test: (b) => call('POST', '/api/integrations/test', b),
   },
   processes: (kernel = false) => call('GET', `/api/processes${kernel ? '?kernel=1' : ''}`),
+  processCmd: (pid) => call('GET', `/api/processes/cmd?pid=${encodeURIComponent(pid)}`),
   events: {
     list: () => call('GET', '/api/events'),
     read: (ids = []) => call('POST', '/api/events/read', { ids }),
@@ -979,7 +980,9 @@ function makeDemo() {
       { pid: 911, name: 'dockerd', cmd: '/usr/bin/dockerd -H fd://', user: 'root', cpu: 0.9, mem: 95e6, memPct: 1.2, threads: 18 },
       { pid: 3012, name: 'brunos', cmd: '/brunos', user: 'usuario', cpu: 0.2, mem: 11e6, memPct: 0.1, threads: 7, app: 'BrunOS' },
       { pid: 1204, name: 'sshd', cmd: 'sshd: /usr/sbin/sshd -D [listener]', user: 'root', cpu: 0, mem: 8e6, memPct: 0.1, threads: 1 },
+      { pid: 3377, name: 'backup', cmd: 'rclone sync /mnt/disco1 remoto: --password=••••', masked: true, user: 'usuario', cpu: 0.1, mem: 30e6, memPct: 0.4, threads: 6 },
     ].map((p) => ({ ppid: 1, state: 'S', ...p })) }, 300),
+    processCmd: (pid) => wait({ pid: Number(pid), cmd: 'rclone sync /mnt/disco1 remoto: --password=exemplo-de-senha' }, 200),
     system: () => wait({ info: { hostname: 'server', os: 'Ubuntu 24.04 LTS', kernel: '6.8.0', cpuModel: 'Intel(R) Core(TM) i5 (demonstração)', cores: 2, arch: 'amd64' }, runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false, version: 'demo', startedAt: now - 7200, maxUploadGB: 50 }),
     apps: () => wait({ apps: apps.map((a) => ({ ...a, update: { 'plex:migrated': { urn: 'plex:migrated', id: 'plex', store: 'migrated', name: 'Plex', installed: '1.41.2', available: '1.42.1' }, 'immich:migrated': { urn: 'immich:migrated', id: 'immich', store: 'migrated', name: 'Immich', installed: 'v2.1.0', available: 'v2.2.0' } }[a.urn] })), runtipi: { found: true, localDomain: 'server.lan', internalIp: '192.168.1.50' }, docker: true, dockerActions: false }),
     usage: () => wait([{ urn: '', name: 'Runtipi (sistema)', project: 'runtipi', cpu: 1.2 + Math.random(), memory: 420e6 }, ...apps.filter((a) => a.state === 'running').map((a) => ({ urn: a.urn, name: a.name, project: a.project, cpu: Math.random() * 3, memory: 20e6 + Math.random() * 600e6 }))].sort((a, b) => b.cpu - a.cpu), 200),

@@ -9,9 +9,40 @@ celular.
 
 ## Estado atual (versão no arquivo `VERSION`)
 
-- Entregue e testada no servidor: tudo até a 0.21.2 (inclusive 0.23.0, cujo retorno virou a 0.23.1).
-- **Aguardando teste do Bruno**: 0.23.1 (guias no Arquivos; duas janelas independentes) e a 0.22.0 (editor
-  do arquivo de Ajustes em Configurar → Avançado), que não tem confirmação explícita.
+- Entregue e testada no servidor: tudo até a 0.28.0 (o Bruno confirmou em 21/11/2026 que todos os testes
+  pendentes passaram, inclusive a tomada Tuya).
+
+## Plano de 24/11/2026 (combinado com o Bruno, três versões)
+
+1. **0.29.0: fechamentos** (lançada em 24/11, aguardando teste do Bruno):
+   - processos com o comando mascarado (`--password=••••`, `TOKEN=••••`, `usuario:••••@`, chaves longas) e
+     botão "ver completo" que pede a senha do BrunOS (V13 da revisão; rota `GET /api/processes/cmd`);
+   - imagem do proxy do Docker congelada (versão + digest), e o `smoke.sh` lê a mesma do compose;
+   - saiu a conversão das preferências antigas dos widgets (`widgets2` v1/v2 → v3); instalação nova monta
+     os widgets direto no formato atual;
+   - branches antigas apagadas; Tuya fora das pendências (funcionando).
+2. **0.30.0: Docker por socket e trava na chave** (precisa do teste do Bruno, com roteiro de volta atrás):
+   - o BrunOS e o proxy do Docker conversam por um arquivo de socket compartilhado só entre os dois, em vez
+     da rede (nenhum outro container fala com o proxy);
+   - `from=` na chave do script: o próprio script descobre a faixa da rede do BrunOS ao instalar/atualizar a
+     chave (e regrava se o Runtipi recriar a rede); comando de socorro em `docs/privado/`;
+   - testar antes com o `smoke.sh` (Docker real); se falhar no servidor, voltar para a 0.29.0 pelo Runtipi.
+3. **0.31.0: Assistente de tomadas Tuya**:
+   - nuvem da Tuya só para configurar: Access ID + Access Secret + região guardados cifrados, e usar pede a
+     senha do BrunOS (5 min); as leituras continuam só pela rede de casa;
+   - lista as tomadas da conta com nome, ID e chave local; busca na rede de casa (porta 6668 na faixa da
+     rede) e testa a chave de cada tomada para achar o IP e a versão; mostra o consumo de agora para conferir;
+   - tomada já cadastrada (mesmo ID): "Atualizar" no mesmo cadastro (widgets, Medidor e histórico seguem);
+     nova: "Adicionar"; IP mudou: avisa, procura de novo e pede confirmação com senha (a chave continua presa
+     ao IP); passo a passo em pt-BR para criar o projeto na Tuya, com os erros comuns (região, ligar o app,
+     plano de desenvolvedor vencido) e a sugestão de reservar o IP no roteador;
+   - teste do Bruno: "Atualizar" a tomada atual (deve dizer "tudo certo") e "Adicionar como nova" com o
+     nome "Tomada (teste)", apagando depois; conferir que o histórico da Energia continua.
+
+Depois das três: conversa sobre **admin em casa / convidado fora** (pelo domínio público só convidado; em
+casa ou pelo Tailscale, admin com senha nas ações perigosas) e **funções novas pelo script do servidor**
+(rede, sensores, discos, Tailscale, tarefas agendadas, registros). Sem root no BrunOS e sem substituir o
+Runtipi (conversa de 24/11/2026).
 
 ## Melhorias de 18/11/2026 (combinadas com o Bruno, três versões)
 
@@ -26,7 +57,7 @@ celular.
    `reiniciar` no script (troca assinada, sem colar nada); "Reiniciar agora" no painel de Atualizações
    quando o Ubuntu pedir. Avisos de nível Aviso/Importante expandem no painel (explicação, o que fazer,
    dados e botão de atalho); clicar no balão abre o sino no aviso.
-3. **0.26.0: Formas de acesso** (lançada em 19/11, aguardando teste do Bruno; decisão 65): o Automático segue a Forma de acesso usada para abrir o BrunOS
+3. **0.26.0: Formas de acesso** (lançada em 19/11, testada; decisão 65): o Automático segue a Forma de acesso usada para abrir o BrunOS
    (`brunos.server.lan` → `https://app.server.lan`; `IP:porta` ou `server.lan:porta` → mesmo nome com a
    porta do app), com troca para a outra se a escolhida não funcionar; o vigia testa a porta (já faz) e, a
    cada ~10 min, se o domínio responde pelo Traefik; as duas formas com bolinha verde/cinza no botão
@@ -45,7 +76,7 @@ Os detalhes ficam no relatório privado. O que entrou:
 - Regras do proxy do Docker mais estreitas; CI com actions fixadas e assinatura num job separado.
 - Interface: escapes, sandbox na Janela de app, demonstração só onde não há servidor e dados genéricos.
 
-## Revisão de segurança, lotes 3 e 4 (0.28.0, lançada em 20/11/2026, aguardando teste do Bruno)
+## Revisão de segurança, lotes 3 e 4 (0.28.0, lançada em 20/11/2026, testada)
 
 Escolhas do Bruno em 19/11: ocultos da Home só leitura; segredos somem do Arquivos (pasta de dados do
 BrunOS, app.env dos apps, .env do Runtipi, chaves privadas de .ssh); código da aba + Terminal (a Chave do
@@ -53,14 +84,10 @@ Terminal pede a senha ao abrir o Terminal, não no login); senha de novo nas aç
 só do Traefik; Abas do Terminal por Sessão; nomes de endereço aceitos (Configurações → Sistema → Endereços
 aceitos). Depois de atualizar, todo mundo precisa entrar de novo uma vez.
 
-Também em aberto: o proxy do Docker por arquivo de socket em vez da rede, e a chave do script aceitar só a
-rede do Docker (os dois precisam ser testados no servidor real). Os processos com a linha de comando inteira
-(V13 do relatório) não entraram em nenhum lote.
+O que ficou de fora dos lotes (socket do proxy, `from=` na chave, V13) entrou no plano de 24/11 acima.
 
 ## Em aberto
 
-- Tirar a conversão das preferências antigas de widgets (`widgets2` v1/v2 → v3, em `app.js`) quando o Bruno
-  quiser; a 0.13.0 já foi testada.
 - Senha também para parar app e para remover lojas: o Bruno disse que não precisa por enquanto
   (17/11/2026). Adicionar loja passou a pedir na revisão de segurança de 19/11.
 - Itens do `ideias-futuras.md` que o Bruno pedir passam para cá, com versão.

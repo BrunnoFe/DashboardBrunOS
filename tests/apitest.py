@@ -47,6 +47,7 @@ s,b,_=req('GET','/api/auth/me'); check('código da aba: os pedidos sem código n
 s,b,_=req('GET','/api/apps/logo?urn=syncthing:migrated',key='1'); check('código da aba: logos e papéis de parede não precisam (só imagem)', s==200, s)
 # modo sudo: ações destrutivas pedem a senha de novo
 s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: desmontar disco sem confirmar a senha → 403 reauth', s==403 and json.loads(b).get('reauth') is True, (s,b))
+s,b,_=req('GET','/api/processes/cmd?pid=1'); check('sudo: comando inteiro de um processo sem confirmar a senha → 403 reauth (V13)', s==403 and json.loads(b).get('reauth') is True, (s,b))
 s,b,_=req('POST','/api/auth/reauth',{'password':'errada'}); check('sudo: confirmar com a senha errada → 403', s==403, (s,b))
 s,b,_=req('POST','/api/disks/unmount',{'folder':'Disco9'}); check('sudo: senha errada não libera', s==403 and json.loads(b).get('reauth') is True, (s,b))
 s,b,_=req('POST','/api/auth/reauth',{'password':PW}); check('sudo: confirmar a senha', s==200, (s,b))
@@ -117,6 +118,11 @@ s,b,_=req('GET','/api/history?serie=interno.segredo&periodo=1h'); check('Histór
 s,b,_=req('GET','/api/history/series?prefixo=sys.'); check('Históricos: lista de séries', s==200 and isinstance(json.loads(b)['series'],list), b[:200])
 s,b,_=req('GET','/api/internet'); h=json.loads(b); check('internet: estado', s==200 and isinstance(h['points'],list) and isinstance(h['outages'],list) and h['enabled'] is True, b[:200])
 s,b,_=req('GET','/api/processes'); h=json.loads(b); check('processos', s==200 and h['summary']['total']>0 and all('pid' in p and 'cpu' in p for p in h['procs']), b[:200])
+pid0=h['procs'][0]['pid'] if h.get('procs') else 1
+elev()
+s,b,_=req('GET','/api/processes/cmd?pid=%d'%pid0); check('processos: comando inteiro com a senha confirmada', s==200 and isinstance(json.loads(b)['cmd'],str), (s,b[:200]))
+s,b,_=req('GET','/api/processes/cmd?pid=abc'); check('processos: pid inválido → 400', s==400, (s,b))
+s,b,_=req('GET','/api/processes/cmd?pid=999999999'); check('processos: processo que não existe → 404', s==404, (s,b))
 s,b,_=req('GET','/api/apps/history?urn=syncthing:migrated'); h=json.loads(b); check('apps: histórico de 24 h', s==200 and h['step']==60 and isinstance(h['points'],list) and h['health'] in ('up','down','unknown'), b)
 s,b,_=req('GET','/api/apps/history?urn=nao:existe'); check('apps: histórico de app desconhecido → 404', s==404)
 s,b,_=req('GET','/api/apps/history?urn=syncthing:migrated&range=30d'); h=json.loads(b); check('apps: histórico de 30 dias', s==200 and h['step']==1200 and h['range']=='30d', b[:200])

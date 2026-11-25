@@ -368,7 +368,9 @@ GET  /api/stats/history?range=1h|24h|48h|7d|30d ({range,step,points:[{t,cpu,mem,
 GET  /api/history?serie=<nome>&serie=...&periodo=5m|1h|24h|48h|7d|30d ({periodo,step,series:{nome:[[t,v,pico?]]}})
      só prefixos sys., app., net., disk.; até 16 séries; GET /api/history/series?prefixo=disk. lista as que existem
 GET  /api/apps/history?urn=&range= (mesmos períodos; points [{t,cpu,mem,up,cpuMax?,memMax?}], uptime %)
-GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,user,state,threads,cpu,mem,memPct,app?}],summary})
+GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,masked?,user,state,threads,cpu,mem,memPct,app?}],summary};
+                                      cmd com os segredos trocados por "••••", masked=true quando escondeu algo)
+GET  /api/processes/cmd?pid=N         comando inteiro, sem esconder (modo sudo: pede a senha; V13, 0.29.0)
 GET  /api/internet                    ({up,checked,ms,avg,uptime?,points:[{t,ms}],outages:[{start,end}],enabled})
 GET  /api/files/roots · disks · list · raw · zip · search · trash
 PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty

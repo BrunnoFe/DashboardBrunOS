@@ -295,18 +295,13 @@ export function normalize(item) {
 
 export const newId = () => `w${Math.random().toString(36).slice(2, 9)}`;
 
-/** Converte a preferência antiga `widgets` (0.8.x) nos Modelos equivalentes, na página 1. */
-export function migrate(oldList) {
-  const byOld = Object.fromEntries(brunosModels().map((m) => [m.id, m.item]));
-  const items = {}, ids = [];
-  for (const k of oldList || []) {
-    const src = byOld[k];
-    if (!src) continue;
-    const id = newId();
-    items[id] = { ...src, model: `brunos:${k}` };
-    ids.push(id);
-  }
-  return { v: 1, areas: ids.length ? { 0: ids } : {}, items };
+/** Widgets da primeira vez: os Modelos da lista (ex.: ['files', 'storage', 'system']), ainda sem lugar
+ *  (o app.js encaixa na Página 1). */
+export function defaultWidgets(list) {
+  const byId = Object.fromEntries(brunosModels().map((m) => [m.id, m.item]));
+  const items = {};
+  for (const k of list || []) if (byId[k]) items[newId()] = { ...byId[k], model: `brunos:${k}` };
+  return { v: 3, areas: {}, items };
 }
 
 /* ── Desenho ───────────────────────────────────────────────────── */
