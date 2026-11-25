@@ -76,13 +76,15 @@ type Job struct {
 
 // Script é a versão do script do servidor (brunos-host) e se ele se atualiza sozinho.
 type Script struct {
-	Have      int    `json:"have"`           // versão no servidor (0 = não deu para ler)
-	Want      int    `json:"want"`           // versão que este BrunOS traz
-	Auto      bool   `json:"auto"`           // esta compilação traz o script assinado
-	CheckedAt int64  `json:"checkedAt"`      // última conferência
-	Err       string `json:"err,omitempty"`  // não deu para conferir ou para atualizar
-	At        int64  `json:"at,omitempty"`   // última atualização automática
-	From      int    `json:"from,omitempty"` // de qual versão veio
+	Have      int    `json:"have"`              // versão no servidor (0 = não deu para ler)
+	Want      int    `json:"want"`              // versão que este BrunOS traz
+	Auto      bool   `json:"auto"`              // esta compilação traz o script assinado
+	CheckedAt int64  `json:"checkedAt"`         // última conferência
+	Err       string `json:"err,omitempty"`     // não deu para conferir ou para atualizar
+	At        int64  `json:"at,omitempty"`      // última atualização automática
+	From      int    `json:"from,omitempty"`    // de qual versão veio
+	Lock      string `json:"lock,omitempty"`    // faixa da rede do Docker à qual a chave está presa (script 19+)
+	LockErr   string `json:"lockErr,omitempty"` // não deu para prender a chave (ela continua funcionando sem a trava)
 }
 
 type state struct {
@@ -109,9 +111,12 @@ type Checker struct {
 	Act      func(ctx context.Context, cmd string) ([]byte, error) // script do servidor (atualizar)
 	// UpgradeScript troca o script do servidor pelo desta versão (assinado). nil = sem assinatura.
 	UpgradeScript func(ctx context.Context) error
-	Events        *events.Store
-	NotifyApps    func() bool // aviso de versão nova de app (Configurações → Apps)
-	Now           func() time.Time
+	// LockKey pede ao script (19+) para prender a chave à rede do Docker de onde o BrunOS fala; devolve a
+	// resposta ("trava 172.18.0.0/16"). nil = desligado.
+	LockKey    func(ctx context.Context) ([]byte, error)
+	Events     *events.Store
+	NotifyApps func() bool // aviso de versão nova de app (Configurações → Apps)
+	Now        func() time.Time
 
 	mu        sync.Mutex
 	st        state
@@ -119,6 +124,7 @@ type Checker struct {
 	running   bool
 	part      string // o que está sendo conferido ("" = tudo)
 	following bool
+	locked    bool // a trava da chave já foi conferida desde que o BrunOS ligou
 }
 
 func New(file string) *Checker {
@@ -184,7 +190,46 @@ func (c *Checker) CheckScript(ctx context.Context) {
 			}
 		}
 	}
+	c.lockKey(ctx)
 	c.save()
+}
+
+// lockKey (0.30.0): uma vez a cada vez que o BrunOS liga, pede ao script (19+) para prender a chave à
+// rede do Docker de onde o pedido chega (from= no authorized_keys). Se a rede mudar (o BrunOS foi
+// reinstalado), a chave para de funcionar até colar de novo os comandos de Configurações → Energia, que
+// gravam a linha sem a trava; na volta, a trava é refeita com a rede nova.
+func (c *Checker) lockKey(ctx context.Context) {
+	c.mu.Lock()
+	have, done := c.st.Script.Have, c.locked
+	c.mu.Unlock()
+	if c.LockKey == nil || done || have < hostcmd.LockKeyFrom {
+		return
+	}
+	lctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	out, err := c.LockKey(lctx)
+	cancel()
+	rede := ""
+	if f := strings.Fields(string(out)); err == nil && len(f) == 2 && f[0] == "trava" {
+		rede = f[1]
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.locked = true
+	sc := &c.st.Script
+	switch {
+	case err != nil:
+		sc.LockErr = friendly(err)
+		slog.Warn("script do servidor: não deu para prender a chave à rede do Docker", "erro", err)
+	case rede == "":
+		sc.LockErr = "resposta inesperada do script"
+	default:
+		if sc.Lock != rede && c.Events != nil {
+			c.Events.Emit(events.Event{Kind: "script-lock", Level: events.Info, Key: "script-lock:" + rede,
+				Title: "Chave do BrunOS presa à rede do Docker",
+				Body:  "O servidor só aceita a chave do BrunOS vinda da rede interna do Docker (" + rede + "). Se um dia a chave parar de funcionar depois de reinstalar o BrunOS, cole de novo os comandos de Configurações → Energia."})
+		}
+		sc.Lock, sc.LockErr = rede, ""
+	}
 }
 
 // BackupSize mede o backup que o Runtipi faria do app (pasta do app + app-data) e o espaço livre.

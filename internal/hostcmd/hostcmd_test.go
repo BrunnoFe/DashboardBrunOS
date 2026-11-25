@@ -278,8 +278,24 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("%s pelo SSH: %s", c, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 18") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 19") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
+	}
+	// trava-chave (script 19): o endereço vem só do SSH_CLIENT do sshd, nunca do pedido
+	lock := func(req, client string) (string, int) {
+		c := exec.Command(sh, script)
+		c.Env = []string{"SSH_ORIGINAL_COMMAND=" + req, "SSH_CLIENT=" + client}
+		out, _ := c.CombinedOutput()
+		return string(out), c.ProcessState.ExitCode()
+	}
+	for _, tc := range [][2]string{{"trava-chave 10.0.0.1", "172.18.0.11 4000 22"}, {"trava-chave", ""}, {"trava-chave", "x.y 1 22"},
+		{"trava-chave", "172.18.0.256.1 1 22"}, {"trava-chave", "fe80::1 1 22"}, {"trava-chave", "-1.2.3.4 1 22"}, {"trava-chave", "1..2.3 1 22"}} {
+		if out, code := lock(tc[0], tc[1]); code != 2 {
+			t.Errorf("trava-chave %q com SSH_CLIENT %q deveria ser recusado com código 2, veio %d: %s", tc[0], tc[1], code, out)
+		}
+	}
+	if out, code := lock("trava-chave", "172.18.0.11 40000 22"); code == 2 || strings.Contains(out, "inválido") {
+		t.Errorf("trava-chave com SSH_CLIENT válido deveria passar da conferência, veio %d: %s", code, out)
 	}
 	// "executar" só como root dentro do systemd: com INVOCATION_ID mas sem ser root, recusa
 	c := exec.Command(sh, script, "executar", "atualizar-linux")

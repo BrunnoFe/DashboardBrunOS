@@ -205,6 +205,15 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     app, o `.env` do Runtipi e as chaves privadas de `.ssh` somem da lista, da busca, do zip, dos duplicados,
     do mapa do espaço e das cópias. A conferência é no caminho real (atalhos e montagens repetidas não
     escapam). Recusado: esconder todos os ocultos (o Bruno usa o Arquivos para consultar configurações).
+68. **Proxy do Docker só por socket e chave presa à rede do Docker** (0.30.0, combinado com o Bruno em
+    24/11/2026): (a) o proxy não escuta mais na rede: cria um socket numa pasta montada só nele e no BrunOS,
+    com dono root, grupo do BrunOS e permissão 0660 (antes, outro container que se apresentasse como
+    "brunos" passava, e um container chamado como o proxy enganava o BrunOS); (b) o script 19 ganha
+    `trava-chave`: lê do próprio sshd (SSH_CLIENT) de onde veio o pedido, acha a ponte do Docker (br-* ou
+    docker0) e grava `from="<faixa>"` na linha da chave; o BrunOS pede uma vez a cada vez que liga. Se a
+    rede mudar (reinstalação), a chave para até colar de novo os comandos da Energia, que gravam a linha sem
+    a trava; o BrunOS refaz a trava na volta. Recusado: valor fixo (errar trancaria fora) e faixas largas
+    (172.16.0.0/12 incluiria redes de outros apps).
 
 ## Loja, Garimpo, instalação
 

@@ -212,6 +212,15 @@ atual. Lições:
 - Mascarar por padrão erra para mais (esconde um caminho de `--key-file`), nunca para menos: por isso o
   "ver completo" com senha, em vez de tentar acertar todos os formatos.
 
+## 0.30.0 (24/11/2026): Docker por socket e chave presa à rede do Docker
+O proxy do Docker deixa a rede: fala só por um socket numa pasta montada nele e no BrunOS (dono root, grupo
+do BrunOS, 0660). Script do servidor 19 com `trava-chave`: grava `from="<faixa da ponte do Docker>"` na linha
+da chave, com o endereço lido do próprio sshd; o BrunOS pede uma vez cada vez que liga. Decisão 68. Lições:
+- O servidor vê o IP do container (ponte br-*), não o do roteador: dá para travar sem valor fixo.
+- O socket-proxy apaga o socket velho ao ligar e pula o `-allowfrom` quando usa socket.
+- Testes de script e o smoke rodam no Windows num contêiner `golang:1.27-bookworm` com o socket do Docker
+  Desktop, `-v /tmp:/tmp`, `--network host` e o docker CLI estático.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

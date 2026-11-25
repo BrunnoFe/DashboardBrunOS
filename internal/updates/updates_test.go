@@ -249,6 +249,49 @@ func TestCheckScript(t *testing.T) {
 	}
 }
 
+func TestLockKey(t *testing.T) {
+	ver := "brunos-host 18"
+	locks := 0
+	c := New("")
+	c.Events = events.New("")
+	c.Query = func(context.Context, string) ([]byte, error) { return []byte(ver), nil }
+	c.LockKey = func(context.Context) ([]byte, error) { locks++; return []byte("trava 172.18.0.0/16\n"), nil }
+	// script 18 não conhece o pedido (e sem assinatura não troca): não pede a trava
+	c.CheckScript(context.Background())
+	if locks != 0 {
+		t.Fatalf("pediu a trava a um script 18")
+	}
+	// script 19: pede uma vez e guarda a faixa
+	ver = fmt.Sprintf("brunos-host %d", hostcmd.LockKeyFrom)
+	c.CheckScript(context.Background())
+	if s := c.Snapshot().Script; locks != 1 || s.Lock != "172.18.0.0/16" || s.LockErr != "" {
+		t.Fatalf("trava: %+v (pedidos %d)", s, locks)
+	}
+	// só uma vez a cada vez que o BrunOS liga
+	c.CheckScript(context.Background())
+	if locks != 1 {
+		t.Fatalf("pediu a trava de novo: %d", locks)
+	}
+	// falha: guarda o erro e a chave continua
+	c2 := New("")
+	c2.Query = c.Query
+	c2.LockKey = func(context.Context) ([]byte, error) {
+		return nil, errors.New("o pedido não veio de uma rede do Docker")
+	}
+	c2.CheckScript(context.Background())
+	if s := c2.Snapshot().Script; s.Lock != "" || !strings.Contains(s.LockErr, "rede do Docker") {
+		t.Fatalf("trava com erro: %+v", s)
+	}
+	// resposta estranha não vira faixa
+	c3 := New("")
+	c3.Query = c.Query
+	c3.LockKey = func(context.Context) ([]byte, error) { return []byte("ok"), nil }
+	c3.CheckScript(context.Background())
+	if s := c3.Snapshot().Script; s.Lock != "" || s.LockErr == "" {
+		t.Fatalf("resposta estranha: %+v", s)
+	}
+}
+
 // fakeServer imita o script: "atualizar-*" começa, "atualizacao-estado" mostra o andamento.
 type fakeServer struct {
 	mu     sync.Mutex

@@ -343,7 +343,7 @@ s,b,_=req('POST','/api/updates/check?part=tudo',{}); check('conferir: parte inv�
 s,b,_=req('POST','/api/updates/check?part=apps',{}); check('conferir só os apps', s==200 and json.loads(b)['appsAt']>0, b)
 s,b,_=req('GET','/api/updates/backup-size?urn=../x'); check('tamanho do backup: app inválido → 400', s==400, b)
 s,b,_=req('GET','/api/updates/backup-size?urn=immich:migrated'); check('tamanho do backup sem conexão → erro amigável', s==502 and 'Energia' in json.loads(b)['error'], b)
-s,b,_=req('POST','/api/updates/script',{}); sc=json.loads(b).get('script',{}); check('script do servidor: versão que esta compilação traz e erro sem conexão', s==200 and sc.get('want')==18 and sc.get('have')==0 and 'Energia' in sc.get('err',''), b)
+s,b,_=req('POST','/api/updates/script',{}); sc=json.loads(b).get('script',{}); check('script do servidor: versão que esta compilação traz e erro sem conexão', s==200 and sc.get('want')==19 and sc.get('have')==0 and 'Energia' in sc.get('err',''), b)
 # 0.15.0: janela Discos (sem conexão com o servidor: lista vazia com erro amigável; ações validam antes)
 s,b,_=req('GET','/api/disks'); dk=json.loads(b); check('discos: responde lista e explica que falta a conexão com o servidor', s==200 and dk['disks']==[] and 'Energia' in dk.get('err',''), b)
 s,b,_=req('POST','/api/disks/refresh',{}); check('discos: ler de novo responde', s==200 and isinstance(json.loads(b)['disks'],list), b)

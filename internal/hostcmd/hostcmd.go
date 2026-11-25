@@ -80,7 +80,11 @@ const (
 	// vez; "adicionar-loja" pede a Senha de configuração; "instalar-app" sem senha só de loja confiável
 	// (adicionada pelo BrunOS ou que já existia); discos montados com nosuid,nodev; nenhum valor começa
 	// com "-"; o /etc/fstab é regravado de forma atômica ao desmontar.
-	ScriptVersion = 18
+	// 19 = "trava-chave": prende a chave do BrunOS (from= no authorized_keys) à rede do Docker de onde o
+	// pedido veio, lida do SSH_CLIENT pelo próprio script, 0.30.0.
+	ScriptVersion = 19
+	// LockKeyFrom: a partir desta versão o script sabe prender a chave à rede do Docker.
+	LockKeyFrom = 19
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
 	SelfUpdateFrom = 7
 	maxOutput      = 1 << 20 // saída de um pedido (ex.: tailscale status --json)
@@ -92,6 +96,8 @@ const (
 const (
 	CmdShutdown = "desligar"
 	CmdVersion  = "versao"
+	// script 19 (0.30.0): prende a chave à rede do Docker de onde o pedido veio (responde "trava <faixa>")
+	CmdLockKey = "trava-chave"
 	// script 16 (0.25.0): menu de energia. Desligar e reiniciar esperam 1 minuto no servidor.
 	CmdReboot         = "reiniciar"
 	CmdCancelShutdown = "cancelar-desligar" // cancela o desligar/reiniciar agendado
@@ -337,7 +343,7 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 17: o único programa que a chave do BrunOS pode rodar neste servidor.
+# brunos-host 19: o único programa que a chave do BrunOS pode rodar neste servidor.
 # Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
@@ -349,7 +355,8 @@ const HostScript = `#!/bin/sh
 # instalar-app <app>:<loja> | reconfigurar-app <app>:<loja> | reiniciar-app <app>:<loja> |
 # ajustes-ler <app>:<loja> | ajustes-gravar <app>:<loja> (Senha de configuração + arquivo pela entrada padrão) |
 # instalar-app-senha <app>:<loja> (Senha de configuração + formulário + Ajustes) | ajustes-desfazer <app>:<loja> |
-# atualizar-script <assinatura> | versao. Recusa todo o resto.
+# atualizar-script <assinatura> | trava-chave | versao. Recusa todo o resto.
+# trava-chave: prende a chave do BrunOS à rede do Docker de onde veio o pedido (from= no authorized_keys).
 # Só pelo Terminal, com sudo (nunca pela chave do BrunOS): senha-config | esquecer-senha-config (os nomes
 # antigos senha-formatar | esquecer-senha-formatar continuam valendo).
 # Formatar e desinstalar app só com a Senha de configuração (pela entrada padrão), conferida AQUI, com trava
@@ -362,7 +369,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=18
+VERSAO=19
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -391,6 +398,12 @@ so_com() {
   [ ${#1} -le "$3" ]
 }
 uuid_ok() { so_com "$1" "A-Fa-f0-9-" 36; }
+# endereço IPv4 (quatro números separados por ponto)
+ip_ok() {
+  so_com "$1" "0-9." 15 || return 1
+  case "$1" in *.*.*.*.*|.*|*.|*..*) return 1 ;; *.*.*.*) return 0 ;; esac
+  return 1
+}
 pasta_ok() { so_com "$1" "A-Za-z0-9_-" 32; }
 rotulo_ok() { so_com "$1" "A-Za-z0-9_-" 16; }
 serie_ok() { so_com "$1" "A-Za-z0-9_.:-" 64; }
@@ -440,6 +453,17 @@ case "$acao" in
     # nunca pela chave do BrunOS: quem invadisse o BrunOS cadastraria a senha dele
     [ "$via_ssh" = 0 ] || falha "a Senha de configuração só pode ser criada ou apagada no Terminal do servidor, com sudo" ;;
   versao) [ $# -eq 1 ] || falha "pedido inválido"; echo "brunos-host $VERSAO"; exit 0 ;;
+  trava-chave)
+    if [ "$via_ssh" = 1 ]; then
+      # pelo SSH: o endereço vem do próprio sshd (SSH_CLIENT), nunca do pedido
+      [ $# -eq 1 ] || falha "pedido inválido"
+      cliente=${SSH_CLIENT%% *}
+      ip_ok "$cliente" || falha "não deu para saber de onde veio o pedido"
+      set -- trava-chave "$cliente"
+      valor=$cliente
+    fi
+    [ $# -eq 2 ] || falha "pedido inválido"
+    ip_ok "$valor" || falha "endereço inválido" ;;
   desligar|reiniciar|desligar-agendado|cancelar-desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
     [ $# -eq 2 ] || falha "pedido inválido"
@@ -728,6 +752,35 @@ checa_formatar() { # <disco> <série> <fs>
 }
 feito=0
 case "$acao" in
+  trava-chave)
+    # a rede do Docker por onde o pedido chegou (o servidor vê o IP do container numa ponte br-* ou docker0)
+    dev=$(ip -o -4 route get "$valor" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)
+    case "$dev" in br-[0-9a-f]*|docker0) ;; *) falha "o pedido não veio de uma rede do Docker (veio por '${dev:-?}'): a chave fica como está" 3 ;; esac
+    rede=$(ip -o -4 route show dev "$dev" proto kernel scope link 2>/dev/null | sed -n 's/^\([0-9.]*\/[0-9]*\) .*/\1/p' | head -n 1)
+    case "$rede" in *[!0-9./]*|"") falha "não deu para ler a faixa da rede $dev" 3 ;; */*) ;; *) falha "faixa da rede inválida" 3 ;; esac
+    ip_ok "${rede%/*}" || falha "faixa da rede inválida" 3
+    # o usuário dedicado é quem chamou o sudo (brunos-power, ou o nome escolhido na configuração)
+    u=${SUDO_USER:-}
+    so_com "$u" "a-z0-9_-" 32 || falha "rode pelo usuário do BrunOS (sudo a partir dele)" 3
+    [ "$u" != root ] || falha "rode pelo usuário do BrunOS (sudo a partir dele)" 3
+    casa=$(getent passwd "$u" | cut -d: -f6)
+    case "$casa" in /*) ;; *) falha "não achei a pasta do usuário $u" 3 ;; esac
+    ak="$casa/.ssh/authorized_keys"
+    [ -f "$ak" ] && [ ! -L "$ak" ] || falha "não achei o authorized_keys de $u" 3
+    [ "$(grep -c . "$ak")" -eq 1 ] || falha "o authorized_keys de $u tem mais de uma linha: a chave fica como está" 3
+    linha=$(grep -m 1 . "$ak")
+    case "$linha" in restrict,*command=\"/usr/local/sbin/brunos-host\"\ ssh-*) ;; *) falha "a linha da chave não é a do BrunOS: a chave fica como está" 3 ;; esac
+    nova=$(printf '%s\n' "$linha" | sed -e 's/from="[^"]*",//g' -e "s|^restrict,|restrict,from=\"$rede\",|")
+    case "$nova" in "restrict,from=\"$rede\",command=\"/usr/local/sbin/brunos-host\" ssh-"*) ;; *) falha "não deu para montar a linha nova: a chave fica como está" 3 ;; esac
+    if [ "$nova" = "$linha" ]; then echo "trava $rede"; exit 0; fi
+    tmp="$ak.brunos-tmp"
+    rm -f "$tmp"
+    (umask 077; printf '%s\n' "$nova" >"$tmp")
+    chown "$u:$u" "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$ak"
+    echo "trava $rede"
+    exit 0 ;;
   desligar)
     exec systemctl poweroff --check-inhibitors=no --when=+1min ;;
   reiniciar|desligar-agendado)

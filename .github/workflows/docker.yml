@@ -75,6 +75,8 @@ jobs:
         run: bash tests/script-instalar.sh
       - name: Menu de energia no script do servidor (desligar, reiniciar e cancelar)
         run: bash tests/script-energia.sh
+      - name: Trava da chave do BrunOS na rede do Docker (from= no authorized_keys)
+        run: bash tests/script-chave.sh
 
   versao:
     name: decide a versão

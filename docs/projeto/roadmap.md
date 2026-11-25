@@ -14,14 +14,14 @@ celular.
 
 ## Plano de 24/11/2026 (combinado com o Bruno, três versões)
 
-1. **0.29.0: fechamentos** (lançada em 24/11, aguardando teste do Bruno):
+1. **0.29.0: fechamentos** (lançada em 24/11, testada):
    - processos com o comando mascarado (`--password=••••`, `TOKEN=••••`, `usuario:••••@`, chaves longas) e
      botão "ver completo" que pede a senha do BrunOS (V13 da revisão; rota `GET /api/processes/cmd`);
    - imagem do proxy do Docker congelada (versão + digest), e o `smoke.sh` lê a mesma do compose;
    - saiu a conversão das preferências antigas dos widgets (`widgets2` v1/v2 → v3); instalação nova monta
      os widgets direto no formato atual;
    - branches antigas apagadas; Tuya fora das pendências (funcionando).
-2. **0.30.0: Docker por socket e trava na chave** (precisa do teste do Bruno, com roteiro de volta atrás):
+2. **0.30.0: Docker por socket e trava na chave** (lançada em 24/11, aguardando teste do Bruno; decisão 68):
    - o BrunOS e o proxy do Docker conversam por um arquivo de socket compartilhado só entre os dois, em vez
      da rede (nenhum outro container fala com o proxy);
    - `from=` na chave do script: o próprio script descobre a faixa da rede do BrunOS ao instalar/atualizar a

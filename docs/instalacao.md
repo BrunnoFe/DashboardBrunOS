@@ -43,7 +43,7 @@ O BrunOS roda com o seu UID/GID, então só lê e escreve o que o seu usuário j
 | `BRUNOS_ROOTS` | — | lista manual: `Fotos=/files/mnt/disco1/Fotos;Backups=/files/mnt/disco2:ro` |
 | `BRUNOS_TERMINAL` | `true` | `false` esconde e desliga o terminal SSH |
 | `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi montada |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | ou `tcp://brunos-docker-proxy:2375`; `off` desliga |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | no Runtipi: `unix:///sock/docker.sock` (socket do proxy); também aceita `tcp://…`; `off` desliga |
 | `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
 | `BRUNOS_MAX_UPLOAD_GB` | `50` | tamanho máximo por arquivo enviado |
 | `HOST_PROC` | `/host/proc` | `/proc` do servidor (rede) |

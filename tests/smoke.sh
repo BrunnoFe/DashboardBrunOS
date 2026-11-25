@@ -30,12 +30,18 @@ trap cleanup EXIT
 bash "$(dirname "$0")/fixture.sh" "$FIX"
 docker network create "$NET" >/dev/null
 
-docker run -d --name brunos-docker-proxy --network "$NET" \
-  --user 0:0 --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 32m \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+# 0.30.0: o proxy fala só por um arquivo de socket numa pasta compartilhada com o BrunOS (sem rede nenhuma),
+# com dono root e grupo do BrunOS, permissão 0660 (como no compose: user "0:${BRUNOS_PGID}")
+SOCK="$FIX/sock"
+mkdir -p "$SOCK"
+docker run -d --name brunos-docker-proxy --network none \
+  --user "0:$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 32m \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro -v "$SOCK:/sock" \
   "$PROXY_IMAGE" \
-  -loglevel=info -listenip=0.0.0.0 -allowfrom=brunos \
+  -loglevel=info -proxysocketendpoint=/sock/docker.sock -proxysocketendpointfilemode=0660 \
   "-allowGET=$ALLOW_GET" "-allowPOST=$ALLOW_POST" -shutdowngracetime=5 >/dev/null
+for i in $(seq 1 20); do [ -S "$SOCK/docker.sock" ] && break; sleep 0.5; done
+[ -S "$SOCK/docker.sock" ] || { echo "o proxy não criou o socket"; exit 1; }
 
 # um "app do Runtipi" de mentira: container com o rótulo do compose do Syncthing da fixture
 docker run -d --name tipi-fake --label com.docker.compose.project=syncthing_migrated --label com.docker.compose.service=syncthing \
@@ -48,8 +54,8 @@ docker run -d --name brunos-ssh --network "$NET" \
 
 docker run -d --name brunos --network "$NET" -p "127.0.0.1:$PORT:8080" \
   --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 128m \
-  -e DOCKER_HOST=tcp://brunos-docker-proxy:2375 -e BRUNOS_DOCKER_ACTIONS=true \
-  -v "$FIX/data:/data" -v "$FIX/runtipi:/runtipi:ro" -v "$FIX/files:/files" \
+  -e DOCKER_HOST=unix:///sock/docker.sock -e BRUNOS_DOCKER_ACTIONS=true \
+  -v "$SOCK:/sock:ro" -v "$FIX/data:/data" -v "$FIX/runtipi:/runtipi:ro" -v "$FIX/files:/files" \
   -v "$FIX/outside:$FIX/outside" \
   -v /proc:/host/proc:ro -v /etc/os-release:/host/os-release:ro -v /etc/hostname:/host/hostname:ro -v /etc/passwd:/host/passwd:ro \
   "$IMAGE" >/dev/null
@@ -271,10 +277,19 @@ req("PUT", "/api/power/config", {"enabled": False, "simulate": True, "threshold"
 print("✓ energia: depois do teste dá para desligar o modo simulação")
 EOF
 
-# O proxy precisa recusar quem não é o BrunOS e qualquer rota fora da lista
-code=$(docker run --rm --network "$NET" curlimages/curl:8.10.1 -s -o /dev/null -w '%{http_code}' http://brunos-docker-proxy:2375/v1.41/containers/json || true)
-[ "$code" = "403" ] || { echo "proxy deveria recusar outros containers (HTTP $code)"; exit 1; }
-echo "✓ proxy recusa containers que não são o BrunOS"
+# O proxy não pode ser alcançado pela rede (só pelo socket), o socket só abre para o dono e o grupo do
+# BrunOS, e mesmo pelo socket as rotas fora da lista são recusadas
+code=$(docker run --rm --network "$NET" curlimages/curl:8.10.1 -s -m 5 -o /dev/null -w '%{http_code}' http://brunos-docker-proxy:2375/v1.41/containers/json || true)
+[ "$code" = "000" ] || { echo "o proxy não deveria responder pela rede (HTTP $code)"; exit 1; }
+echo "✓ proxy fora da rede: outros containers não chegam nele"
+perm=$(stat -c '%a %g' "$SOCK/docker.sock")
+[ "$perm" = "660 $(id -g)" ] || { echo "socket do proxy com permissão inesperada: $perm"; exit 1; }
+code=$(docker run --rm --user 65534:65534 -v "$SOCK:/sock:ro" curlimages/curl:8.10.1 -s -m 5 -o /dev/null -w '%{http_code}' --unix-socket /sock/docker.sock http://d/v1.41/containers/json || true)
+[ "$code" = "000" ] || { echo "outro usuário não deveria abrir o socket do proxy (HTTP $code)"; exit 1; }
+echo "✓ socket do proxy: 0660, só o BrunOS (grupo dele) abre"
+code=$(docker run --rm --user "$(id -u):$(id -g)" -v "$SOCK:/sock:ro" curlimages/curl:8.10.1 -s -m 5 -o /dev/null -w '%{http_code}' --unix-socket /sock/docker.sock http://d/v1.41/info || true)
+[ "$code" = "403" ] || { echo "o proxy deveria recusar rotas fora da lista (HTTP $code)"; exit 1; }
+echo "✓ proxy recusa rotas fora da lista também pelo socket"
 
 mem=$(docker stats --no-stream --format '{{.MemUsage}}' brunos | cut -d/ -f1 | tr -d ' ')
 echo "✓ memória do BrunOS em uso: $mem"

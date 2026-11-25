@@ -80,6 +80,8 @@ func (s *server) setupMonitors(dataDir string) {
 			return err
 		}
 	}
+	// script 19+: prende a chave à rede do Docker de onde o BrunOS fala (0.30.0)
+	s.updates.LockKey = func(ctx context.Context) ([]byte, error) { return s.power.HostOutput(ctx, hostcmd.CmdLockKey) }
 	s.updates.Events = s.events
 	s.updates.NotifyApps = func() bool { v, ok := s.readSettings()["appUpdateNotify"].(bool); return !ok || v }
 }

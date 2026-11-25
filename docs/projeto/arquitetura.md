@@ -9,7 +9,7 @@ navegador ──HTTP(S)──> Traefik do Runtipi ──> container "brunos" (Go
                                                  ├─ /files/home, /files/mnt (+ pasta do Runtipi em ro)  → gerenciador de arquivos
                                                  ├─ /host/proc (ro), /host/os-release, /host/hostname
                                                  ├─ /sys (sysfs padrão do Docker: hwmon, power_supply, block)
-                                                 ├─ tcp://brunos-docker-proxy:2375  → socket-proxy → docker.sock (ro)
+                                                 ├─ unix:///sock/docker.sock (0660) → socket-proxy → docker.sock (ro)
                                                  └─ SSH (rede) → servidor:22  (janela Terminal)
 ```
 
@@ -26,7 +26,7 @@ Um único binário estático serve a API (`/api/*`) e a interface (`/`, embutida
 | `BRUNOS_FILES` | `/files` | raiz do gerenciador (descoberta automática) |
 | `BRUNOS_ROOTS` | — | lista manual `Nome=/caminho[:ro];…` (desliga a descoberta e os discos mapeados) |
 | `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | no Runtipi: `tcp://brunos-docker-proxy:2375`; `off` desliga |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | no Runtipi: `unix:///sock/docker.sock` (socket do proxy, 0.30.0); `off` desliga |
 | `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
 | `BRUNOS_TERMINAL` | `true` | `false`/`off` desliga o terminal SSH |
 | `HOST_PROC` | `/host/proc` | `/proc` do host (rede usa `HOST_PROC/1/net/dev`) |
