@@ -60,7 +60,7 @@
   `/runtipi` ro, `/home`→`/files/home`, `/mnt`→`/files/mnt`, pasta do Runtipi em `/files<caminho>` ro,
   `/proc`→`/host/proc` ro, `/etc/os-release` e `/etc/hostname` ro) e serviço `brunos-docker-proxy`
   (`wollomatic/socket-proxy:<versão>@sha256:<digest>`, congelada desde a 0.29.0, usuário
-  `0:${BRUNOS_PGID}`, ro, sem capabilities, 32M, `-allowGET` versão/lista/stats, `-allowPOST` restart,
+  `0:${BRUNOS_PGID}`, ro, só a capability `DAC_OVERRIDE` (criar o socket numa pasta de outro dono), 32M, `-allowGET` versão/lista/stats, `-allowPOST` restart,
   socket do Docker ro). Desde a 0.30.0 o proxy não escuta na rede: `-proxysocketendpoint=/sock/docker.sock`
   com permissão 0660, na pasta `${APP_DATA_DIR}/sock` montada nele e (ro) no BrunOS, que usa
   `DOCKER_HOST=unix:///sock/docker.sock` (decisão 68). Para subir a versão do proxy: escolher uma com pelo menos 2 semanas, pegar o digest com

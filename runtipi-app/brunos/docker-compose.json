@@ -37,6 +37,7 @@
       "user": "0:${BRUNOS_PGID}",
       "readOnly": true,
       "capDrop": ["ALL"],
+      "capAdd": ["DAC_OVERRIDE"],
       "securityOpt": ["no-new-privileges:true"],
       "command": [
         "-loglevel=warn",

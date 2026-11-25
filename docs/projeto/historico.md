@@ -218,6 +218,8 @@ do BrunOS, 0660). Script do servidor 19 com `trava-chave`: grava `from="<faixa d
 da chave, com o endereço lido do próprio sshd; o BrunOS pede uma vez cada vez que liga. Decisão 68. Lições:
 - O servidor vê o IP do container (ponte br-*), não o do roteador: dá para travar sem valor fixo.
 - O socket-proxy apaga o socket velho ao ligar e pula o `-allowfrom` quando usa socket.
+- Root sem capabilities não cria arquivo em pasta de outro dono: o CI (pasta do runner) pegou o que o teste
+  local como root escondia; o proxy ganhou `DAC_OVERRIDE` e o smoke usa pasta de usuário comum.
 - Testes de script e o smoke rodam no Windows num contêiner `golang:1.27-bookworm` com o socket do Docker
   Desktop, `-v /tmp:/tmp`, `--network host` e o docker CLI estático.
 

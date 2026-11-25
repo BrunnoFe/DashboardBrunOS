@@ -207,7 +207,8 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     escapam). Recusado: esconder todos os ocultos (o Bruno usa o Arquivos para consultar configurações).
 68. **Proxy do Docker só por socket e chave presa à rede do Docker** (0.30.0, combinado com o Bruno em
     24/11/2026): (a) o proxy não escuta mais na rede: cria um socket numa pasta montada só nele e no BrunOS,
-    com dono root, grupo do BrunOS e permissão 0660 (antes, outro container que se apresentasse como
+    com dono root, grupo do BrunOS e permissão 0660; o proxy ganha só `DAC_OVERRIDE` para criar o socket
+    mesmo se a pasta for de um usuário comum (ele já tem o socket do Docker, que vale mais) (antes, outro container que se apresentasse como
     "brunos" passava, e um container chamado como o proxy enganava o BrunOS); (b) o script 19 ganha
     `trava-chave`: lê do próprio sshd (SSH_CLIENT) de onde veio o pedido, acha a ponte do Docker (br-* ou
     docker0) e grava `from="<faixa>"` na linha da chave; o BrunOS pede uma vez a cada vez que liga. Se a

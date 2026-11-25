@@ -31,11 +31,13 @@ bash "$(dirname "$0")/fixture.sh" "$FIX"
 docker network create "$NET" >/dev/null
 
 # 0.30.0: o proxy fala só por um arquivo de socket numa pasta compartilhada com o BrunOS (sem rede nenhuma),
-# com dono root e grupo do BrunOS, permissão 0660 (como no compose: user "0:${BRUNOS_PGID}")
+# com dono root e grupo do BrunOS, permissão 0660 (como no compose: user "0:${BRUNOS_PGID}"). A pasta é de um
+# usuário comum (como no CI e, às vezes, no Runtipi): sem DAC_OVERRIDE o proxy não cria o socket nela.
 SOCK="$FIX/sock"
 mkdir -p "$SOCK"
+if [ "$(id -u)" = 0 ]; then chown 1000:1000 "$SOCK"; fi
 docker run -d --name brunos-docker-proxy --network none \
-  --user "0:$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 32m \
+  --user "0:$(id -g)" --read-only --cap-drop ALL --cap-add DAC_OVERRIDE --security-opt no-new-privileges:true --memory 32m \
   -v /var/run/docker.sock:/var/run/docker.sock:ro -v "$SOCK:/sock" \
   "$PROXY_IMAGE" \
   -loglevel=info -proxysocketendpoint=/sock/docker.sock -proxysocketendpointfilemode=0660 \
