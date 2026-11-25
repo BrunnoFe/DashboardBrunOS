@@ -452,7 +452,11 @@ function makeDemo() {
       D('Fotos', [F('IMG_2041.heic', 3.2e6, 7), F('wallpaper-lago.jpg', 2.1e6, 60)]),
       D('runtipi', [D('apps', []), D('app-data', [])], 40),
     ])]),
-    'disco1': D('', [D('Filmes', [F('Filme (2003).mkv', 7.4e9, 30), F('Outro filme.mkv', 2.2e9, 31)]), D('Séries', [])]),
+    // Filmes com muitos itens (para rolar) e um caminho fundo com nomes longos (para o caminho recolher)
+    'disco1': D('', [D('Filmes', [
+      D('Coleção de clássicos', [D('Anos 90 remasterizados em 4K', [D('Extras e making of', [D('Legendas em português', [F('legenda.srt', 80e3, 5)])])])]),
+      ...Array.from({ length: 24 }, (_, i) => D(`Filme exemplo ${String(i + 1).padStart(2, '0')} (20${String(i).padStart(2, '0')}) [1080p] [WEB-DL]`, [F('filme.mkv', 4.1e9, 20 + i)], 20 + i)),
+      F('Filme (2003).mkv', 7.4e9, 30), F('Outro filme.mkv', 2.2e9, 31)]), D('Séries', [])]),
     'disco2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
     'disco3': D('', [D('Immich', []), D('Nextcloud', [])]),
   };

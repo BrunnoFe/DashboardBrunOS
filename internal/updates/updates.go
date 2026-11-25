@@ -632,6 +632,24 @@ func (c *Checker) finish(ok bool, msg, warn string, lines []string) {
 		j.Lines = lines
 	}
 	done := *j
+	// 0.32.0: o que acabou de ser atualizado sai da lista na hora. A conferência completa logo abaixo
+	// demora (lojas do Runtipi + apt), e o painel continuava mostrando "atualização disponível".
+	if ok {
+		if done.Kind == "app" {
+			kept := c.st.Apps[:0:0]
+			for _, a := range c.st.Apps {
+				if a.URN != done.Target {
+					kept = append(kept, a)
+				}
+			}
+			c.st.Apps = kept
+		} else if done.Kind == "linux" {
+			c.st.OS.Total, c.st.OS.Security = 0, 0
+			if c.st.OS.Phased == 0 {
+				c.st.OS.Packages = []string{}
+			}
+		}
+	}
 	c.mu.Unlock()
 	c.save()
 	if c.Events != nil {
@@ -656,7 +674,27 @@ func (c *Checker) finish(ok bool, msg, warn string, lines []string) {
 		}
 		c.Events.Emit(ev)
 	}
-	c.Check(c.bg()) // a lista de atualizações muda depois de atualizar
+	c.recheck(c.bg()) // a lista de atualizações muda depois de atualizar
+}
+
+// recheck confere tudo de novo depois de uma atualização. Se outra conferência já estiver rodando
+// (a rotina ou o "Conferir" do painel), espera ela acabar em vez de pular: a que estava rodando
+// pode ter lido a lista de antes da atualização.
+func (c *Checker) recheck(ctx context.Context) {
+	for i := 0; i < 300; i++ {
+		c.mu.Lock()
+		busy := c.running
+		c.mu.Unlock()
+		if !busy {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+	c.Check(ctx)
 }
 
 // Status é a leitura do pedido "atualizacao-estado".

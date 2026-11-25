@@ -99,6 +99,20 @@ App sem Página escolhida (por exemplo, recém-instalado no Runtipi); fica na ú
 app colocado.
 _Evite_: app sem lugar, app órfão
 
+**Escala** (da Tela inicial ou do Sistema):
+Quanto a interface encolhe ou cresce neste aparelho, de 70 % a 110 %. A da Tela inicial vale para saudação,
+widgets, ícones e busca; a do Sistema, para janelas, dock, barra do topo, avisos e diálogos.
+_Evite_: zoom (zoom é a conta interna do Quadro), tamanho da tela
+
+**Novidades**:
+A janelinha com o que mudou, mostrada uma vez por navegador na primeira abertura de cada versão nova.
+_Evite_: changelog, notas de versão
+
+**Tela de atualização**:
+A tela cheia que aparece enquanto o BrunOS está fora do ar por uma atualização ou um reinício; recarrega a
+página sozinha quando ele volta.
+_Evite_: tela de carregamento, splash
+
 ## Janelas
 
 **Janela**:

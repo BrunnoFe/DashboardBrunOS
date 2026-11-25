@@ -12,6 +12,22 @@ celular.
 - Entregue e testada no servidor: tudo até a 0.28.0 (o Bruno confirmou em 21/11/2026 que todos os testes
   pendentes passaram, inclusive a tomada Tuya).
 
+## Plano de 25/11/2026 (combinado com o Bruno, duas versões)
+
+1. **0.32.0: correções** (lançada em 25/11, aguardando teste do Bruno):
+   - Arquivos: cabeçalho da lista fixo com fundo (as linhas passavam por cima dele ao rolar);
+   - Arquivos: caminho em linha própria embaixo dos botões, recolhendo o meio em "…" (com menu) quando não
+     cabe; a barra se adapta à largura da janela (container query): Pasta/Enviar só ícone, busca vira lupa;
+   - Atualizações: o painel não mudava depois de atualizar (a interface parava de ler o servidor antes de
+     ele terminar de conferir de novo). Tirar o app da lista ao terminar bem e continuar lendo enquanto o
+     servidor confere.
+2. **0.33.0: atualizações mais bonitas e escala** (decisões 70 a 72):
+   - Tela de atualização (estilo da animação escolhido pelo Bruno por protótipos: logo enchendo, anel
+     girando ou barra brilhando);
+   - anel de progresso no ícone do app que está atualizando;
+   - Novidades na primeira abertura de cada versão (e em Configurações → Sobre);
+   - Escala da Tela inicial e do Sistema, por aparelho, em Configurações → Aparência.
+
 ## Plano de 24/11/2026 (combinado com o Bruno, três versões)
 
 1. **0.29.0: fechamentos** (lançada em 24/11, testada):

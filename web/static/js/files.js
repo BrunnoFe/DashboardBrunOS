@@ -41,11 +41,11 @@ export function mountFiles(body, opts = {}) {
         <button class="icon-btn f-menu-btn" data-f="side" aria-label="Locais" title="Locais">${svg('menu')}</button>
         <button class="icon-btn" data-f="back" aria-label="Voltar" title="Voltar (Alt+←)">${svg('chevL')}</button>
         <button class="icon-btn" data-f="fwd" aria-label="Avançar" title="Avançar (Alt+→)">${svg('chevR')}</button>
-        <div class="crumbs"></div>
         <span class="f-spacer"></span>
-        <label class="search-field">${svg('search')}<input data-f="q" placeholder="Procurar aqui" aria-label="Procurar"></label>
+        <label class="search-field" title="Procurar aqui">${svg('search')}<input data-f="q" placeholder="Procurar aqui" aria-label="Procurar"></label>
         <div class="f-actions"></div>
       </div>
+      <nav class="f-path" aria-label="Caminho"><div class="crumbs"></div></nav>
       <div class="f-scroll" tabindex="-1"><div class="f-content"></div></div>
       <div class="f-status"></div>
     </div>
@@ -53,6 +53,13 @@ export function mountFiles(body, opts = {}) {
     <div class="f-drop">${svg('upload')}<span>Solte para enviar para esta pasta</span></div>
   </div>`;
   wire();
+  // o caminho se reencaixa quando a janela muda de largura (só se a largura mudou de fato)
+  let lastW = 0;
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(([e]) => {
+    const w = Math.round(e.contentRect.width); if (w === lastW) return; lastW = w;
+    if (f.root) drawCrumbs(f);
+  }) : null;
+  ro?.observe($('.f-path', body));
   (async () => {
     try { F.ctx.roots = await api.files.roots(); } catch (e) { toastError(e, 'Não foi possível listar as pastas'); }
     if (!F) return;
@@ -63,6 +70,7 @@ export function mountFiles(body, opts = {}) {
     else { drawSide(); $('.f-content', body).innerHTML = `<div class="empty-note big">${svg('folder')}<b>Nenhuma pasta disponível</b>Monte pastas em <code>/files</code> no docker-compose (ex.: <code>/home:/files/home</code>).</div>`; }
   })();
   return () => {
+    ro?.disconnect();
     insts.delete(f);
     if (!insts.size) { document.removeEventListener('keydown', onKeyAny, true); document.removeEventListener('paste', onPasteAny); }
     if (F === f) F = [...insts].at(-1) || null;
@@ -174,26 +182,44 @@ function afterMap() {
   else drawSide();
 }
 
+// Caminho (0.32.0): linha própria embaixo dos botões. Quando não cabe na largura da janela, as pastas do
+// meio viram um "…" (menu com elas), da raiz para dentro, até caber; a raiz e a pasta atual ficam sempre.
+const crumbBtn = (f, c) => `<button data-crumb="${esc(c.path)}" data-drop-root="${esc(f.root)}" data-drop-path="${esc(c.path)}" title="${esc(c.name)}"><span class="cr-t">${esc(c.name)}</span></button>`;
+const SEP = () => `<span class="sep">${svg('chevR')}</span>`;
+function drawCrumbs(f) {
+  const el = $('.crumbs', f.body); if (!el) return;
+  const r = f.ctx?.roots?.find((x) => x.id === f.root);
+  f.crumbsHidden = [];
+  if (f.mode === 'trash') { el.innerHTML = `<button disabled>${svg('trash')}<span class="cr-t">Lixeira</span></button>`; return; }
+  if (f.mode === 'search') { el.innerHTML = `${crumbBtn(f, { name: r?.name || '', path: f.path })}${SEP()}<button disabled><span class="cr-t">Resultados para “${esc(f.search?.q || '')}”</span></button>`; return; }
+  const parts = f.path ? f.path.split('/') : [];
+  const items = [{ name: r?.name || '', path: '' }, ...parts.map((p, i) => ({ name: p, path: parts.slice(0, i + 1).join('/') }))];
+  const paint = (hide) => {
+    const shown = hide ? [items[0], null, ...items.slice(1 + hide)] : items;
+    el.innerHTML = shown.map((c, i) => (i ? SEP() : '') + (c ? crumbBtn(f, c)
+      : `<button class="cr-more" data-crumb-more aria-label="Mostrar ${hide} ${hide === 1 ? 'pasta escondida' : 'pastas escondidas'}" title="${esc(items.slice(1, 1 + hide).map((x) => x.name).join(' › '))}">…</button>`)).join('');
+  };
+  paint(0);
+  // esconde do segundo item para dentro até caber. Mede com a pasta atual no tamanho inteiro (classe
+  // .fit), para recolher o meio antes de cortar o nome dela; ela nunca some, no máximo corta com "…".
+  el.classList.add('fit');
+  let hide = 0;
+  while (el.scrollWidth > el.clientWidth + 1 && hide < items.length - 2) paint(++hide);
+  el.classList.remove('fit');
+  f.crumbsHidden = items.slice(1, 1 + hide);
+}
+
 function drawToolbar() {
   $('[data-f="back"]', F.body).disabled = !F.hist.length;
   $('[data-f="fwd"]', F.body).disabled = !F.fwd.length;
-  const r = rootById(F.root);
-  const crumbs = $('.crumbs', F.body);
-  if (F.mode === 'trash') crumbs.innerHTML = `<button disabled>${svg('trash')} Lixeira</button>`;
-  else if (F.mode === 'search') crumbs.innerHTML = `<button data-crumb="${esc(F.path)}">${esc(r?.name || '')}</button><span class="sep">${svg('chevR')}</span><button disabled>Resultados para “${esc(F.search?.q || '')}”</button>`;
-  else {
-    const parts = F.path ? F.path.split('/') : [];
-    crumbs.innerHTML = [`<button data-crumb="" data-drop-root="${esc(F.root)}" data-drop-path="">${esc(r?.name || '')}</button>`,
-      ...parts.map((p, i) => { const path = parts.slice(0, i + 1).join('/'); return `<span class="sep">${svg('chevR')}</span><button data-crumb="${esc(path)}" data-drop-root="${esc(F.root)}" data-drop-path="${esc(path)}">${esc(p)}</button>`; })].join('');
-    crumbs.scrollLeft = crumbs.scrollWidth;
-  }
+  drawCrumbs(F);
   const ro = rootRO();
   $('.f-actions', F.body).innerHTML = F.mode === 'trash'
     ? `<button class="pill-btn danger" data-f="empty-trash" ${F.trash.length ? '' : 'disabled'}>${svg('trash')}Esvaziar lixeira</button>`
     : `<button class="pill-btn" data-f="mkdir" ${ro || F.mode !== 'browse' ? 'disabled' : ''} title="Nova pasta">${svg('folderPlus')}<span class="hide-sm">Pasta</span></button>
        <button class="pill-btn" data-f="upload" ${ro || F.mode !== 'browse' ? 'disabled' : ''} title="Enviar arquivos">${svg('upload')}<span class="hide-sm">Enviar</span></button>
        <button class="icon-btn" data-f="tools" ${F.mode !== 'browse' ? 'disabled' : ''} title="Mais: novo arquivo, mapa do espaço, duplicados" aria-label="Mais ferramentas">${svg('more')}</button>
-       <button class="icon-btn ${F.showHidden ? 'on' : ''}" data-f="hidden" title="${F.showHidden ? 'Esconder' : 'Mostrar'} arquivos ocultos" aria-label="Arquivos ocultos">${svg(F.showHidden ? 'eye' : 'eyeOff')}</button>
+       <button class="icon-btn f-wide ${F.showHidden ? 'on' : ''}" data-f="hidden" title="${F.showHidden ? 'Esconder' : 'Mostrar'} arquivos ocultos" aria-label="Arquivos ocultos">${svg(F.showHidden ? 'eye' : 'eyeOff')}</button>
        <div class="view-toggle"><button class="icon-btn ${F.view === 'list' ? 'on' : ''}" data-view="list" aria-label="Lista">${svg('list')}</button><button class="icon-btn ${F.view === 'grid' ? 'on' : ''}" data-view="grid" aria-label="Grade">${svg('grid')}</button></div>`;
 }
 function visibleEntries() {
@@ -415,12 +441,18 @@ async function extractArchive(e) {
     if (F && F.root === root) reload({ keepSel: true });
   } catch (x) { toastError(x, 'Não foi possível extrair'); }
 }
+const narrowBar = () => { const v = $('.view-toggle', F.body); return !!v && getComputedStyle(v).display === 'none'; };
 function toolsItems() {
   const ro = rootRO(), root = F.root, path = F.path, rootName = rootById(root)?.name || '';
   return [
     { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro, run: newTextFile },
     { icon: 'treemap', label: 'Mapa do espaço desta pasta', run: () => import('./filetools.js').then((m) => m.spaceDialog({ root, path, rootName, onOpen: (p) => F && go(root, p) })) },
     { icon: 'dupes', label: 'Encontrar arquivos duplicados', run: () => import('./filetools.js').then((m) => m.duplicatesDialog({ root, path, rootName, readOnly: ro, onChanged: () => F && F.root === root && reload({ keepSel: true }) })) },
+    // janela estreita (0.32.0): ocultos e lista/grade saem da barra e vêm para este menu
+    ...(narrowBar() ? [
+      { icon: F.showHidden ? 'eyeOff' : 'eye', label: F.showHidden ? 'Esconder arquivos ocultos' : 'Mostrar arquivos ocultos', run: toggleHidden },
+      { icon: F.view === 'list' ? 'grid' : 'list', label: F.view === 'list' ? 'Ver em grade' : 'Ver em lista', run: () => { F.view = F.view === 'list' ? 'grid' : 'list'; F.ctx.saveSetting('filesView', F.view); draw(); } },
+    ] : []),
   ];
 }
 
@@ -651,6 +683,10 @@ function wire() {
     else if (t.closest('[data-f="fwd"]')) forward();
     else if (t.closest('[data-f="mkdir"]')) mkdir();
     else if ((el = t.closest('[data-f="upload"]'))) { const r = el.getBoundingClientRect(); contextMenu(r.left, r.bottom + 6, [{ icon: 'upload', label: 'Arquivos…', run: () => pickUpload(false) }, { icon: 'folder', label: 'Pasta inteira…', run: () => pickUpload(true) }]); }
+    else if ((el = t.closest('[data-crumb-more]'))) {
+      const r = el.getBoundingClientRect();
+      contextMenu(r.left, r.bottom + 6, (F.crumbsHidden || []).map((c) => ({ icon: 'folder', label: c.name, run: () => go(F.root, c.path) })));
+    }
     else if ((el = t.closest('[data-f="tools"]')) && !el.disabled) { const r = el.getBoundingClientRect(); contextMenu(r.left, r.bottom + 6, toolsItems()); }
     else if (t.closest('[data-f="hidden"]')) toggleHidden();
     else if (t.closest('[data-f="empty-trash"]')) {

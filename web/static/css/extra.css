@@ -244,9 +244,15 @@ body.reduce-motion .status-dot.down { animation: none; }
 .f-toolbar { padding-right: 48px; gap: 6px; }
 .f-toolbar .search-field { margin-left: 0; }
 .f-toolbar .search-field input { width: 150px; }
-.crumbs { flex: 0 1 auto; scrollbar-width: none; overflow-x: auto; }
-.crumbs::-webkit-scrollbar { display: none; }
-.crumbs button { display: inline-flex; align-items: center; gap: 6px; }
+/* caminho em linha própria (0.32.0): recolhe o meio em "…" pelo JS; a última pasta corta com … */
+.f-path { flex: none; display: flex; align-items: center; min-width: 0; height: 30px; margin: 0 0 6px 4px; }
+.crumbs { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.crumbs button { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 240px; }
+.crumbs button:last-child { flex: 0 1 auto; min-width: 0; max-width: none; }
+.crumbs.fit button:last-child { flex: none; }
+.crumbs .cr-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crumbs .sep { flex: none; display: inline-flex; }
+.crumbs .cr-more { opacity: .7; letter-spacing: 1px; padding: 3px 8px; background: rgba(255,255,255,.06); }
 .crumbs button[disabled] { opacity: 1; cursor: default; }
 .crumbs button[disabled]:hover { background: none; }
 .f-scroll { outline: none; position: relative; padding-bottom: 20px; }
@@ -404,9 +410,6 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
 
 @media (max-width: 900px) {
   .f-drop { left: 20px; }
-  .f-toolbar { flex-wrap: wrap; height: auto; padding: 4px 48px 6px 0; }
-  .f-toolbar .search-field { order: 10; flex: 1 1 100%; }
-  .f-toolbar .search-field input { width: 100%; }
   .hide-sm { display: none; }
   .f-table th:nth-child(4), .f-table td:nth-child(4) { display: none; }
   .disk-row .track { width: 70px; }
@@ -1901,3 +1904,47 @@ body.dock-auto:not(.dock-peek) #dock-peek { display: block; }
 .acc-dots .acc-dot { width: 7px; height: 7px; margin-right: 3px; vertical-align: 0; }
 .ai-note.ai-access { opacity: .8 !important; margin: 0 !important; line-height: 1.6; }
 .acc-form { display: inline-block; white-space: nowrap; margin-right: 12px; }
+
+/* ── Arquivos pela largura da janela (0.32.0) ─────────────────────
+   As regras seguem a largura da própria janela (container query), não só a da tela: uma janela
+   flutuante estreita no computador se comporta como no celular. */
+.ftab-page { container: fwin / inline-size; }
+.files { grid-template-columns: 220px minmax(0, 1fr); }
+.f-main { min-width: 0; }
+.f-toolbar { position: relative; min-width: 0; }
+.f-toolbar .search-field { flex: 0 1 auto; min-width: 0; cursor: text; }
+@container fwin (max-width: 760px) {
+  .files { grid-template-columns: minmax(0, 1fr); }
+  .f-side {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 6; width: min(270px, 82%);
+    padding-top: 22px; border-radius: 0 22px 22px 0;
+    background: linear-gradient(180deg, hsl(var(--bh) 14% 13%), hsl(var(--bh) 14% 9%));
+    box-shadow: 12px 0 40px rgba(0,0,0,.45);
+    transform: translateX(-105%); visibility: hidden;
+    transition: transform .28s var(--ease-glass), visibility 0s linear .28s;
+  }
+  .files.side-open .f-side { transform: none; visibility: visible; transition: transform .28s var(--ease-glass); }
+  .f-side-shade { position: absolute; inset: 0; z-index: 5; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .files.side-open .f-side-shade { opacity: 1; pointer-events: auto; }
+  .f-main { padding-left: 20px; }
+  .f-menu-btn { display: grid; }
+  .f-drop { left: 20px; }
+  .f-toolbar .hide-sm { display: none; }
+  .f-toolbar .pill-btn:has(.hide-sm) { padding: 0; width: 32px; justify-content: center; }
+  .f-table th:nth-child(4), .f-table td:nth-child(4) { display: none; }
+}
+/* janela bem estreita: a busca vira uma lupa e abre por cima da barra ao tocar */
+@container fwin (max-width: 560px) {
+  .f-table th:nth-child(2), .f-table td:nth-child(2) { display: none; }
+  .f-toolbar .search-field { width: 32px; height: 30px; padding: 0; justify-content: center; flex: none; }
+  .f-toolbar .search-field input { width: 0; min-width: 0; padding: 0; }
+  .f-toolbar .search-field:focus-within, .f-toolbar .search-field:has(input:not(:placeholder-shown)) {
+    position: absolute; left: 0; right: 48px; top: 50%; transform: translateY(-50%); z-index: 3;
+    width: auto; height: 34px; padding: 0 12px; justify-content: flex-start;
+    background: hsl(var(--bh) 14% 15%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.35);
+  }
+  .f-toolbar .search-field:focus-within input, .f-toolbar .search-field:has(input:not(:placeholder-shown)) input { width: auto; flex: 1; }
+  .f-actions { gap: 2px; }
+  /* ocultos e lista/grade vão para o menu "⋯" (o JS confere se a grade sumiu) */
+  .f-toolbar .f-wide, .f-toolbar .view-toggle { display: none; }
+}

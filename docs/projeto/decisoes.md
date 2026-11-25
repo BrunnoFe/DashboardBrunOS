@@ -226,6 +226,27 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     e histórico seguem). IP mudou: o aviso "não está respondendo" manda procurar de novo no assistente, e
     gravar pede a senha (a chave continua presa ao IP). Recusado: trocar o IP sozinho (abriria o furo
     fechado na revisão de segurança) e guardar a credencial sem senha.
+70. **Tela de atualização só quando o BrunOS sai do ar** (0.33.0, combinado com o Bruno em 25/11/2026):
+    tela cheia (papel de parede desfocado, logo animada, etapas e versão de → para) ao atualizar o próprio
+    BrunOS, no Linux só se a conexão cair (Docker reiniciando) e ao reiniciar o servidor ou o BrunOS
+    ("Reiniciando…"); a página recarrega sozinha quando ele volta. Apps comuns não travam o painel: o ícone
+    ganha um anel de progresso (só CSS) e um ✓ ao terminar. Barra por etapas, não porcentagem: o servidor
+    não informa uma porcentagem real. Recusado: tela cheia em toda atualização (travaria o painel por minutos
+    à toa).
+71. **Novidades na primeira abertura de cada versão** (0.33.0, combinado com o Bruno em 25/11/2026):
+    cada navegador lembra a última versão vista; numa versão nova, uma janelinha mostra as novidades (de
+    todas as versões puladas, a mais nova em cima), também nas atualizações feitas pelo Runtipi, e dá para
+    revê-las em Configurações → Sobre. Texto embutido no binário. Cada tópico: título curto em negrito +
+    uma ou duas frases pequenas embaixo, linguagem simples e humana ("cuidado para não parecer muito um
+    robô").
+72. **Escala da interface por aparelho, em duas partes** (0.33.0, combinado com o Bruno em 25/11/2026):
+    "Tela inicial" (saudação, widgets, ícones, busca) e "Sistema" (janelas, dock, barra do topo, avisos,
+    diálogos), de 70 % a 110 % em passos de 5 (mínimo de 85 % em tela de celular, para o dedo), botões
+    − / + com "Voltar a 100%" em Configurações → Aparência. Guardadas no navegador ("vale só neste
+    aparelho"): um monitor grande e um celular quase nunca querem a mesma. A escala da Tela inicial entra na
+    conta do zoom do Quadro e dos ícones (só um zoom de CSS não adiantaria, porque o encaixe esticaria tudo
+    de volta): a composição encolhe por igual e sobra mais papel de parede em volta. As janelas de app (o
+    site do app) não mudam.
 
 ## Loja, Garimpo, instalação
 

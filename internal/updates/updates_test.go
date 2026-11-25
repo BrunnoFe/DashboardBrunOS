@@ -324,6 +324,33 @@ func waitDone(t *testing.T, c *Checker) Job {
 	return Job{}
 }
 
+// 0.32.0: o que terminou bem sai da lista na hora, antes da conferência completa (que pode demorar).
+func TestFinishTiraDaListaNaHora(t *testing.T) {
+	c := New(filepath.Join(t.TempDir(), "updates.json"))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.base = ctx     // conferência de depois não roda (contexto cancelado)
+	c.running = true // e outra conferência "está rodando": a de depois espera, mas o contexto acabou
+	c.st.Apps = []runtipi.Update{{URN: "immich:migrated", Name: "Immich"}, {URN: "plex:migrated", Name: "Plex"}}
+	c.st.OS = OS{Total: 7, Security: 2, Packages: []string{"a", "b"}}
+	c.st.Job = &Job{Kind: "app", Target: "immich:migrated", Name: "Immich", Running: true}
+	c.finish(true, "", "", nil)
+	if s := c.Snapshot(); len(s.Apps) != 1 || s.Apps[0].URN != "plex:migrated" {
+		t.Fatalf("o Immich devia sair da lista: %+v", s.Apps)
+	}
+	c.st.Job = &Job{Kind: "linux", Name: "Linux", Running: true}
+	c.finish(true, "", "", nil)
+	if s := c.Snapshot(); s.OS.Total != 0 || s.OS.Security != 0 || len(s.OS.Packages) != 0 {
+		t.Fatalf("o Linux devia zerar: %+v", s.OS)
+	}
+	// deu errado: nada sai da lista
+	c.st.Job = &Job{Kind: "app", Target: "plex:migrated", Name: "Plex", Running: true}
+	c.finish(false, "erro", "", nil)
+	if s := c.Snapshot(); len(s.Apps) != 1 {
+		t.Fatalf("com erro, a lista fica: %+v", s.Apps)
+	}
+}
+
 func TestStartAndFollow(t *testing.T) {
 	old := pollEvery
 	pollEvery = 20 * time.Millisecond

@@ -233,6 +233,19 @@ novo. Decisão 69. Lições:
 - Testes de script e o smoke rodam no Windows num contêiner `golang:1.27-bookworm` com o socket do Docker
   Desktop, `-v /tmp:/tmp`, `--network host` e o docker CLI estático.
 
+## 0.32.0 (25/11/2026): Arquivos pela largura da janela e painel de Atualizações em dia
+Arquivos: o cabeçalho da lista ganhou fundo de vidro (as linhas apareciam por trás dele ao rolar); o caminho
+foi para uma linha própria e recolhe as pastas do meio num "…" com menu quando não cabe (a raiz e a pasta
+atual ficam sempre); a barra segue a largura da própria janela (container query `fwin`): gaveta lateral
+abaixo de 760 px, Pasta/Enviar só com ícone, e abaixo de 560 px a busca vira lupa e ocultos/lista/grade vão
+para o menu "⋯". Atualizações: o que terminou bem sai da lista na hora, a conferência de depois espera outra
+que esteja rodando em vez de pular, e a interface segue lendo o servidor enquanto ele confere. Lições:
+- Coluna `1fr` de grade não encolhe abaixo do conteúdo: o caminho comprido alargava a janela em vez de
+  recolher. `minmax(0, 1fr)` + `min-width: 0`.
+- Para recolher o meio antes de cortar a última pasta, medir com a última no tamanho inteiro (classe `.fit`).
+- O painel parava de ler o servidor quando via "terminou", mas a conferência nova só vinha depois, e a
+  conferência recente (menos de 10 min) impedia conferir de novo ao abrir o painel.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

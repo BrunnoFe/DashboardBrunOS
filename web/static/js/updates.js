@@ -6,6 +6,8 @@ import { api } from './api.js';
 import { $, esc, html, svg, toast, toastError, timeAgo, confirmDialog, openDialog, fmtBytes } from './ui.js';
 
 let ctx = null, panel = null, checking = false, pollTimer = 0, lastJobRunning = false, dismissed = 0, failure = '';
+let afterJob = 0; // quando a última atualização terminou (ms): segue lendo até a conferência de depois acabar
+const AFTER_JOB = 10000; // a conferência de depois leva um instante para começar no servidor
 const STALE = 600; // segundos: conferência mais velha que isso é refeita ao abrir o painel
 const EVERY = { '6h': 'a cada 6 horas', '12h': 'a cada 12 horas', '24h': 'uma vez por dia', '168h': 'uma vez por semana', manual: 'só quando você manda' };
 
@@ -31,16 +33,19 @@ export function paintUpdates() {
   b.classList.toggle('sec', n.security > 0);
   b.classList.toggle('busy', run || checking);
   b.setAttribute('aria-label', run ? `Atualizando ${s.job.name}` : n.total ? `Atualizações: ${n.total}` : 'Atualizações: tudo em dia');
-  if (lastJobRunning && !run) ctx?.reloadApps?.(); // terminou: as setas dos ícones mudam
+  if (lastJobRunning && !run) { ctx?.reloadApps?.(); afterJob = Date.now(); } // terminou: as setas dos ícones mudam
+  if (afterJob && !s?.checking && Date.now() - afterJob > AFTER_JOB) { afterJob = 0; ctx?.reloadApps?.(); } // a conferência de depois acabou
   lastJobRunning = run;
   schedulePoll();
   if (panel) drawPanel();
 }
 
 // Com atualização rodando: lê o andamento a cada 3 s com o painel aberto, 15 s com ele fechado.
+// 0.32.0: depois que ela termina, o servidor confere tudo de novo (lojas + apt, pode levar minutos);
+// continua lendo enquanto ele confere, senão o painel ficava com a lista de antes.
 function schedulePoll() {
   clearTimeout(pollTimer); pollTimer = 0;
-  if (!jobRunning()) return;
+  if (!jobRunning() && !afterJob) return;
   pollTimer = setTimeout(async () => {
     try { ctx.set(await api.updates.get()); } catch { /* tenta de novo */ }
     paintUpdates();
