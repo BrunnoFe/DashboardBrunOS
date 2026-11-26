@@ -90,6 +90,11 @@ type KindInfo struct {
 	// NoURL: o tipo não fala com o app por HTTP (Tailscale vai pelo SSH do servidor).
 	NoURL bool   `json:"noUrl,omitempty"`
 	Note  string `json:"note,omitempty"` // explicação extra no formulário
+	// Actions são as Ações leves que o Tipo aceita (decisão 73).
+	Actions []ActionDef `json:"actions,omitempty"`
+	// Live: buscado enquanto houver alguém com o BrunOS aberto, mesmo sem widget (o escudo do AdGuard
+	// na barra do topo mostra o estado da proteção).
+	Live bool `json:"live,omitempty"`
 }
 
 // Item de uma lista. ID identifica o item entre buscas (ex.: MAC de um aparelho, para o aviso de

@@ -247,6 +247,19 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     conta do zoom do Quadro e dos ícones (só um zoom de CSS não adiantaria, porque o encaixe esticaria tudo
     de volta): a composição encolhe por igual e sobra mais papel de parede em volta. As janelas de app (o
     site do app) não mudam.
+73. **Ações de integração leves e arquivos do Nextcloud por WebDAV** (plano 0.34.0 a 0.37.0, combinado com o
+    Bruno em 25/11/2026; revê a 38): (a) integrações podem ter **Ações** só reversíveis e que não apagam
+    nada: pausar/ligar o AdGuard (5 min, 30 min, 1 h ou até ligar, sem confirmação; "até ligar" segue
+    avisando pelo Aviso pronto), pausar/retomar todos os torrents e o modo tartaruga do Transmission.
+    Recusado: apagar torrent. (b) A Integração Nextcloud pode receber, além do token do serverinfo, um
+    usuário + **senha de app** (com escrita, revogável no Nextcloud), que liga o lugar "Nextcloud" na janela
+    Arquivos por WebDAV (biblioteca padrão). Recusado: montar a pasta de dados do Nextcloud (é do
+    `www-data` e o que fosse escrito ali ficaria fora do banco dele) e "Armazenamento externo" (exigiria
+    mudar onde os arquivos moram). (c) Vídeo com áudio que o navegador não toca: o servidor lê só o
+    cabeçalho do arquivo e a janela avisa, com Baixar e Abrir no Plex. Recusado: converter o som com ffmpeg
+    (imagem de ~4 MB para ~80 MB e CPU do servidor). (d) GPU: Métricas da fonte BrunOS (Intel e AMD pelo
+    sistema, sem privilégio; consumo da Intel e NVIDIA pelo script do servidor). Aceleração por GPU no
+    próprio BrunOS: só um estudo antes de qualquer código.
 
 ## Loja, Garimpo, instalação
 

@@ -327,6 +327,18 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     guardado em `_sid`), `syncthing.go` (`X-API-Key`; `/rest/system/*`, `/rest/config/*`, `/rest/db/status`
     de até 20 pastas), `nextcloud.go` (`/ocs/v2.php/apps/serverinfo/api/v1/info?skipApps&skipUpdate`,
     `NC-Token` sem usuário ou autenticação básica com usuário).
+  - 0.34.0 (decisão 73): `actions.go` — Ações leves (`KindInfo.Actions`, interface `ActionKind`,
+    `Hub.DoAction`: confere a Ação e o tempo, executa, registra no log e busca de novo na hora). AdGuard:
+    `pause` (`POST /control/protection {enabled:false, duration}`; AdGuard antigo sem a rota cai em
+    `/control/dns_config` só para "até ligar") e `resume`; métrica `pause_left` (s) e a interna `_guard`
+    (0 só desligado sem prazo; o Aviso pronto `protection_off` olha ela, então pausa com tempo não avisa).
+    `KindInfo.Live`: buscado sempre que há alguém conectado, mesmo sem widget (escudo do topo).
+    `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
+    Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
+- **`internal/files/media.go`** (0.34.0): `ProbeMedia(io.ReaderAt, size)` lê só o cabeçalho de MKV/WebM
+  (EBML: Segment → Tracks, ou pelo SeekHead quando o Tracks vem depois dos Clusters) e de MP4/MOV (caixas
+  `moov/trak`: `hdlr`, `mdhd`, `tkhd`, `stsd`; `moov` no fim custa só pular as caixas). Devolve
+  `{container, tracks:[{kind, codec, name, lang, default, channels}]}`; quem decide se toca é o navegador.
 - **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
 - **`limits.go`** (revisão de segurança de 19/11/2026): prazo para o corpo dos pedidos (anda junto com os
   dados nos envios de arquivo e sai quando o corpo termina), prazo de escrita nos SSE e teto de conexões
@@ -395,6 +407,8 @@ PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   
 POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})
 GET  /api/files/upload/status?id      POST /api/files/upload/finish {id} · upload/cancel {id}
 POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min · /api/files/usage?root&path[&refresh=1]
+GET  /api/files/media?root&path → {container,tracks}  (415 se não for vídeo/áudio conhecido; 0.34.0)
+POST /api/integrations/{id}/action {action,minutes}   GET /api/integrations/plex/find?name → {url,none}  (0.34.0)
 GET  /api/integrations/kinds · /api/integrations ({integrations:[Public],views}) · /api/integrations/suggest
 POST /api/integrations {kind,name,url,user,secret?,interval,alerts}   PUT/DELETE /api/integrations/{id}
 POST /api/integrations/test {…, id?}  (busca uma vez sem salvar; com id usa o token guardado; 502 {error})
@@ -485,6 +499,14 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   senha; também nas Configurações, na busca e no "Reiniciar agora" das Atualizações), contagem no botão e
   no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`. 0.33.0: contagem no zero
   abre a Tela de atualização (`reboot`/`shutdown`).
+- `js/adguard.js` (0.34.0, decisão 73): escudo `#adg-btn` à esquerda das Atualizações (`right: 146px`), só
+  com Integração AdGuard. Lê `protection_on`/`pause_left` de `S.metrics` (`on('metrics')`; o
+  `loadIntegrations` também emite), contagem a cada segundo, relê as integrações quando a pausa acaba; menu
+  Pausar 5/30/60 min ou Até eu ligar / Ligar agora, sem confirmação, valendo para todos os AdGuards.
+- Aviso de vídeo mudo (`files.js`, 0.34.0): `mediaCheck` pede `api.files.media`, `mediaProblem` compara a
+  faixa padrão com `canPlayType` (`CODEC_MIME`) e põe o `.pv-warn` por cima do player, com Baixar e Abrir no
+  Plex (`plexFind`, aberto por `filesCtx.openUrl` em nova aba). O `mediaFallback` usa o mesmo texto quando o
+  vídeo dá erro.
 - `js/updscreen.js` (0.33.0, decisão 70): Tela de atualização. `showUpdScreen({kind, from, to, backup,
   step, expectDownMs})` (`self`, `linux`, `reboot`, `restart`, `shutdown`), `updScreenStep(i)`,
   `hideUpdScreen()`. Pergunta `api.public()` a cada 2 s: duas falhas seguidas = caiu (etapa "Reiniciando");

@@ -210,6 +210,23 @@ for n in ('dup1.bin','dup2.bin'): req('PUT','/api/files/upload?root=home&path=us
 s,b,_=req('GET','/api/files/duplicates?root=home&path=usuario/Dups&min=1'); dp=json.loads(b); check('duplicados', s==200 and len(dp['groups'])==1 and sorted(f['path'] for f in dp['groups'][0]['files'])==['usuario/Dups/dup1.bin','usuario/Dups/dup2.bin'] and dp['wasted']==14, b)
 s,b,_=req('GET','/api/files/usage?root=home&path=usuario'); us=json.loads(b); check('mapa do espaço', s==200 and us['size']>0 and any(i['name']=='Dups' and i['dir'] and i['size']==28 for i in us['items']), b[:300])
 s,b,_=req('GET','/api/files/usage?root=home&path=../..'); check('mapa do espaço: caminho preso na raiz', s==200 and json.loads(b)['path']=='', (s,b[:200]))
+# 0.34.0: formatos de um vídeo (aviso de vídeo mudo). MKV mínimo montado aqui: H.264 + DTS 5.1 em português.
+def ebml(eid, *parts):
+    body = b''.join(parts); n = len(body)
+    return eid + bytes([0x01]) + n.to_bytes(7, 'big') + body
+trk = lambda typ, codec, extra=b'': ebml(b'\xae', ebml(b'\x83', bytes([typ])), ebml(b'\x86', codec), extra)
+mkv = ebml(b'\x1a\x45\xdf\xa3', ebml(b'\x42\x82', b'matroska')) + ebml(b'\x18\x53\x80\x67', ebml(b'\x16\x54\xae\x6b',
+    trk(1, b'V_MPEG4/ISO/AVC'), trk(2, b'A_DTS', ebml(b'\x22\xb5\x9c', b'por') + ebml(b'\xe1', ebml(b'\x9f', b'\x06')))))
+req('PUT','/api/files/upload?root=home&path=usuario&name=filme.mkv', raw=mkv, ctype='application/octet-stream')
+s,b,_=req('GET','/api/files/media?root=home&path=usuario/filme.mkv'); md=json.loads(b) if s==200 else {}
+check('mídia: faixas do mkv', s==200 and md.get('container')=='matroska' and [t['codec'] for t in md['tracks']]==['h264','dts'] and md['tracks'][1]['lang']=='por' and md['tracks'][1]['channels']==6, (s,b[:300]))
+s,b,_=req('GET','/api/files/media?root=home&path=usuario/Documentos/notas.md'); check('mídia: arquivo que não é vídeo → 415', s==415, (s,b))
+s,b,_=req('GET','/api/files/media?root=home&path=usuario/fuga/secret.txt'); check('mídia: link de fuga → recusado', s>=400, (s,b))
+# Ações de integração e "Abrir no Plex"
+s,b,_=req('POST','/api/integrations/nao-existe/action',{'action':'pause','minutes':5}); check('ação: integração que não existe → 404', s==404, (s,b))
+s,b,_=req('POST','/api/integrations/nao-existe/action',{'action':'pause'}, hdr=False); check('ação: sem X-BrunOS → 403', s==403, (s,b))
+s,b,_=req('GET','/api/integrations/plex/find?name=Filme.2003.mkv'); check('plex: sem Plex cadastrado → none', s==200 and json.loads(b)=={'url':'','none':True}, (s,b))
+s,b,_=req('GET','/api/integrations/plex/find?name=../etc/passwd'); check('plex: nome com barra → 400', s==400, (s,b))
 # revisão de segurança, lote 3: ocultos da pasta pessoal só leitura; a chave privada some de tudo
 H0=FIX+'/files/home/usuario'
 s,b,_=req('GET','/api/files/list?root=home&path=usuario/.ssh'); nm=[e['name'] for e in json.loads(b)['entries']]

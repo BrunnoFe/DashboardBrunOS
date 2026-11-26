@@ -12,6 +12,29 @@ celular.
 - Entregue e testada no servidor: tudo até a 0.28.0 (o Bruno confirmou em 21/11/2026 que todos os testes
   pendentes passaram, inclusive a tomada Tuya).
 
+## Plano de 25/11/2026, parte 2 (combinado com o Bruno, quatro versões; decisão 73)
+
+Testar tudo também em tela de celular (390 px), com prints.
+
+1. **0.34.0: vídeo mudo + Ações + AdGuard** (lançada em 25/11, aguardando teste do Bruno; conferir com um .mkv
+   de verdade que ficava mudo, um .mp4 comum sem aviso e a pausa de 5 min do AdGuard voltando sozinha):
+   - player: o servidor lê o cabeçalho do .mkv/.mp4/.webm e devolve os formatos de vídeo e áudio; áudio que
+     o navegador não toca (AC3, E-AC3, DTS, TrueHD...) mostra um aviso com Baixar e Abrir no Plex (procura
+     pelo nome; sem resultado, o botão não aparece); formatos também em Propriedades;
+   - Ações de integração (base comum) e escudinho do AdGuard na barra do topo: verde protegendo, pausado com
+     o tempo que falta; menu 5 min / 30 min / 1 h / Até eu ligar, sem confirmação; só com Integração AdGuard.
+2. **0.35.0: widget do Transmission**: Formato de tabela (nome, barra de progresso, tamanho, download,
+   upload, estado); todos os torrents com filtro Todos / Baixando / Semeando; rodapé com velocidades
+   totais, razão geral, pausar/retomar todos e modo tartaruga; a cada 5 s só com alguém olhando; no
+   celular nome + barra + velocidade, o resto ao tocar.
+3. **0.36.0: GPU**: Métricas da fonte BrunOS (Intel: frequência, uso estimado pelo RC6, consumo pelo
+   RAPL "uncore" via script, temperatura; AMD: uso, VRAM, temperatura, consumo; NVIDIA pelo `nvidia-smi`
+   via script, sem teste real), Modelo "GPU", seção no monitor de hardware, histórico de 30 dias. Junto:
+   estudo de aceleração por GPU no BrunOS (parecer para o Bruno, sem código).
+4. **0.37.0: Nextcloud por WebDAV**: usuário + senha de app na Integração Nextcloud ligam o lugar
+   "Nextcloud" na janela Arquivos: navegar, ver (vídeo com avançar/voltar), baixar, enviar, criar pasta,
+   renomear, mover, apagar (lixeira do Nextcloud) e copiar/mover entre o Nextcloud e os discos.
+
 ## Plano de 25/11/2026 (combinado com o Bruno, duas versões)
 
 1. **0.32.0: correções** (lançada e testada pelo Bruno em 25/11: "Tudo certo!"):
@@ -21,8 +44,8 @@ celular.
    - Atualizações: o painel não mudava depois de atualizar (a interface parava de ler o servidor antes de
      ele terminar de conferir de novo). Tirar o app da lista ao terminar bem e continuar lendo enquanto o
      servidor confere.
-2. **0.33.0: atualizações mais bonitas e escala** (decisões 70 a 72; lançada em 25/11, aguardando teste;
-   conferir em especial arrastar widgets e ícones com a escala reduzida e a tela ao atualizar o BrunOS):
+2. **0.33.0: atualizações mais bonitas e escala** (decisões 70 a 72; lançada e testada pelo Bruno em 25/11:
+   "Testei a 0.33.0 e tudo funcionou"):
    - Tela de atualização: ideia do Bruno depois dos protótipos, a logo em "órbita" (o arco gira e encolhe, a
      bolinha dá a volta, o centro pulsa) dentro de um anel que mostra o progresso das etapas, com um brilho
      girando; etapas em pílulas embaixo (Backup · Baixando · Reiniciando · Voltando);

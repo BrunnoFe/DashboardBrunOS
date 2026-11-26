@@ -330,6 +330,36 @@ body.is-locked #upload-host, body.is-locked #toast-host { display: none; }
 .pv-nav.prev { left: 12px; }
 .pv-nav.next { right: 12px; }
 .pv-none p { text-align: center; line-height: 1.5; }
+/* 0.34.0: aviso de vídeo mudo (som que o navegador não toca), por cima do player */
+.pv-stage { position: relative; }
+.pv-warn { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2; width: min(640px, calc(100% - 24px));
+  display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 12px; border-radius: 16px;
+  background: rgba(32,26,12,.88); -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: inset 0 0 0 1px rgba(255,200,90,.28), 0 10px 30px rgba(0,0,0,.4); animation: dlg-in 220ms var(--ease-out) both; }
+.pv-warn-ico { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; color: #2b1d00; background: linear-gradient(135deg, #ffd27a, #e09a1f); }
+.pv-warn-ico .svg { width: 18px; height: 18px; }
+.pv-warn p { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; line-height: 1.4; }
+.pv-warn p b { font-size: 13px; }
+.pv-warn p span { opacity: .78; }
+.pv-warn-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.pv-warn-x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; opacity: .6; }
+.pv-warn-x:hover { opacity: 1; background: rgba(255,255,255,.1); }
+.pv-none .btn-row { justify-content: center; }
+@media (max-width: 640px) { /* celular: o nome ocupa a linha; tamanho e data saem para caber os botões */
+  .pv-head { padding: 12px 14px; gap: 8px; }
+  .pv-name { max-width: none; flex: 1; min-width: 0; }
+  .pv-meta, .pv-head .f-spacer { display: none; }
+  .pv-head .pill-btn { padding: 0 10px; }
+}
+.pv-demo-video { width: min(720px, 90%); aspect-ratio: 16 / 9; border-radius: 10px; background: linear-gradient(135deg, #1c2333, #0b0d12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+body.no-glass .pv-warn { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(40,32,14,.97); }
+body.reduce-motion .pv-warn { animation: none; }
+@media (max-width: 640px) {
+  .pv-warn { flex-wrap: wrap; top: 8px; width: calc(100% - 16px); }
+  .pv-warn p { flex-basis: calc(100% - 50px); }
+  .pv-warn-acts { width: 100%; justify-content: flex-end; }
+  .pv-warn-x { order: -1; margin-right: auto; }
+}
 
 /* ── Editor de texto (0.6.0) ───────────────────────────────────── */
 .ed-dialog { padding: 0; overflow: hidden; height: min(860px, calc(100dvh - 60px)); display: flex; background: rgba(22,24,30,.97); }
@@ -697,6 +727,35 @@ body.reduce-motion .np-detail { animation: none; }
 /* 0.25.0: da direita para a esquerda: Energia, Sino, Atualizações */
 #bell { right: 58px; }
 .upd-btn { right: 102px; }
+
+/* ── Escudo do AdGuard (0.34.0): à esquerda das Atualizações, só com Integração AdGuard ── */
+.adg-btn { right: 146px; }
+.adg-btn[hidden] { display: none; }
+.adg-btn.adg-on .svg { color: #6ee7a8; }
+.adg-btn.adg-paused { background: rgba(110,80,10,.5); }
+.adg-btn.adg-paused .svg { color: #ffd27a; }
+.adg-btn.adg-off { background: rgba(120,24,28,.5); }
+.adg-btn.adg-off .svg { color: #ffb0b0; }
+.adg-btn.adg-err .svg, .adg-btn.adg-wait .svg { opacity: .55; }
+.adg-btn .bell-badge { right: auto; left: 50%; top: auto; bottom: -9px; transform: translateX(-50%); min-width: 34px; background: #e09a1f; color: #2b1d00; }
+.adg-menu { right: 14px; }
+.adg-head { display: flex; align-items: center; gap: 11px; margin: 2px 2px 4px; padding: 10px; border-radius: 14px; background: rgba(62,207,142,.13); box-shadow: inset 0 0 0 1px rgba(110,231,168,.22); }
+.adg-head.adg-paused { background: rgba(224,154,31,.16); box-shadow: inset 0 0 0 1px rgba(255,210,122,.25); }
+.adg-head.adg-off { background: rgba(229,72,77,.16); box-shadow: inset 0 0 0 1px rgba(255,138,138,.25); }
+.adg-head.adg-err, .adg-head.adg-wait { background: rgba(255,255,255,.06); box-shadow: none; }
+.adg-badge { width: 36px; height: 36px; flex: none; border-radius: 11px; display: grid; place-items: center; color: #06311d; background: linear-gradient(135deg, #8ff0be, #2fb37a); }
+.adg-badge .svg { width: 20px; height: 20px; }
+.adg-head.adg-paused .adg-badge { color: #2b1d00; background: linear-gradient(135deg, #ffd27a, #e09a1f); }
+.adg-head.adg-off .adg-badge { color: #fff; background: linear-gradient(135deg, #ff8a8a, #d63c3c); }
+.adg-head.adg-err .adg-badge, .adg-head.adg-wait .adg-badge { color: #fff; background: linear-gradient(135deg, #9aa0ab, #5d636e); }
+.adg-sec { margin: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .5; }
+.adg-resume .pw-ico { background: linear-gradient(135deg, #8ff0be, #2fb37a); color: #06311d; }
+.adg-pause .pw-ico { background: linear-gradient(135deg, #ffd27a, #e09a1f); color: #2b1d00; }
+.adg-forever .pw-ico { background: linear-gradient(135deg, #ff8a8a, #d63c3c); }
+.adg-open .pw-ico { background: linear-gradient(135deg, #9aa0ab, #5d636e); }
+.adg-menu .pw-item { padding: 6px 10px; }
+.adg-menu .pw-ico { width: 28px; height: 28px; border-radius: 9px; }
+.adg-menu .pw-ico .svg { width: 15px; height: 15px; }
 
 /* ── Menu de energia (0.25.0) ── */
 .power-btn .bell-badge { right: auto; left: 50%; top: auto; bottom: -9px; transform: translateX(-50%); min-width: 34px; background: #e5484d; }

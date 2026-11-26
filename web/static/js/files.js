@@ -504,8 +504,85 @@ function toggleHidden() { F.showHidden = !F.showHidden; F.ctx.saveSetting('files
 function mediaFallback(el, f) {
   el.addEventListener('error', () => {
     const stage = el.closest('.pv-stage'); if (!stage) return;
-    stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>O navegador não consegue tocar este arquivo (formato ou codec não suportado).<br>Baixe para assistir num player como o VLC.</p><button class="pill-btn" data-pv="dl">${svg('download')}Baixar</button></div>`;
+    const why = stage._media ? mediaProblem(stage._media) : null;
+    stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>${why ? esc(why.text) : 'O navegador não consegue tocar este arquivo (formato ou codec não suportado).'}<br>Baixe para assistir num player como o VLC${why?.audio ? ' ou abra no Plex, que converte o som' : ''}.</p><div class="btn-row"><button class="pill-btn" data-pv="dl">${svg('download')}Baixar</button><button class="pill-btn" data-pv="plex" hidden>${svg('play')}Abrir no Plex</button></div></div>`;
+    if (stage._plex) showPlex(stage, stage._plex);
   }, { once: true });
+}
+
+// 0.34.0 (decisão 73): vídeo mudo. A imagem de um .mkv toca, mas o som AC3/DTS/TrueHD não, e o navegador
+// não acusa erro nenhum. O servidor lê os formatos do cabeçalho e o próprio navegador diz se toca cada
+// um (canPlayType: muda entre Chrome, Edge, Safari...).
+const CODEC_MIME = {
+  h264: 'video/mp4; codecs="avc1.640028"', hevc: 'video/mp4; codecs="hvc1.1.6.L120.90"', av1: 'video/mp4; codecs="av01.0.05M.08"',
+  vp9: 'video/webm; codecs="vp9"', vp8: 'video/webm; codecs="vp8"', mpeg4: 'video/mp4; codecs="mp4v.20.9"', theora: 'video/ogg; codecs="theora"',
+  aac: 'audio/mp4; codecs="mp4a.40.2"', mp3: 'audio/mpeg', opus: 'audio/webm; codecs="opus"', vorbis: 'audio/webm; codecs="vorbis"',
+  flac: 'audio/flac', pcm: 'audio/wav', alac: 'audio/mp4; codecs="alac"', ac3: 'audio/mp4; codecs="ac-3"', eac3: 'audio/mp4; codecs="ec-3"',
+  dts: 'audio/mp4; codecs="dtsc"', truehd: 'audio/mp4; codecs="mlpa"',
+};
+const CODEC_NAME = {
+  h264: 'H.264', hevc: 'HEVC (H.265)', av1: 'AV1', vp9: 'VP9', vp8: 'VP8', mpeg4: 'MPEG-4', mpeg2: 'MPEG-2', mpeg1: 'MPEG-1', theora: 'Theora', vfw: 'AVI antigo',
+  aac: 'AAC', mp3: 'MP3', mp2: 'MP2', opus: 'Opus', vorbis: 'Vorbis', flac: 'FLAC', pcm: 'PCM', alac: 'ALAC',
+  ac3: 'Dolby Digital (AC3)', eac3: 'Dolby Digital Plus (E-AC3)', dts: 'DTS', truehd: 'Dolby TrueHD',
+};
+const LANG_NAME = { por: 'português', pt: 'português', 'pt-BR': 'português', eng: 'inglês', en: 'inglês', spa: 'espanhol', es: 'espanhol', jpn: 'japonês', ja: 'japonês', fre: 'francês', fra: 'francês', ita: 'italiano', ger: 'alemão', deu: 'alemão', kor: 'coreano' };
+const playCache = {};
+function canPlay(codec) {
+  if (codec in playCache) return playCache[codec];
+  const m = CODEC_MIME[codec];
+  return (playCache[codec] = !!m && !!document.createElement(m.startsWith('audio') ? 'audio' : 'video').canPlayType(m));
+}
+const chLabel = (n) => ({ 1: 'mono', 2: 'estéreo', 6: '5.1', 8: '7.1' }[n] || (n ? `${n} canais` : ''));
+// "DTS 5.1 (português)", "AAC estéreo (inglês)"
+export function trackLabel(t) {
+  const lang = t.lang && t.lang !== 'und' ? (LANG_NAME[t.lang] || t.lang) : '';
+  const base = [CODEC_NAME[t.codec] || t.codec, t.kind === 'audio' ? chLabel(t.channels) : ''].filter(Boolean).join(' ');
+  return lang ? `${base} (${lang})` : base;
+}
+// a faixa que o player escolhe: a marcada como padrão ou a primeira daquele tipo
+const pick = (info, kind) => { const ts = info.tracks.filter((t) => t.kind === kind); return ts.find((t) => t.default) || ts[0] || null; };
+
+/** O que não toca neste navegador: { text, audio, video } ou null. */
+export function mediaProblem(info) {
+  if (!info?.tracks?.length) return null;
+  const v = pick(info, 'video'), a = pick(info, 'audio');
+  const noV = v && !canPlay(v.codec), noA = a && !canPlay(a.codec);
+  if (!noV && !noA) return null;
+  const nm = (t) => CODEC_NAME[t.codec] || t.codec;
+  let text;
+  if (noV && noA) text = `Este navegador não toca nem a imagem (${nm(v)}) nem o som (${nm(a)}) deste vídeo.`;
+  else if (noV) text = `Este navegador não toca a imagem deste vídeo (${nm(v)}); talvez só o som funcione.`;
+  else {
+    text = `O som deste vídeo é ${trackLabel(a)}, que este navegador não toca: a imagem aparece, mas fica sem som.`;
+    const alt = info.tracks.find((t) => t.kind === 'audio' && t !== a && canPlay(t.codec));
+    if (alt) text += ` O arquivo também tem uma faixa ${trackLabel(alt)}, mas o navegador não deixa escolher outra faixa.`;
+  }
+  return { text, audio: !!noA, video: !!noV };
+}
+
+function showPlex(stage, url) {
+  stage._plex = url;
+  for (const b of $$('[data-pv="plex"]', stage)) { b.hidden = false; b.dataset.url = url; }
+}
+
+// Lê os formatos e, se algo não tocar, mostra o aviso por cima do player (com Baixar e Abrir no Plex).
+async function mediaCheck(stage, f, path) {
+  let info;
+  try { info = await api.files.media(F.root, path); } catch { return; } // formato que não sabemos ler: sem aviso
+  if (!stage.isConnected || stage._for !== path) return;
+  stage._media = info;
+  const p = mediaProblem(info);
+  if (!p) return;
+  if (!$('.pv-none', stage)) { // o player ainda está lá (só o som falha, ou a imagem ainda não deu erro)
+    stage.insertAdjacentHTML('afterbegin', `<div class="pv-warn" role="status"><span class="pv-warn-ico">${svg(p.audio && !p.video ? 'volumeX' : 'alert')}</span>
+      <p><b>${p.audio && !p.video ? 'Sem som neste navegador' : 'Formato que o navegador não toca'}</b><span>${esc(p.text)}</span></p>
+      <div class="pv-warn-acts"><button class="pill-btn sm" data-pv="plex" hidden>${svg('play')}Abrir no Plex</button><button class="pill-btn sm" data-pv="dl">${svg('download')}Baixar</button><button class="pv-warn-x" data-pv="warn-x" aria-label="Fechar o aviso">${svg('x')}</button></div></div>`);
+  }
+  if (!p.audio) return; // o Plex resolve o som; a imagem que não toca, ele também converteria, mas o aviso já basta
+  try {
+    const r = await apiAll.integrations.plexFind(f.name);
+    if (r?.url && stage.isConnected && stage._for === path) showPlex(stage, r.url);
+  } catch { /* sem Plex ou sem resposta: só o Baixar */ }
 }
 function preview(e) {
   const files = visibleEntries().filter((x) => !x.dir);
@@ -518,11 +595,17 @@ function preview(e) {
     $('[data-pv="prev"]', d.el).hidden = idx === 0; $('[data-pv="next"]', d.el).hidden = idx === files.length - 1;
     $('[data-pv="edit"]', d.el).hidden = !canEdit(f) || f.size > 5 * 1024 * 1024;
     const k = extKind(f.name), ext = f.name.split('.').pop().toLowerCase();
-    if (api.demo) { stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>A pré-visualização funciona com o servidor rodando.</p></div>`; return; }
+    stage._for = pathOf(f); stage._media = null; stage._plex = null;
+    if (api.demo) {
+      stage.innerHTML = `<div class="pv-none">${fileSVG(f.name, 'file-ico big')}<p>A pré-visualização funciona com o servidor rodando.</p></div>`;
+      if (k === 'vid') { stage.innerHTML = '<div class="pv-demo-video"></div>'; mediaCheck(stage, f, pathOf(f)); } // o aviso de vídeo mudo dá para ver
+      return;
+    }
     if (k === 'img' && ext !== 'heic' && ext !== 'tiff' && ext !== 'tif') stage.innerHTML = `<img src="${esc(url)}" alt="">`;
     else if (k === 'vid' && /^(mp4|webm|mov|m4v|ogv|mkv)$/.test(ext)) {
       stage.innerHTML = `<video src="${esc(url)}" controls autoplay playsinline preload="metadata"></video>`;
       mediaFallback($('video', stage), f);
+      mediaCheck(stage, f, pathOf(f));
     } else if (k === 'aud') {
       stage.innerHTML = `<div class="pv-audio">${fileSVG(f.name, 'file-ico big')}<audio src="${esc(url)}" controls autoplay preload="metadata"></audio></div>`;
       mediaFallback($('audio', stage), f);
@@ -544,6 +627,8 @@ function preview(e) {
     if (b.dataset.pv === 'prev' && idx > 0) { idx--; show(); }
     if (b.dataset.pv === 'next' && idx < files.length - 1) { idx++; show(); }
     if (b.dataset.pv === 'dl') download([files[idx]]);
+    if (b.dataset.pv === 'plex' && b.dataset.url) F.ctx?.openUrl?.(b.dataset.url);
+    if (b.dataset.pv === 'warn-x') b.closest('.pv-warn')?.remove();
     if (b.dataset.pv === 'edit') { const f = files[idx]; d.close(); editFile(pathOf(f), f.name); }
   });
   d.el._keys = (ev) => {

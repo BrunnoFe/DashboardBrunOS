@@ -127,6 +127,9 @@ func (h *Hub) intervalLocked(it Integration, viewers bool) (time.Duration, bool)
 	if viewers && h.live[it.ID] {
 		return own, true
 	}
+	if k := KindByID(it.Kind); viewers && k != nil && k.Info().Live {
+		return own, true
+	}
 	if len(h.bg[it.ID]) > 0 || alertsOn(it) {
 		return max(own, bgInterval), true
 	}

@@ -6,6 +6,11 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.34.0', date: '2026-11-25', items: [
+    { t: 'Chega de filme mudo sem explicação', d: 'Quando o som de um vídeo é de um tipo que o navegador não toca (DTS, Dolby, TrueHD), a prévia avisa e oferece baixar ou abrir no Plex, que converte o som.' },
+    { t: 'Pausar o AdGuard num toque', d: 'Um escudinho ao lado das Atualizações mostra se o AdGuard está protegendo. Toque nele para pausar por 5 minutos, meia hora, 1 hora ou até ligar de novo.' },
+    { t: 'Prévia mais arrumada', d: 'O botão Editar só aparece em arquivo de texto, e no celular o nome do arquivo volta a caber no topo.' },
+  ] },
   { v: '0.33.0', date: '2026-11-25', items: [
     { t: 'Uma tela bonita enquanto atualiza', d: 'Ao atualizar o BrunOS ou reiniciar o servidor, aparece a logo girando com as etapas. Quando tudo volta, a página recarrega sozinha.' },
     { t: 'Tudo um pouco menor, se você quiser', d: 'Em Configurações → Aparência, dá para diminuir (ou aumentar) a tela inicial e as janelas, de 70% a 110%. Cada aparelho guarda a sua.' },

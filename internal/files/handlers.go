@@ -46,6 +46,7 @@ func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("POST /api/files/extract", wrap(s.hExtract))
 	mux.HandleFunc("GET /api/files/duplicates", wrap(s.hDuplicates))
 	mux.HandleFunc("GET /api/files/usage", wrap(s.hUsage))
+	mux.HandleFunc("GET /api/files/media", wrap(s.hMedia))
 }
 
 func (s *Service) hUpStart(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +138,17 @@ func (s *Service) hUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, res)
 }
 
+// hMedia devolve as faixas (vídeo, áudio, legenda) de um arquivo de mídia.
+func (s *Service) hMedia(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	info, err := s.Media(q.Get("root"), q.Get("path"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, info)
+}
+
 func (s *Service) hTextGet(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	tf, err := s.ReadText(q.Get("root"), q.Get("path"))
@@ -191,7 +203,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, ErrTooBig):
 		code, msg = http.StatusRequestEntityTooLarge, err.Error()
-	case errors.Is(err, ErrBinary), errors.Is(err, ErrEncoding), errors.Is(err, ErrLink):
+	case errors.Is(err, ErrBinary), errors.Is(err, ErrEncoding), errors.Is(err, ErrLink), errors.Is(err, errMedia):
 		code, msg = http.StatusUnsupportedMediaType, err.Error()
 	case errors.Is(err, ErrUploadGone):
 		code, msg = http.StatusNotFound, err.Error()

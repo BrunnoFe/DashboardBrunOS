@@ -326,6 +326,7 @@ body.has-dialog #dock { opacity: .35; filter: blur(6px); pointer-events: none; }
   background: rgba(255,255,255,.07); box-shadow: var(--shadow-btn-hl-soft); font-size: 12.5px; font-weight: 600;
   transition: background .2s, transform .15s; white-space: nowrap;
 }
+.pill-btn[hidden] { display: none; } /* o display acima ganhava do atributo hidden (0.34.0: "Editar" aparecia em toda prévia) */
 .pill-btn:hover { background: rgba(255,255,255,.13); }
 .pill-btn:active { transform: scale(.96); }
 .pill-btn.danger { color: #ff6b6b; }

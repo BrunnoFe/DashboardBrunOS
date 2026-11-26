@@ -207,6 +207,9 @@ const real = {
     update: (id, b) => call('PUT', `/api/integrations/${encodeURIComponent(id)}`, b),
     del: (id) => call('DELETE', `/api/integrations/${encodeURIComponent(id)}`),
     test: (b) => call('POST', '/api/integrations/test', b),
+    // 0.34.0 (decisão 73): Ações leves (pausar o AdGuard...) e "Abrir no Plex" pelo nome do arquivo
+    action: (id, b) => call('POST', `/api/integrations/${encodeURIComponent(id)}/action`, b),
+    plexFind: (name) => call('GET', `/api/integrations/plex/find?${q({ name })}`),
   },
   // Assistente de tomadas Tuya (0.31.0): a credencial da nuvem e a busca pedem a senha (modo sudo)
   tuya: {
@@ -356,6 +359,8 @@ const real = {
     extract: (root, path) => call('POST', '/api/files/extract', { root, path }),
     duplicates: (root, path, min) => call('GET', `/api/files/duplicates?${q({ root, path, min })}`),
     usage: (root, path, refresh) => call('GET', `/api/files/usage?${q({ root, path, ...(refresh ? { refresh: 1 } : {}) })}`),
+    // 0.34.0: faixas de vídeo/áudio de um arquivo (o navegador decide se toca cada formato)
+    media: (root, path) => call('GET', `/api/files/media?${q({ root, path })}`),
     // Arquivos grandes vão em pedaços de 8 MB: se a conexão cair, continua de onde parou (e, se a
     // página for recarregada, escolher o mesmo arquivo para a mesma pasta retoma o envio).
     upload(root, path, name, file, onProgress) {
@@ -542,7 +547,7 @@ function makeDemo() {
   const chargeState = location.hash === '#semlimite' || oldSetup ? { kind: 'none', model: 'Acme Notebook 15' }
     : location.hash === '#protecao' ? { kind: 'toggle', model: 'Lenovo IdeaPad 3', on: false, protect: '' }
     : { kind: 'range', model: 'Lenovo ThinkPad T480', current: 100, want: 0 };
-  let demoManual = null, demoNotify = null;
+  let demoManual = null, demoNotify = null, demoMetrics = null;
   const demoHostReady = () => (!!powerCfg.testedAt && powerCfg.hostSetup >= 2) || location.hash === '#energia';
   const demoCharge = () => ({ ...chargeState, ready: !!powerCfg.testedAt && powerCfg.hostSetup >= 2, checkedAt: now });
   const demoKeyConst = () => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstracaoChaveFalsaDoBrunOSqueNaoServe brunos-power';
@@ -568,11 +573,12 @@ function makeDemo() {
       metrics: [
         { id: 'queries', name: 'Consultas DNS', kind: 'num', icon: 'globe', history: 'queries_series' }, { id: 'blocked', name: 'Bloqueadas', kind: 'num', icon: 'shield', history: 'blocked_series' },
         { id: 'blocked_pct', name: '% bloqueado', kind: 'num', unit: '%', icon: 'shield' }, { id: 'avg_time', name: 'Tempo médio de resposta', kind: 'num', unit: 'ms', icon: 'clock', ranges: [R(50, 'ok'), R(200, 'aviso'), R(null, 'critico')] },
-        { id: 'protection', name: 'Proteção', kind: 'text', icon: 'shield' }, { id: 'protection_on', name: 'Proteção ligada (1 = sim)', kind: 'num', icon: 'shield' }, { id: 'version', name: 'Versão', kind: 'text', icon: 'info' },
+        { id: 'protection', name: 'Proteção', kind: 'text', icon: 'shield' }, { id: 'protection_on', name: 'Proteção ligada (1 = sim)', kind: 'num', icon: 'shield' }, { id: 'pause_left', name: 'Pausa: segundos até voltar', kind: 'num', unit: 's', icon: 'clock' }, { id: 'version', name: 'Versão', kind: 'text', icon: 'info' },
         { id: 'top_domains', name: 'Domínios mais consultados', kind: 'list', icon: 'globe' }, { id: 'top_blocked', name: 'Domínios mais bloqueados', kind: 'list', icon: 'shield' }, { id: 'top_clients', name: 'Aparelhos que mais consultam', kind: 'list', icon: 'monitor' },
         { id: 'queries_series', name: 'Consultas por hora', kind: 'series', icon: 'chart' }, { id: 'blocked_series', name: 'Bloqueios por hora', kind: 'series', icon: 'chart' },
       ],
-      alerts: [{ id: 'protection_off', name: 'Proteção desligada', desc: 'Avisa quando a proteção do AdGuard é desligada', metric: 'protection_on', op: '<', default: 1, level: 'aviso', fixed: true }, { id: 'down', name: 'AdGuard sem responder', desc: 'Avisa quando o AdGuard para de responder por 5 minutos', op: 'down', level: 'aviso', fixed: true }] },
+      alerts: [{ id: 'protection_off', name: 'Proteção desligada', desc: 'Avisa quando a proteção do AdGuard fica desligada sem prazo para voltar (pausas com tempo não avisam)', metric: '_guard', op: '<', default: 1, level: 'aviso', fixed: true }, { id: 'down', name: 'AdGuard sem responder', desc: 'Avisa quando o AdGuard para de responder por 5 minutos', op: 'down', level: 'aviso', fixed: true }],
+      actions: [{ id: 'pause', name: 'Pausar a proteção' }, { id: 'resume', name: 'Ligar a proteção' }], live: true },
     { id: 'speedtest', name: 'Speedtest Tracker', desc: 'Velocidade da internet medida pelos testes agendados', interval: 600,
       fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8765', required: true }, { id: 'secret', label: 'Token da API', type: 'secret', required: true, help: 'No Speedtest Tracker: menu do usuário → API Tokens → criar com a permissão “Read results”' }],
       metrics: [
@@ -592,11 +598,18 @@ function makeDemo() {
   const bSeries = qSeries.map((q) => Math.round(q * (0.18 + Math.random() * 0.1)));
   const speedPts = (base, spread) => Array.from({ length: 168 }, (_, i) => (i % 6 === 5 ? +(base + (Math.random() - 0.5) * spread).toFixed(1) : null));
   const dlS = speedPts(290, 60), ulS = speedPts(95, 20), pgS = speedPts(10, 6);
+  // pausa da demonstração: null = protegendo, 0 = até ligar, número = unix em que volta sozinha
+  let agPause = null;
+  const agProt = () => {
+    if (agPause && agPause <= Date.now() / 1000) agPause = null;
+    if (agPause === null) return { protection: { t: 'Ligada' }, protection_on: { n: 1 } };
+    return agPause ? { protection: { t: 'Pausada' }, protection_on: { n: 0 }, pause_left: { n: Math.round(agPause - Date.now() / 1000) } } : { protection: { t: 'Desligada' }, protection_on: { n: 0 } };
+  };
   const agValues = () => {
     const queries = qSeries.reduce((s, v) => s + v, 0), blocked = bSeries.reduce((s, v) => s + v, 0);
     return {
       queries: { n: queries }, blocked: { n: blocked }, blocked_pct: { n: +(blocked / queries * 100).toFixed(1) }, avg_time: { n: +(12 + Math.random() * 6).toFixed(1) },
-      protection: { t: 'Ligada' }, protection_on: { n: 1 }, version: { t: 'v0.107.52' },
+      ...agProt(), version: { t: 'v0.107.52' },
       top_domains: { l: [['connectivitycheck.gstatic.com', 2210], ['api.spotify.com', 1630], ['graph.instagram.com', 1222], ['i.ytimg.com', 940], ['web.whatsapp.com', 812], ['plex.tv', 433]].map(([k, n]) => ({ k, n })) },
       top_blocked: { l: [['doubleclick.net', 712], ['app-measurement.com', 588], ['ads.youtube.com', 421], ['graph.facebook.com', 301], ['metrics.icloud.com', 187], ['telemetry.microsoft.com', 140], ['adservice.google.com', 98], ['tracking.miui.com', 61]].map(([k, n]) => ({ k, n })) },
       top_clients: { l: [['192.168.1.20 (celular)', 6120], ['192.168.1.31 (TV)', 4410], ['192.168.1.50 (servidor)', 2980]].map(([k, n]) => ({ k, n })) },
@@ -907,6 +920,7 @@ function makeDemo() {
     },
     streamStats(onInit, onPoint, onNotify, onMetrics) {
       demoNotify = onNotify; // o menu de energia da demonstração avisa o sino por aqui, como o servidor
+      demoMetrics = onMetrics; // e as Ações das integrações mandam o valor novo por aqui
       onInit({ snapshot: snap(), history: [...history], metrics: demoViews() });
       const t = setInterval(() => onPoint(tick()), 2000);
       // o AdGuard "responde" a cada 15 s na demonstração
@@ -940,6 +954,14 @@ function makeDemo() {
       del: (id) => { demoInteg = demoInteg.filter((x) => x.id !== id); return wait({ ok: true }, 120); },
       test: (b) => (/^https?:\/\//.test(b.url || '') || demoKinds.find((k) => k.id === (b.kind || demoInteg.find((x) => x.id === b.id)?.kind))?.noUrl ? wait({ ok: true, values: demoValues({ kind: b.kind || demoInteg.find((x) => x.id === b.id)?.kind }) }, 700)
         : Promise.reject(new Error('endereço inválido: use http:// ou https:// seguido do IP ou nome e da porta'))),
+      action: (id, b) => {
+        const it = demoInteg.find((x) => x.id === id);
+        if (it?.kind !== 'adguard') return Promise.reject(new Error('ação desconhecida'));
+        agPause = b.action === 'resume' ? null : (b.minutes ? Math.floor(Date.now() / 1000) + b.minutes * 60 : 0);
+        setTimeout(() => demoMetrics?.({ id, at: Math.floor(Date.now() / 1000), values: demoValues(it) }), 400);
+        return wait({ ok: true }, 300);
+      },
+      plexFind: () => wait({ url: '', none: true }, 200),
     },
     tuya: (() => { // Assistente de tomadas: conta e rede de mentira, dados genéricos
       let cloud = { configured: false };
@@ -1334,6 +1356,10 @@ function makeDemo() {
         const items = n.children.map((c) => ({ name: c.name, dir: !!c.dir, size: sizeOf(c), ...(c.dir ? { count: countOf(c) } : {}) })).sort((a, b) => b.size - a.size);
         return wait({ path, size: sizeOf(n), count: countOf(n), items, truncated: false, scannedAt: now }, 400);
       },
+      // .mkv da demonstração vem com áudio DTS (o caso do vídeo mudo); o resto, H.264 + AAC
+      media: (root, path) => wait(/\.mkv$/i.test(path)
+        ? { container: 'matroska', tracks: [{ kind: 'video', codec: 'h264', default: true }, { kind: 'audio', codec: 'dts', lang: 'por', channels: 6, default: true }, { kind: 'audio', codec: 'aac', lang: 'eng', channels: 2, default: false }, { kind: 'sub', codec: 'srt', lang: 'por', default: false }] }
+        : { container: 'mp4', tracks: [{ kind: 'video', codec: 'h264', default: true }, { kind: 'audio', codec: 'aac', lang: 'por', channels: 2, default: true }] }, 120),
       rawUrl: () => '',
       zipUrl: () => '',
       upload(root, path, name, file, onProgress) {

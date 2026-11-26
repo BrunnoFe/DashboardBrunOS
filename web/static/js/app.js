@@ -10,6 +10,7 @@ import { mountChart, periodSeg, PERIOD_LONG } from './charts.js';
 import { refreshNotifications, onNotify, closePanel, notificationsOpen, toggleNotifications, setNotifActions } from './notifications.js';
 import { initPowerMenu, closePowerMenu, powerMenuOpen, powerAction, cancelPowerManual, refreshPowerMenu, powerPending } from './powermenu.js';
 import { initUpdates, paintUpdates, closeUpdates, updatesOpen, showUpdates } from './updates.js';
+import { initAdguard } from './adguard.js';
 import { powerDialog, refreshPowerBanner, paintBanner, outagesHTML } from './power.js';
 import { diskRowsHTML } from './disks.js';
 import { internetDialog } from './internet.js';
@@ -803,6 +804,8 @@ initUpdates({
 });
 // menu de energia (0.25.0) e os botões de atalho dos detalhes dos avisos do sino
 initPowerMenu({ lock: () => lockNow(), logout: () => logout(), openPower: () => openPower() });
+// 0.34.0: escudo do AdGuard (pausar/ligar a proteção) ao lado das Atualizações
+initAdguard({ integrations: () => S.integrations || [], metrics: () => S.metrics, openUrl: (u) => openUrl(u), reload: () => loadIntegrations() });
 setNotifActions({
   app: (urn) => { const a = appById(urn); if (a) openAppDetails(a); },
   disks: () => openDisks(),
@@ -906,7 +909,7 @@ async function loadIntegrations() {
     const [kinds, list] = await Promise.all([api.integrations.kinds(), api.integrations.list()]);
     S.kinds = kinds; S.integrations = list.integrations || [];
     for (const v of list.views || []) S.metrics[v.id] = v;
-    resetDefs(); paintWidgets();
+    resetDefs(); paintWidgets(); emit('metrics');
   } catch { /* sem integrações: só os widgets do BrunOS */ }
 }
 
@@ -1621,6 +1624,7 @@ const filesCtx = {
   get settings() { return set(); },
   saveSetting(k, v) { set()[k] = v; save(); },
   setWallpaperFromFile: async (blob) => uploadWallpaper(blob),
+  openUrl: (href) => openUrl(href), // "Abrir no Plex" do aviso de vídeo mudo (0.34.0)
 };
 
 /* ── Configurações ─────────────────────────────────────────────── */

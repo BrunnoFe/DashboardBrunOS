@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Plex Media Server: token no cabeçalho X-Plex-Token e respostas em JSON (Accept).
@@ -177,6 +178,155 @@ func (plex) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[string]V
 	}
 	out["_hour"] = T(hour)
 	return out, nil
+}
+
+// ── Abrir no Plex (decisão 73) ────────────────────────────────────
+// Vídeo que o navegador não toca: procura o mesmo arquivo na biblioteca do Plex (que converte o som) pelo
+// nome do arquivo. A busca usa o título tirado do nome; o resultado só vale se o nome do arquivo do Plex
+// for igual (nunca abre um filme parecido). Séries: procura dentro dos episódios da série achada.
+
+var (
+	plexCut   = regexp.MustCompile(`(?i)\b((19|20)\d{2}|s\d{1,2}e\d{1,3}|\d{3,4}p|bluray|blu-ray|web-?dl|webrip|hdtv|dvdrip|remux|x26[45]|h\.?26[45]|hevc|remastered|proper|extended|unrated)\b`)
+	plexKey   = regexp.MustCompile(`^[0-9]+$`)
+	plexMID   = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+	plexSpace = regexp.MustCompile(`[._\[\]()-]+`)
+)
+
+// plexQuery tira do nome do arquivo o título provável ("X2.2003.REMASTERED.mkv" → "X2").
+func plexQuery(file string) string {
+	name := strings.TrimSuffix(file, pathExt(file))
+	name = plexSpace.ReplaceAllString(name, " ")
+	for _, loc := range plexCut.FindAllStringIndex(name, -1) {
+		if loc[0] > 0 { // "2001 Uma Odisseia… 1968": o ano do começo é título
+			name = name[:loc[0]]
+			break
+		}
+	}
+	return strings.Join(strings.Fields(name), " ")
+}
+
+func pathExt(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i > 0 && len(name)-i <= 6 {
+		return name[i:]
+	}
+	return ""
+}
+
+type plexItem struct {
+	RatingKey string `json:"ratingKey"`
+	Type      string `json:"type"`
+	Media     []struct {
+		Part []struct {
+			File string `json:"file"`
+		} `json:"Part"`
+	} `json:"Media"`
+}
+
+func (p plexItem) has(file string) bool {
+	for _, m := range p.Media {
+		for _, pt := range m.Part {
+			f := pt.File
+			if i := strings.LastIndexAny(f, `/\`); i >= 0 {
+				f = f[i+1:]
+			}
+			if strings.EqualFold(f, file) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// plexFind devolve o endereço da página do arquivo no Plex ("" = não achou).
+func plexFind(ctx context.Context, c *http.Client, cfg Config, file string) (string, error) {
+	q := plexQuery(file)
+	if q == "" {
+		return "", nil
+	}
+	base := strings.TrimRight(cfg.URL, "/")
+	hdr := map[string]string{"X-Plex-Token": cfg.Secret}
+	var res struct {
+		MediaContainer struct {
+			Metadata []plexItem `json:"Metadata"`
+		} `json:"MediaContainer"`
+	}
+	if _, err := getJSON(ctx, c, base+"/search?limit=30&query="+url.QueryEscape(q), hdr, "", "", &res); err != nil {
+		return "", err
+	}
+	key, shows := "", 0
+	for _, it := range res.MediaContainer.Metadata {
+		if it.has(file) {
+			key = it.RatingKey
+			break
+		}
+	}
+	for _, it := range res.MediaContainer.Metadata {
+		if key != "" || shows >= 3 {
+			break
+		}
+		if it.Type != "show" || !plexKey.MatchString(it.RatingKey) {
+			continue
+		}
+		shows++
+		var eps struct {
+			MediaContainer struct {
+				Metadata []plexItem `json:"Metadata"`
+			} `json:"MediaContainer"`
+		}
+		if _, err := getJSON(ctx, c, base+"/library/metadata/"+it.RatingKey+"/allLeaves", hdr, "", "", &eps); err != nil {
+			continue
+		}
+		for _, ep := range eps.MediaContainer.Metadata {
+			if ep.has(file) {
+				key = ep.RatingKey
+				break
+			}
+		}
+	}
+	if !plexKey.MatchString(key) {
+		return "", nil
+	}
+	var id struct {
+		MediaContainer struct {
+			MachineIdentifier string `json:"machineIdentifier"`
+		} `json:"MediaContainer"`
+	}
+	if _, err := getJSON(ctx, c, base+"/identity", hdr, "", "", &id); err != nil {
+		return "", err
+	}
+	mid := id.MediaContainer.MachineIdentifier
+	if !plexMID.MatchString(mid) {
+		return "", nil
+	}
+	return base + "/web/index.html#!/server/" + mid + "/details?key=" + url.QueryEscape("/library/metadata/"+key), nil
+}
+
+// hPlexFind procura o arquivo em todas as Integrações Plex. {"url": ""} = não achou; {"none": true} =
+// não há Plex cadastrado (a interface nem mostra o botão).
+func (h *Hub) hPlexFind(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" || len(name) > 300 || strings.ContainsAny(name, `/\`) {
+		writeErr(w, &ErrInput{"nome inválido"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	found := false
+	for _, it := range h.Store.List() {
+		if it.Kind != "plex" {
+			continue
+		}
+		found = true
+		cfg, err := h.Store.Config(it)
+		if err != nil {
+			continue
+		}
+		if u, err := plexFind(ctx, h.Client, cfg, name); err == nil && u != "" {
+			writeJSON(w, 200, map[string]any{"url": u})
+			return
+		}
+	}
+	writeJSON(w, 200, map[string]any{"url": "", "none": !found})
 }
 
 // só caminhos de capa do próprio Plex (ex.: /library/metadata/123/thumb/1700000000)

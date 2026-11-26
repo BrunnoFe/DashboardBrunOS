@@ -259,6 +259,19 @@ de cada versão (e ao clicar na versão nas Configurações). Escala da Tela ini
 - Protótipos injetados na própria página de demonstração (papel de parede e desfoque de verdade) e vídeos
   pelo Playwright (`recordVideo`, precisa do ffmpeg dele) ajudaram o Bruno a escolher (e a misturar dois).
 
+## 0.34.0 (25/11/2026): vídeo mudo, Ações de integração e escudo do AdGuard
+Primeira das quatro versões do plano de 25/11 (decisão 73). O servidor lê o cabeçalho de MKV/WebM/MP4
+(`internal/files/media.go`, Go puro) e a prévia avisa quando o som (ou a imagem) não toca naquele
+navegador, com Baixar e Abrir no Plex (só se o Plex tiver o mesmo arquivo). Ações de integração (base comum,
+só reversíveis) e o escudo do AdGuard na barra do topo: pausar 5/30/60 min ou até ligar. Lições:
+- O vídeo mudo não dá erro nenhum: a imagem toca e o som fica calado. Chrome e Edge no Windows devolvem
+  `canPlayType` vazio para `ac-3`, `ec-3`, `dtsc` e `mlpa`; por isso quem decide é o navegador, não uma lista
+  fixa no servidor.
+- `.pill-btn { display: inline-flex }` ganhava do atributo `hidden`: o "Editar" aparecia em toda prévia desde
+  a 0.6.0. Agora há `.pill-btn[hidden] { display: none }`.
+- O Aviso pronto "Proteção desligada" dispararia a cada pausa com tempo: ele passou a olhar a métrica interna
+  `_guard` (0 só quando desligado sem prazo).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

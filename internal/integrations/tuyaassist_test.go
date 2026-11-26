@@ -208,8 +208,8 @@ func TestTuyaCloudErrors(t *testing.T) {
 }
 
 func TestLanPrefixes(t *testing.T) {
-	got := lanPrefixes([]string{"192.168.100.56", "192.168.100.52", "10.0.0.5", "8.8.8.8", "fe80::1", "", "172.18.0.1"})
-	if strings.Join(got, ",") != "192.168.100.,10.0.0.,172.18.0." {
+	got := lanPrefixes([]string{"192.168.1.50", "192.168.1.52", "10.0.0.5", "8.8.8.8", "fe80::1", "", "172.18.0.1"})
+	if strings.Join(got, ",") != "192.168.1.,10.0.0.,172.18.0." {
 		t.Fatalf("faixas: %v", got)
 	}
 }

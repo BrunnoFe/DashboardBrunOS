@@ -218,6 +218,11 @@ Um serviço de um Tipo de integração, com nome próprio, endereço e credencia
 mesmo tipo ("AdGuard do Pi").
 _Evite_: conexão, app conectado, conta
 
+**Ação** (de uma Integração):
+Comando leve e reversível que o BrunOS manda para o app de uma Integração, como pausar o AdGuard por
+10 minutos ou pausar um torrent. Nunca apaga nada.
+_Evite_: comando, controle, botão (o botão é só onde a Ação aparece)
+
 **Aviso pronto**:
 Alerta para o sino que um Tipo de integração oferece, que o Bruno liga, desliga e ajusta (ex.:
 "aparelho novo na rede").

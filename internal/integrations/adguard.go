@@ -1,7 +1,11 @@
 package integrations
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,6 +35,7 @@ func (adguard) Info() KindInfo {
 				Ranges: []Range{{fp(50), "ok"}, {fp(200), "aviso"}, {nil, "critico"}}},
 			{ID: "protection", Name: "Proteção", Kind: Text, Icon: "shield"},
 			{ID: "protection_on", Name: "Proteção ligada (1 = sim)", Kind: Num, Icon: "shield"},
+			{ID: "pause_left", Name: "Pausa: segundos até voltar", Kind: Num, Unit: "s", Icon: "clock"},
 			{ID: "version", Name: "Versão", Kind: Text, Icon: "info"},
 			{ID: "top_domains", Name: "Domínios mais consultados", Kind: List, Icon: "globe"},
 			{ID: "top_blocked", Name: "Domínios mais bloqueados", Kind: List, Icon: "shield"},
@@ -39,13 +44,67 @@ func (adguard) Info() KindInfo {
 			{ID: "blocked_series", Name: "Bloqueios por hora", Kind: Series, Icon: "chart"},
 		},
 		Alerts: []AlertDef{
-			{ID: "protection_off", Name: "Proteção desligada", Desc: "Avisa quando a proteção do AdGuard é desligada",
-				Metric: "protection_on", Op: "<", Default: 1, Level: "aviso", Fixed: true},
+			// "_guard" (interna): 0 só quando desligada sem prazo para voltar; pausar por um tempo não avisa
+			{ID: "protection_off", Name: "Proteção desligada", Desc: "Avisa quando a proteção do AdGuard fica desligada sem prazo para voltar (pausas com tempo não avisam)",
+				Metric: "_guard", Op: "<", Default: 1, Level: "aviso", Fixed: true},
 			{ID: "down", Name: "AdGuard sem responder", Desc: "Avisa quando o AdGuard para de responder por 5 minutos",
 				Op: "down", Level: "aviso", Fixed: true},
 		},
 		Runtipi: []string{"adguard", "adguard-home", "adguardhome"},
+		Actions: []ActionDef{{ID: "pause", Name: "Pausar a proteção"}, {ID: "resume", Name: "Ligar a proteção"}},
+		Live:    true,
 	}
+}
+
+// Action pausa (por Minutes; 0 = até ligar de novo) ou liga a proteção. POST /control/protection existe
+// desde a v0.107.27 (com "duration" em ms); nas mais antigas, só liga/desliga por /control/dns_config.
+func (adguard) Action(ctx context.Context, c *http.Client, cfg Config, req ActionReq) (string, error) {
+	base := strings.TrimRight(cfg.URL, "/")
+	body := map[string]any{"enabled": req.Action == "resume"}
+	what := "ligar a proteção"
+	if req.Action == "pause" {
+		what = "pausar até ligar de novo"
+		if req.Minutes > 0 {
+			body["duration"] = int64(req.Minutes) * 60_000
+			what = fmt.Sprintf("pausar %d min", req.Minutes)
+		}
+	}
+	code, err := adgPost(ctx, c, cfg, base+"/control/protection", body)
+	if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+		if req.Action == "pause" && req.Minutes > 0 {
+			return "", ferr("este AdGuard é antigo e não pausa por tempo; atualize o AdGuard ou use “Até eu ligar”")
+		}
+		_, err = adgPost(ctx, c, cfg, base+"/control/dns_config", map[string]any{"protection_enabled": body["enabled"]})
+	}
+	if err != nil {
+		return "", err
+	}
+	return what, nil
+}
+
+// adgPost manda um POST com JSON e ignora a resposta (o AdGuard responde só "OK" ou nada).
+func adgPost(ctx context.Context, c *http.Client, cfg Config, u string, body any) (int, error) {
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
+	if err != nil {
+		return 0, ferr("endereço inválido")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "BrunOS")
+	req.SetBasicAuth(cfg.User, cfg.Secret)
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, ferr("não consegui falar com o AdGuard (confira o endereço e se ele está ligado)")
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
+	switch {
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		return resp.StatusCode, ferr("o AdGuard recusou o acesso (confira usuário e senha)")
+	case resp.StatusCode >= 300:
+		return resp.StatusCode, ferr("o AdGuard respondeu com erro %d", resp.StatusCode)
+	}
+	return resp.StatusCode, nil
 }
 
 type adgStats struct {
@@ -63,9 +122,10 @@ type adgStats struct {
 }
 
 type adgStatus struct {
-	Protection bool   `json:"protection_enabled"`
-	Version    string `json:"version"`
-	Running    bool   `json:"running"`
+	Protection bool    `json:"protection_enabled"`
+	Version    string  `json:"version"`
+	Running    bool    `json:"running"`
+	PauseLeft  float64 `json:"protection_disabled_duration"` // ms até voltar sozinha (0 = sem prazo)
 }
 
 func (adguard) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[string]Value, error) {
@@ -94,9 +154,13 @@ func (adguard) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[strin
 		out["blocked_pct"] = N(0)
 	}
 	if status.Protection {
-		out["protection"], out["protection_on"] = T("Ligada"), N(1)
+		out["protection"], out["protection_on"], out["_guard"] = T("Ligada"), N(1), N(1)
 	} else {
-		out["protection"], out["protection_on"] = T("Desligada"), N(0)
+		out["protection"], out["protection_on"], out["_guard"] = T("Desligada"), N(0), N(0)
+		if status.PauseLeft > 0 {
+			out["protection"], out["_guard"] = T("Pausada"), N(1)
+			out["pause_left"] = N(float64(int64(status.PauseLeft / 1000)))
+		}
 	}
 	step := int64(3600)
 	if st.TimeUnits == "days" {
