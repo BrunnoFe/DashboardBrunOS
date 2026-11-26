@@ -12,6 +12,11 @@ const ACCOUNT = { label: 'Trocar a senha', act: 'password' };
 
 // kind → { why, todo, action? }. action.act é tratado em app.js (setNotifActions).
 const DETAILS = {
+  // 0.34.1: lembrete deixado por uma Ação de integração (AdGuard desligado "até eu ligar")
+  'integration-reminder': {
+    why: 'Você desligou isto sem prazo para voltar. O aviso fica aqui para não ser esquecido e some sozinho quando voltar ao normal.',
+    todo: 'No AdGuard: toque no escudo, no canto de cima à esquerda, e escolha "Ligar agora".',
+  },
   'app-down': {
     why: 'O BrunOS testa cada app a cada minuto pela porta dele. Este app não respondeu por mais de 2 minutos seguidos.',
     todo: 'Abra os detalhes do app para ver os logs e reiniciar. Se ele voltar sozinho, chega o aviso "voltou".',
