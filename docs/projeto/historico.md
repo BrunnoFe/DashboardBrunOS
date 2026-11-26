@@ -357,7 +357,8 @@ maiúscula, que vão para a interface).
 ## Segunda limpeza (26/11/2026, depois da 0.39.0)
 Saíram `limiter.blocked` (Go), `adguardOpen` e `updScreenOn` (JS) e CSS órfão (a antiga folha: `has-sheet`,
 `sheet-close`; `dock-badge`, `term-title`, `w-net`, `smart-card`...). O `roadmap.md` voltou a ter só o que
-falta (os planos de 18 a 26/11, entregues, estão acima e nas decisões). Lição: o `staticcheck` precisa ser
+falta (os planos de 18 a 26/11, entregues, estão acima e nas decisões). O `arquitetura.md` passou de 62
+para 16 KB: ficam variáveis, pacotes, rotas, dados e preferências; os detalhes se leem no código. Lição: o `staticcheck` precisa ser
 compilado com o mesmo Go do projeto (`GOTOOLCHAIN=go1.27.0 go install ...`).
 
 ## Resumo do roadmap antigo (itens feitos, por letra)

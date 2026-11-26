@@ -1,670 +1,220 @@
 # Arquitetura
 
+Mapa de pacotes, rotas e dados, com as regras que não se deduzem rápido do código. Detalhes finos: leia o
+código (a versão longa, anterior a 26/11/2026, está no git). Porquês: `decisoes.md`. Termos: `CONTEXT.md`.
+
 ## Visão rápida
 
-```
+```text
 navegador ──HTTP(S)──> Traefik do Runtipi ──> container "brunos" (Go, :8080)
-                                                 ├─ /data            (volume: conta, sessões, preferências, papéis de parede, discos, known_hosts)
-                                                 ├─ /runtipi  (ro)   (pasta do Runtipi: apps instalados, app.env, state/settings.json)
-                                                 ├─ /files/home, /files/mnt (+ pasta do Runtipi em ro)  → gerenciador de arquivos
+                                                 ├─ /data            (conta, sessões, preferências, dados)
+                                                 ├─ /runtipi  (ro)   (apps instalados, app.env, lojas)
+                                                 ├─ /files/home, /files/mnt (+ pasta do Runtipi ro) → Arquivos
                                                  ├─ /host/proc (ro), /host/os-release, /host/hostname
-                                                 ├─ /sys (sysfs padrão do Docker: hwmon, power_supply, block)
-                                                 ├─ unix:///sock/docker.sock (0660) → socket-proxy → docker.sock (ro)
-                                                 └─ SSH (rede) → servidor:22  (janela Terminal)
+                                                 ├─ /sys             (hwmon, power_supply, block, drm)
+                                                 ├─ unix:///sock/docker.sock → socket-proxy → docker.sock (ro)
+                                                 └─ SSH → servidor (Terminal e script fixo)
 ```
 
-Um único binário estático serve a API (`/api/*`) e a interface (`/`, embutida com `go:embed`).
+Um binário estático serve a API (`/api/*`) e a interface (`/`, `go:embed`).
 
 ## Backend (Go 1.27)
 
-### Configuração por variáveis de ambiente (`main.go`)
+### Variáveis de ambiente (`main.go`)
 
 | Variável | Padrão | Uso |
 |---|---|---|
 | `BRUNOS_ADDR` | `:8080` | endereço HTTP |
 | `BRUNOS_DATA` | `/data` | dados persistentes |
-| `BRUNOS_FILES` | `/files` | raiz do gerenciador (descoberta automática) |
+| `BRUNOS_FILES` | `/files` | raiz do Arquivos (descoberta automática) |
 | `BRUNOS_ROOTS` | — | lista manual `Nome=/caminho[:ro];…` (desliga a descoberta e os discos mapeados) |
 | `BRUNOS_RUNTIPI` | `/runtipi` | pasta do Runtipi |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | no Runtipi: `unix:///sock/docker.sock` (socket do proxy, 0.30.0); `off` desliga |
+| `BRUNOS_RUNTIPI_HOST` | — | caminho dela **no servidor** (para o script) |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | no Runtipi: `unix:///sock/docker.sock`; `off` desliga |
 | `BRUNOS_DOCKER_ACTIONS` | `false` | permite reiniciar apps |
-| `BRUNOS_TERMINAL` | `true` | `false`/`off` desliga o terminal SSH |
-| `HOST_PROC` | `/host/proc` | `/proc` do host (rede usa `HOST_PROC/1/net/dev`) |
+| `BRUNOS_TERMINAL` | `true` | `false`/`off` desliga o terminal |
+| `HOST_PROC`, `HOST_PASSWD` | `/host/proc`, `/host/passwd` | processos e rede do host |
 | `HOST_OS_RELEASE`, `HOST_HOSTNAME_FILE` | `/host/os-release`, `/host/hostname` | informações do sistema |
 | `BRUNOS_MAX_UPLOAD_GB` | `50` | limite por envio |
-| `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | primeira execução aceita só IP privado/Tailscale |
+| `BRUNOS_ALLOW_PUBLIC_SETUP` | `false` | primeira execução só aceita IP privado/Tailscale |
+| `BRUNOS_TRUSTED_PROXIES` | Traefik do Runtipi | de quem vale `X-Forwarded-For/-Proto` |
+| `BRUNOS_HOSTS` | — | nomes de endereço aceitos a mais |
 
 Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
 
-### Pacotes
+### Arquivos do pacote `main`
 
-- **`internal/auth`**: `/data/auth.json` (usuários, só o resumo da senha) e `/data/sessions.json` (sessões
-  pelo resumo do token, com IP e navegador). Sessão de 30 dias deslizante; limitador de tentativas em
-  `limiter.go`. Parâmetros da senha e das sessões: `docs/privado/seguranca.md`.
-- **`internal/store`**: `WriteJSON(path, v, perm)`, `WriteFile`, `ReadJSON(path, &v) (ok, err)`, gravação atômica.
-- **`internal/sysinfo`**: `Collector` amostra a cada 2 s com ouvintes (SSE) e 15 s sem; histórico de 150
-  pontos. Lê `/proc/stat`, `/proc/meminfo`, hwmon (ordem de preferência: coretemp "Package id 0", k10temp,
-  …, dell_smm "CPU", acpitz), ventoinha, `/sys/class/power_supply` (bateria + fonte "Mains"),
-  `/proc/self/mounts` (discos: só sistemas de arquivos reais em `/dev/*`, nome do dispositivo via
-  `st_dev` → `/sys/dev/block/M:m/uevent`, ignora `/dev/loop` e partições < 1 GiB), rede filtrando
-  interfaces virtuais. Bateria: potência suavizada por média móvel, `minutesLeft`/`minutesFull`,
-  `estimate` (autonomia na tomada pelo último consumo medido descarregando; só em memória), histórico
-  de carga a cada 5 min por 24 h (enviado no stream só a cada ~30 amostras).
-- **`internal/dockerc`**: cliente HTTP mínimo para a API Docker v1.41 (unix ou tcp): `Containers`,
-  `Stats` (one-shot; CPU por delta; memória = usage − inactive_file), `Restart`, `Start`, `Stop` (304 não
-  é erro), `Logs(id, tail, follow)` + `Demux` (formato multiplexado com cabeçalho de 8 bytes), `Ping`.
-- **`internal/appmon`** (0.7.0): por projeto do compose, 1440 pontos (24 h, um por minuto) de CPU,
-  memória (MB) e disponibilidade (1 no ar, 0 fora, −1 parado/sem medição), só em memória, para o aviso
-  (`Health`: fora do ar só depois de 2 minutos seguidos; `Alert` `app-down:<urn>` / `app-up`). Desde a
-  0.14.0 o gráfico e o % no ar vêm do tsdb (`app.<projeto>.cpu|mem|up`, gravado pelo `watchApps`).
-- **`internal/tsdb`** (0.14.0, decisão 53): os Históricos. Por série, três anéis fixos: 1 min × 2880
-  (48 h, média), 5 min × 2016 (7 dias, média + pico), 20 min × 2160 (30 dias, média + pico); ~45 KB por
-  série, até 400. `Add(nome, v)` faz a média do minuto; `Query(nome, "5m"|"1h"|"24h"|"48h"|"7d"|"30d")`
-  escolhe a camada (o período em andamento entra como último ponto). Disco: `/data/tsdb/snapshot.bin`
-  (foto binária a cada 6 h e no desligamento) + `/data/tsdb/journal.log` (só os pontos novos, a cada
-  5 min; `Tick()` a cada minuto pelo main). Série parada há 30 dias é esquecida. Nomes: `sys.cpu|mem|
-  temp|rx|tx|fan|bat`, `app.<projeto>.*`, `net.lat|up`, `disk.<sda>.rd|wr|busy`.
-- **`internal/history`** (0.8.0; tsdb desde a 0.14.0): `Collector.OnSample(snapshot, mem%)` → séries
-  `sys.*` e `disk.*` (leitura/escrita do `/proc/diskstats`, `sysinfo/diskio.go`); `Series(rng)` monta
-  `/api/stats/history` no formato de sempre (+ `*Max` em 7 e 30 dias). O `/data/history.json` antigo é
-  trazido uma vez e apagado.
-- **`internal/procs`** (0.8.0): `Reader.List(kernel)` lê `/host/proc/<pid>/{stat,status,cmdline,cgroup}`;
-  CPU = Δticks ÷ Δtotal do `/proc/stat` × núcleos (primeira chamada lê duas vezes com 400 ms); esconde
-  threads do kernel; usuário por `/host/passwd` (`HOST_PASSWD`); id do container (64 hex) no cgroup →
-  o `main` troca pelo nome do app.
-- **`internal/netmon`** (0.8.0): a cada minuto, TCP para `1.1.1.1:443`, `8.8.8.8:443`, `9.9.9.9:443` em
-  paralelo (vale o mais rápido); 2 minutos sem nenhum → `internet-down`, e `internet-up` na volta com a
-  duração; 24 h na memória, quedas (100) em `/data/internet.json`. Preferência `netMonitor` (padrão ligado).
-- **`apps.go`** (pacote main, 0.7.0): `hAppAction` (start/stop/restart de todos os containers do app),
-  `hAppContainers`, `hAppHistory`, `hAppLogs` (texto, até 5000 linhas / 8 MB), `hAppLogsStream` (SSE,
-  uma linha JSON por evento), `watchApps` (a cada minuto: `collectUsage` + `probe` em
-  `InternalIP:porta` — porta fechada ou travada = fora; qualquer resposta HTTP ou protocolo diferente =
-  no ar; container `restarting` = fora; parado = não conta). Preferências lidas do `settings.json`:
-  `appMonitor` (padrão ligado) e `apps[urn].noMonitor`.
-- **`internal/runtipi`**: `Discoverer` com cache de 20 s. Lê `apps/<loja>/<app>/config.json`,
-  `app-data/<loja>/<app>/app.env` (**só** as chaves da lista permitida: `APP_PORT`, `APP_DOMAIN`,
-  `APP_LOCAL_DOMAIN`, `APP_PROTOCOL`, `APP_EXPOSED`, `APP_EXPOSED_DOMAIN`, `LOCAL_DOMAIN`, `INTERNAL_IP`,
-  `NGINX_PORT`) e `state/settings.json` (`localDomain`, `internalIp`, `port`). Projeto compose =
-  `<app>_<loja>`. Logo em `apps/<loja>/<app>/metadata/logo.jpg`.
-- **`internal/files`**: raízes (`Root` com `os.Root`); `Kind` "place" (Home) ou "disk" (pastas de
-  `/mnt` e `/media`). Discos só ficam acessíveis se mapeados (`/data/disks.json`:
-  `{"version":1,"mapped":["disco1",…]}`); sem arquivo, valem as pastas que são ponto de montagem
-  (`st_dev` diferente da pasta pai). `Refresh()` redescobre pastas e reabre raízes cujo dispositivo
-  mudou. Operações: List, Open, Mkdir, Rename, Paste (copia entre discos em EXDEV), Delete, Upload
-  (temporário + rename, nome único "x (2).ext"), Search (3 s / 50 mil entradas), lixeira em
-  `<raiz>/.brunos-trash/<id>` + `<id>.json`.
-  0.6.0: `mediaTypes` (tipos de vídeo/áudio próprios: a imagem `scratch` não tem `/etc/mime.types`);
-  `edit.go` (`ReadText`/`SaveText` com mtime em ms, máx. 5 MB, temporário + rename mantendo a
-  permissão, confere se dá para abrir o arquivo para escrita antes; `NewFile`); `resumable.go` (envio em
-  pedaços: `.brunos-part-<id>` na pasta de destino, estado em `/data/uploads.json`, pedaço até 32 MB,
-  posição errada → 409 com a certa, pendentes > 48 h apagados); `extract.go` (zip/tar/tar.gz pelo
-  `os.Root`, sem links, orçamento = espaço livre − 1 GB, 200 mil itens, apaga a pasta se falhar);
-  `duplicates.go` (tamanho → SHA-256 de começo+fim → SHA-256 inteiro; 300 mil arquivos, 90 s, 50 GB
-  lidos no máximo); `usage.go` (soma por pasta numa varredura só, cache de 10 min por raiz, 30 s / 1
-  milhão de itens, uma varredura por vez).
-- **`internal/terminal`**: `Manager` (até 4 Abas, 12 aberturas/min, buffer de 256 KB enquanto ninguém lê
-  e mais 256 KB do fim da tela para reabrir uma Aba minimizada com `replay=1`). Desde a 0.10.0: cada Aba
-  sabe a Sessão do BrunOS que a abriu (`Owner`; sair fecha só as dela); sem leitor, a varredura confere
-  por um canal `exec` com `ps` se algo roda (decisão 41) e só fecha depois de `termIdleMin` (preferência,
-  padrão 15, 0 = nunca) se nada roda; Sessão bloqueada não fecha Abas; aviso `terminal-done` no sino
-  quando um comando de uma Aba sem leitor termina. `resize` vale como sinal de vida.
-- **`internal/termkey`** (0.10.0): `/data/terminal_key.json` com a chave privada do Terminal cifrada pela
-  senha do BrunOS. Aberta por Sessão só na memória (login, desbloqueio, criação); some no Bloqueio, no
-  logout e no reinício. `Rekey` ao trocar a senha. Detalhes: `docs/privado/seguranca.md`.
-- **`internal/notes`** (0.10.0): `/data/notes.json` (`{"<id do widget>": {text, at (unix ms)}}`), até
-  20 mil caracteres e 200 notas; `Subscribe` manda `{id, at}` para o SSE (`event: note`). TOFU em `/data/known_hosts.json`
-  (`{"version":1,"hosts":{"host:porta":{type,fingerprint,key,addedAt}}}`). Prefere chave ED25519 como
-  o OpenSSH. Erro depois da chave aceita = recusa de login (403 com `sshAuth`).
-- **`internal/sshknown`** (0.4.0): TOFU compartilhado (`Store.Callback`, `Forget`, `Algorithms`,
-  `FriendlyDialError`). Uma única instância por arquivo, usada pelo terminal e pelo hostcmd.
-- **`internal/events`** (0.4.0): central de notificações. `/data/events.json`
-  (`{"version":1,"events":[{id,time,kind,level,title,body,read,key,meta}],"active":[...]}`), 500 avisos /
-  30 dias. `Emit` com `Key` não repete enquanto o problema está em `active`; `Resolve(key, &ev)` fecha e
-  registra a volta ao normal. `Subscribe` alimenta o SSE das estatísticas (`event: notify`).
-- **`internal/hostcmd`**: cliente SSH com chave própria que roda um script fixo no servidor
-  (`HostScript`, instalado pelos comandos que a janela Energia mostra). `Test` conecta e autentica **sem
-  abrir sessão**; `Run`/`OutputInput` abrem a sessão e mandam o pedido. `ReadAllowed` e `ActAllowed` conferem o
-  pedido inteiro antes de mandar e o script confere de novo. `ScriptVersion` sobe quando entra pedido novo;
-  `SetupVersion` só quando muda o que se cola no servidor. Só aceita servidor já confirmado (TOFU).
-  Pedidos: desligar, limite de carga, leituras (Tailscale, energia, atualizações, discos, SMART e
-  temperatura por disco), atualizações e troca assinada do próprio script. O desenho de segurança (usuário,
-  chave, validações) está em `docs/privado/seguranca.md`.
-- **`internal/smart`** (0.11.0, refeito na 0.11.2): `/data/smart.json` versão 2
-  (`{"v":2,"checkedAt","err","disks":{"<série>":{key,dev,tran,mode,noSmart,noSmartWhy,noSmartAt,failMode,gone,
-  model,serial,health,passed,temp,...,history}}}`; a versão 1 era por nome do disco e migra sozinha). Pede
-  `discos`, depois um disco por vez (limite de 50 s; temperatura 30 s): USB tenta `sat` e, se vier sem dados,
-  `auto`; o modo que funcionou fica guardado. Estourou o limite ou nada deu dados → `noSmart` (decisão 46),
-  aviso `disk-smart-unsupported` (Key `smart-unsupported:<série>`) e nunca mais é lido sozinho. Rotas:
-  `GET /api/smart` (com `running`), `POST /api/smart/refresh` e `POST /api/smart/retry {key}` (tenta o
-  outro modo); as duas rodam em segundo plano e respondem 200/erro se terminarem em 1,5 s, senão 202.
-  Desde a 0.15.0 (script 10) a leitura completa traz `attrs` (todos os atributos ATA ou os campos do
-  registro de saúde do NVMe), `test` (andamento), `tests` (até 5 resultados), `shortMin`/`longMin`;
-  `POST /api/smart/selftest {key,kind:curto|longo}` pede o teste ao disco, e o disco em teste é lido de
-  novo a cada 3 min (aviso `disk-selftest` ao terminar). `Note` manda SMART mudou e testes para a Linha do
-  tempo do `internal/disks`. A temperatura lida vira a série `disk.<dev>.temp` no tsdb.
-- **`internal/icons`** (0.24.0, decisão 63): Ícones guardados. `Save` (envio até 1 MB; formato pelo
-  conteúdo: svg, png, ico, jpg, webp, gif; nome = 16 hex do SHA-256, o mesmo arquivo vira um só) e
-  `Catalog(slug)` (baixa do jsDelivr `webp` → `png` → `svg` na primeira vez e guarda em `icons/di/`; um
-  download por ícone de cada vez; "não existe" (404/403) lembrado por 1 h, falha de rede por 2 min).
-  Servidos com tipo fixo, `nosniff` e CSP `sandbox`. O frontend usa o CDN direto como reserva.
-- **`internal/framecheck`** (0.17.0, decisão 58): se o app aceita Janela de app. `Verdict(header)` lê
-  `X-Frame-Options` (DENY/SAMEORIGIN recusam; o app fica em outra porta/domínio) e a CSP `frame-ancestors`
-  (só `*`, `http:` ou `https:` aceitam; quando existe, vence o XFO). `Check` faz um GET na raiz do app em
-  `IP interno:porta`, seguindo até 3 redirecionamentos no mesmo endereço. `Cache` em memória por URN:
-  "ok"/"no" valem 6 h ou até a versão do app mudar, "" (não deu para saber) volta em 5 min sem apagar o
-  veredito anterior. Quem chama é o `checkApps` (vigia de apps, a cada minuto, até 4 checagens por volta,
-  mesmo com o monitor desligado). `GET /api/apps` devolve `frame` por app. A CSP do BrunOS libera
-  `frame-src 'self' http: https:` (o BrunOS continua com `frame-ancestors 'self'`).
-- **`internal/access`** (0.26.0, decisão 65): teste da Forma de acesso Domínio. `Check(ctx, ip, sslPort,
-  domínio)` conecta no Traefik (`IP interno:porta https`, sem DNS) com o nome do app (SNI + Host, sem
-  conferir o certificado do Runtipi) e devolve "up" (qualquer resposta do app, até 401/404 dele) ou "down"
-  (404 padrão do Traefik = nome desconhecido, 502/503/504, sem resposta). `Cache` por URN: "up" vale 10 min,
-  "down" volta em 2 min, domínio trocado testa na hora. Chamado pelo `checkApps` (até 4 por volta, só apps
-  rodando, mesmo com o monitor desligado). O domínio testado é `exposedDomain` ou `localDomain` (`appDomain`
-  em `apps.go`). A porta https vem de `state/settings.json` (`sslPort`) ou do `.env` (`NGINX_PORT_SSL`),
-  padrão 443 (`runtipi.Info.SSLPort`). `GET /api/apps` devolve `domain` por app e `runtipi.sslPort`.
-  No frontend, `js/access.js` (funções puras, `tests/access.test.mjs`): `brunosForm(location)` (sem porta e
-  com nome = Domínio), `portHost`, `accessUrls`, `formStatus` (Domínio = `domain`, Porta = `health`) e
-  `pickForm`; o `appUrl` do `app.js` usa `pickForm`. Preferência `urlMode` (auto/domain/port) e
-  `apps[urn].urlMode` não mudaram.
-- **Instalar, editar e Ajustes** (0.20.0, decisão 61): `install.go` + `internal/appcfg`. Rotas:
-  `GET /api/store/form?urn=` (perguntas do app com tipo, `env`, padrão, opções, mín./máx.; pastas
-  prontas; se instalado, as respostas atuais sem senhas: `current.secrets` só diz quais estão
-  guardadas), `POST /api/store/install` e `/api/store/reconfig` (`{urn, values, port, exposed, domain,
-  exposedLocal, openPort}`; o BrunOS confere e manda pelo script: `instalar-app`/`reconfigurar-app`, que
-  chamam a API do Runtipi), `GET /api/store/status?urn=` (`installing`, `running`, `stopped`, ou `gone`
-  quando a instalação falhou), `GET/POST /api/store/settings` (Ajustes: `ajustes-ler` → `appcfg.Parse`;
-  salvar = `appcfg.Apply` sobre o arquivo atual → `ajustes-gravar` com a Senha de configuração na
-  primeira linha → `reiniciar-app` se pedido). `appcfg` edita a árvore do YAML (`gopkg.in/yaml.v3`):
-  pastas, `deploy.resources.limits` (ou `mem_limit`/`cpus` se já estavam), `/dev/dri`, variáveis; o
-  resto fica, e `Risks` impede que os Ajustes acrescentem algo perigoso. `POST /api/store/app` ganhou
-  `action: "restart"`. A linha da Senha de configuração (Configurações → Sistema) lê
-  `GET /api/disks/format` (`passwordAt` = data da senha, script 14); `watchConfigPassword` avisa no sino
-  uma vez (chave `senha-config-falta`, resolvida pela própria consulta).
-- **Janela única e Requer privilégios** (0.21.0, decisão 62): `internal/appcfg/recipe.go` lê a receita do
-  app (`docker-compose.yml`, ou o `docker-compose.json` do Runtipi convertido para a mesma árvore):
-  serviço principal, imagem, variáveis, pastas, portas e `Privileges` (frases em português, a mesma régua
-  e as mesmas frases do Garimpo). `internal/runtipi/recipe.go` guarda o resultado enquanto o arquivo não
-  muda (tamanho + data) e dá `CatalogApp.Priv`, `App.Priv` (receita instalada) e `CatalogDetail.Privileges`.
-  `GET /api/store/form` ganhou `recipe`, `privileges`, `service`, `settings`/`settingsRaw`/`settingsErr`
-  (Ajustes de hoje, também de app não instalado) e, em `current`, `localSubdomain`, `enableAuth`, `guest`,
-  `maxBackups`, `userConfigEnabled`. `POST /api/store/install` e `/reconfig` aceitam `localSubdomain`,
-  `enableAuth`, `guest` (= `isVisibleOnGuestDashboard`), `maxBackups` (só editar), `settings`, `password`
-  e `acceptRisks`. Instalar app com privilégios sem `acceptRisks` → 400; com privilégios ou Ajustes que
-  mudam o arquivo, vai por `instalar-app-senha` (senha, formulário JSON numa linha, Ajustes) e uma rotina
-  solta (`undoSettingsIfFailed`) chama `ajustes-desfazer` se o app sumir do Runtipi (instalação falhou).
-  `appcfg.Settings` ganhou `image` (só a versão da imagem da receita pode mudar: `checkImage`) e `restart`.
-  Na tela: `storeforms.js` (`appDialog`), botão "Configurar"; guia `@priv` na Loja; `.app-priv` no ícone da
-  tela inicial e aviso em Detalhes do app.
-- **App ocupado e logs de antes** (0.21.1): `logsnap.go`. `tipiBusy` pergunta ao Runtipi (`info-app`) o
-  estado do app; instalando, atualizando etc. → `POST /api/store/app`, `/reconfig` e `/settings` devolvem
-  409 com `busy`. Antes de ligar, parar, reiniciar ou reconfigurar pelo Runtipi (que recria o container),
-  `snapshotLogs` guarda as últimas 300 linhas (até 96 KB) de cada container do app, na memória, uma cópia
-  por app: `GET /api/apps/logs/prev?urn=`. `GET /api/apps/containers` ganhou `created`. Na Loja, a
-  página do app consulta `GET /api/store/status` e troca os botões por um aviso enquanto o Runtipi
-  trabalha; `storeErr` traduz o erro da fila interna do Runtipi (porta 5672).
-- **Loja** (0.18.0, decisão 59): `internal/runtipi/catalog.go` + `store.go`. `Catalog()` lê
-  `repos/<loja>/apps/<app>/config.json` de todas as lojas baixadas (nome, descrição curta, categorias,
-  versão, autor, site, datas em ms → s, arquiteturas), o endereço da loja em `repos/<loja>/.git/config`
-  (sem usuário e senha) e marca o instalado (`installed`, `have`, `update` pelo `tipi_version`); app
-  instalado fora das lojas entra com `local`. A leitura das lojas vale 2 min e o "instalado" 20 s;
-  `Invalidate()` zera os dois. Nada de seguir symlink dentro de `repos/` (`Lstat`), tamanhos limitados
-  (config 256 KiB, descrição 64 KiB, logo 2 MiB), `available: false` e `deprecated` só aparecem se
-  instalados. `CatalogDetail(urn)` traz o `description.md` e os campos do formulário (menos os `random`).
-  Loja que é um ramo (`.git/HEAD` com ramo diferente de main/master) ganha `/tree/<ramo>` no endereço;
-  o `garimpo.json` na raiz de uma Loja convertida (0.19.0, decisão 60) dá `name`, `badge` (selo),
-  `origin`, `license` e `about` da loja (textos cortados, endereço só http/https).
-  Rotas: `GET /api/store` (`{catalog, script: {have, want}, self, panelFrame, suggested}`; `panelFrame` é o
-  veredito do `framecheck` para o painel do Runtipi; `suggested` são as lojas do Garimpo ainda não
-  adicionadas, lista fixa em `store.go`), `GET /api/store/app?urn=`,
-  `GET /api/store/logo?urn=`, `POST /api/store/app {urn, action: start|stop|uninstall, password}` (`password` = Senha de
-  configuração, só no `uninstall`: vai pela entrada padrão do script, que confere; o BrunOS não grava) e
-  `POST /api/store/stores {action: add|remove|refresh, name, url}`. As ações vão pelo script do servidor
-  (`hostcmd.StoreActAllowed`, um pedido por vez, até 5 min) e devolvem o catálogo novo; `refresh` é o
-  mesmo "Conferir apps" das atualizações. O próprio BrunOS (`brunos`) não pode ser parado nem
-  desinstalado por ali; loja com app instalado não pode ser removida.
-- **`internal/disks`** (0.15.0, decisão 56): a janela Discos. `discos-detalhe` (lsblk JSON + fstab só com
-  identificador e pasta + `/dev/disk/by-id`) a cada 10 min e quando a lista do `/proc/diskstats` muda.
-  Junta SMART, temperatura (SMART ou drivetemp), `hist` (nome no `diskhist`), `root` (raiz do Arquivos) e
-  os apps (pastas `bind` dos containers, pelo `containers/json`, dentro das montagens do disco, menos a
-  raiz). Linha do tempo em `/data/disk-events.json` (`{"v":1,"known":{"<série>":{dev,name,first,last,
-  present,mounts,hot,ejected,speed,events:[{at,kind,level,text}]}}}`, até 200 eventos por disco, discos
-  esquecidos após 180 dias ausentes). Avisos `disk-new`, `disk-gone` (resolvido quando volta) e `disk-hot`
-  (só discos fora do Uso ao vivo). Ações: `velocidade` (em segundo plano, um por vez) e `ejetar` (USB, não
-  sistema, nada montado; o script confere de novo). Desde a 0.16.0 (`manage.go`, script 11): `Mount`,
-  `Unmount` (antes chama `Release` do Arquivos para soltar a pasta; devolve quem ainda segura a montagem),
-  `Label` e `Format` (Senha de formatação pelo `ActInput`, entrada padrão; acompanha o `discos-estado` a
-  cada 2 s até `fim`); `OnMount`/`OnUnmount` mapeiam/desmapeiam a pasta no Arquivos; `Verify` confere a
-  senha do BrunOS antes de formatar (decisões 54 e 57).
-  Atualizações (script 6+): o script roda a atualização solta da conexão SSH (`systemd-run`) e grava um
-  registro; o BrunOS acompanha por `atualizacao-estado`. O app recebe `BRUNOS_RUNTIPI_HOST` (preenchido
-  pelo compose com `BRUNOS_RUNTIPI_PATH`) para o script achar a pasta do Runtipi no servidor.
-- **`internal/updates`** (0.11.0, ampliado na 0.12.0): `/data/updates.json`
-  (`{v,apps,os,checkedAt,every,job:{kind,target,name,from,to,startedAt,running,lines,finishedAt,ok,err}}`).
-  `every` = `6h|12h|24h|168h|manual` (padrão 24h). `Start` manda o pedido e `follow` lê
-  `atualizacao-estado` a cada 3 s (registro de antes do pedido não conta); erro de leitura não encerra
-  (Docker/BrunOS reiniciando) até 3 h; retoma no `Run` depois de reiniciar. No fim: aviso no sino
-  (`update-done`) e confere de novo. Rotas: `GET /api/updates`, `POST /api/updates/check`,
-  `PUT /api/updates/config {every}`, `POST /api/updates/run {kind, urn}` (202; 409 com outra rodando).
-  Backup do Runtipi antes de atualizar app (decisão 50) e tamanho do backup (`tamanho-backup`). Troca do
-  script por um assinado (decisão 49): `updates.CheckScript` lê `versao` ao ligar e em cada conferência e
-  chama `UpgradeScript`, que só existe com `hostcmd.ScriptSignature()` não vazia (gerada pelo CI a partir
-  de `go run ./tools/hostscript`). No Linux, `apt-get update` falhando não impede o upgrade (vira aviso).
-  Rotas: `GET /api/updates/backup-size?urn=`, `POST /api/updates/script`; o snapshot traz
-  `script: {have, want, auto, checkedAt, err, at, from}`.
-- **`internal/power`** (0.4.0): `Monitor` lê a bateria a cada 5 s (`Reading` montado em `watch.go`).
-  Quedas em `/data/power-events.json` (`{drainW, outages:[{start,end,startPct,endPct,minPct,shutdown,seen,off}]}`,
-  100 quedas); na bateria grava a cada minuto (`seen`), e se o servidor apagar a queda fecha em `seen`
-  com `off: true`. Configuração em `/data/power.json` (`enabled, threshold, graceSec, simulate, host, port,
-  user, testedAt, hostSetup`). Fases: off → armed → countdown → running → done/cancelled/failed; a energia
-  voltando rearma. Sair da simulação exige `testedAt` (zera se host/porta/usuário mudarem). Tenta desligar
-  a cada 1 min enquanto estiver na bateria, sem limite (avisa na 1ª falha e a cada 10); bateria ≤ metade
-  do limite (ou ≤ 5%) desliga sem esperar a contagem. `hostSetup` < `SetupVersion` com `testedAt` =
-  servidor com configuração antiga: a janela Energia mostra os comandos de atualização (`updateCommands`
-  em `GET /api/power/setup`); o teste de conexão (chave nova) passando grava `hostSetup` atual.
-  **Limite de carga** (`charge.go`): `detectCharge` lê o `/sys` uma vez ao ligar (e em
-  `POST /api/power/charge {detect}`): `range`, `toggle` ou `none`. `POST /api/power/charge {limit}` ou
-  `{protect}` aplica pelo script e grava `chargeLimit`/`chargeProtect` em `power.json`; a cada 10 min,
-  só se houver suporte e pedido, relê um arquivo e reaplica (no máximo a cada 30 min).
-  **Desligar/reiniciar pela interface** (`manual.go`, 0.25.0, decisão 64): `POST /api/power/manual
-  {action: desligar|reiniciar, password}` (em `main.go`, que confere a senha) → `RequestManual` manda
-  `reiniciar` ou `desligar-agendado` ao script (temporizador `brunos-energia.timer` de 1 min, 0.25.1), guarda `manual {action, deadline}` só na memória e emite o aviso
-  `power-manual` (Importante, Key `power-manual`, `meta {deadline, action}`); `POST /api/power/manual/cancel`
-  → `cancelar-desligar` e o aviso `power-manual-cancelled`. Sem conexão pronta = 409 com `setup: true`;
-  script antigo ("pedido inválido") = mensagem de que ele se atualiza sozinho. O pedido some do estado 2 min
-  depois do prazo; ao ligar, o BrunOS tira `power-manual` da lista de avisos ativos. `GET /api/power` ganhou
-  `hostReady` e `manual {action, deadline, remaining}`.
-- **`internal/sysinfo/drivetemp.go`** (0.5.0): temperatura por disco (`Disk.temp`, `tempAt`). Liga o
-  hwmon `drivetemp` ao `sdX` (`hwmonN/device/block/*`) e o hwmon `nvme` ao controlador (`nvme0`). Mede
-  junto com os discos (a cada 20 s), mas no máximo 1 vez por minuto, e um HD só de novo se
-  `/sys/block/sdX/stat` mudou (ler pode acordar disco parado). `readHwmon` ignora o `drivetemp`.
-- **`internal/diskhist`** (0.5.0): `/data/disk-history.json` (`{"version":1,"disks":{"nome":[{d,u,f}]}}`,
-  180 dias, um ponto por dia). `Forecasts()`: regressão linear dos últimos 30 dias (mín. 5 pontos em
-  6 dias) → `perDay`, `daysLeft` (espaço livre ÷ ritmo; nil se não cresce). `Check` emite
-  `disk-full:<nome>` (≥ 90%, fecha < 85%) e, só se a preferência `diskForecast` estiver ligada
-  (padrão: desligada; o `watch.go` lê o `settings.json`), `disk-full-soon:<nome>` (≤ 30 dias, fecha > 45).
-- **`internal/logins`** (0.5.0): `/data/logins.json` (`{"version":1,"devices":[{key,browser,os,local,ip,first,last,count}]}`,
-  100 aparelhos). Chave = navegador|sistema|lugar (lugar = "local" para IPs privados/Tailscale, ou a
-  faixa /24 ou /48). `ParseUA` simples. `BlockAlertDue` limita o aviso de bloqueio (6 h por IP, em memória).
-  `auth.Manager.OnBlock` é chamado quando o limitador bloqueia um IP; `auth.Manager.Sessions()` lista as sessões.
-- **`watch.go`** (pacote main): `batteryReading` e `watchDisks` (a cada 1 min: disco mapeado e não
-  montado → evento crítico `disk-unmounted:<nome>`; disco quente `disk-hot:<nome>` (HD ≥ 55 °C, fecha
-  ≤ 50; SSD ≥ 70, fecha ≤ 65); a cada hora grava o uso no `diskhist` e confere a previsão).
-  `loginSeen`/`loginBlocked` emitem `login-new` e `login-blocked`.
-- **`internal/secret`** (0.9.0): `Load(path)` cria/lê a chave de arquivo das credenciais (aleatória, 0600);
-  `Box.Seal/Open` com AES-256-GCM (nonce aleatório, saída em base64). Só cifra as credenciais das
-  integrações (decisão 33).
-- **`internal/integrations`** (0.9.0; termos em `CONTEXT.md`, decisões 31–33):
-  - `kinds.go`: `Kind` (`Info()` + `Fetch(ctx, client, Config)`), `KindInfo` (campos do formulário,
-    frequência padrão, catálogo de Métricas `MetricDef{id,name,kind num|text|list|series,unit,icon,
-    ranges,history}`, Avisos prontos `AlertDef{id,metric,op < | > | down,default,fixed}`, ids de app do
-    Runtipi para sugerir), `Value{n,t,l,s}`, `SeriesData{step,start,points}` (NaN vira null). Métricas
-    que começam com `_` ficam só no cache (ex.: `_id` do último teste do Speedtest). `getJSON` limita a
-    resposta a 2 MB e traduz os erros para pt-BR. Um arquivo por Tipo: `adguard.go`
-    (`/control/stats` + `/control/status`, autenticação básica), `speedtest.go` (`/api/v1/results/latest`
-    e a lista de 7 dias, token Bearer; a lista só é baixada de novo quando aparece um teste novo).
-  - `store.go`: `/data/integrations.json` (`{"version":1,"integrations":[{id,kind,name,url,user,secret
-    (cifrado),interval,alerts:{id:{on,value}}}]}`); a API só devolve `Public` (`hasSecret`); editar sem
-    mandar `secret` mantém o atual. Frequência de 10 s a 1 h; até 50 integrações.
-  - `hub.go`: cache por integração e agendamento (volta a cada 5 s, mas só busca o que venceu): com
-    alguém no SSE e algum widget usando → no intervalo da integração; aviso ligado ou número num gráfico
-    sem histórico do app → a cada 5 min; senão, nada. `SetUsage(settings)` lê `widgets2` ao salvar as
-    preferências. Até 3 buscas simultâneas, timeout 15 s, sem seguir redirecionamentos. Avisos prontos
-    pela central (`integ:<id>:<aviso>`; "sem responder" só depois de 5 min).
-  - `series.go`: histórico próprio das métricas coletadas em segundo plano, `/data/metric-history.json`
-    (24 h a cada 5 min + 7 dias por hora; métrica sem amostra há 7 dias é descartada).
-  - `handlers.go`: rotas abaixo e `Suggest` (apps do Runtipi de tipo conhecido → `http://IP:porta`).
-    0.9.2: `GET /api/integrations/{id}/image?ref=` (o Tipo confere a referência via `ImageKind`; só
-    imagens até 8 MB; cache de 60 em `/data/img-cache`, nome = sha256 de id+ref).
-  - 0.9.2: `immich.go` (`/api/assets/statistics`, `/api/server/statistics` se admin, `/api/memories`,
-    `/api/search/random`, foto `size=preview`; listas de fotos uma vez por dia), `plex.go`
-    (`/status/sessions`, `/library/sections` uma vez por hora, capa por `/photo/:/transcode`),
-    `watchyourlan.go` (`/api/all`; aviso `Op: "new"` por item com `Item.ID` = MAC), `tailscale.go`
-    (`NoURL`; `HostQuery("tailscale")` → `power.Monitor.HostOutput` → `hostcmd.Runner.OutputInput`). Métricas
-    do tipo `media` (lista de `Item{img}`, `MetricDef.Look` = photo | poster). Campos extras do
-    formulário (ex.: álbum) ficam em `Integration.Options`.
-  - 0.9.3: `transmission.go` (RPC `session-stats` + `torrent-get`; 409 → `X-Transmission-Session-Id`,
-    guardado em `_sid`), `syncthing.go` (`X-API-Key`; `/rest/system/*`, `/rest/config/*`, `/rest/db/status`
-    de até 20 pastas), `nextcloud.go` (`/ocs/v2.php/apps/serverinfo/api/v1/info?skipApps&skipUpdate`,
-    `NC-Token` sem usuário ou autenticação básica com usuário).
-  - 0.34.0 (decisão 73): `actions.go` — Ações leves (`KindInfo.Actions`, interface `ActionKind`,
-    `Hub.DoAction`: confere a Ação e o tempo, executa, registra no log e busca de novo na hora). AdGuard:
-    `pause` (`POST /control/protection {enabled:false, duration}`; AdGuard antigo sem a rota cai em
-    `/control/dns_config` só para "até ligar") e `resume`; métrica `pause_left` (s) e a interna `_guard`
-    (0 só desligado sem prazo; o Aviso pronto `protection_off` olha ela, então pausa com tempo não avisa).
-    `KindInfo.Live`: buscado sempre que há alguém conectado, mesmo sem widget (escudo do topo).
-    0.34.1: métrica interna `_refetch` (s) pede uma busca extra (`entry.next`, ex.: fim da pausa) e
-    `RemindKind` (`Remind`/`Settled`) deixa um lembrete no sino com a chave `integ:<id>:action` (AdGuard
-    "até eu ligar"; não repete se o Aviso pronto `Covered` estiver ligado).
-    0.35.0: métrica do tipo `torrents` (lista com `Item.X`: size, down, up, ratio, eta; `Num` = %, `Text` =
-    estado em pt-BR) para o Formato Torrents; `transmission.go` lê também `session-get`
-    (`alt-speed-enabled` → `turtle`) e a razão geral (`uploadedEver ÷ downloadedEver`), e tem as Ações
-    `pause_all`/`resume_all` (`torrent-stop`/`torrent-start` sem ids) e `turtle_on`/`turtle_off`
-    (`session-set`). `KindInfo.LiveEvery` (Transmission: 5 s) vale com alguém olhando e um widget usando.
-  - 0.35.0 (`internal/updates`): `Status.DockerErr`. O `runtipi-cli app update` devolve 0 mesmo quando o
-    Docker não baixa a imagem ("✗", "Error response from daemon"); o registro é lido e isso vira falha com
-    mensagem amigável (imagem que não existe = "a versão pode não ter sido publicada").
-    `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
-    Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
-- **Nextcloud como lugar da janela Arquivos** (0.37.0): `internal/files/remote.go` define `Remote` (List,
-  Stat, Get com Range, Mkdir, Put, Move, Copy, Delete) e `Service.Remotes`; lugares com id `nc-<integração>`
-  e `kind: "remote"`. Mkdir/Rename/Paste/Trash/Delete/upload desviam para o remoto; `Paste` cobre Nextcloud ↔
-  disco (copiar e mover, pastas inteiras) e Nextcloud ↔ Nextcloud; as rotas GET (`list`, `raw` com Range,
-  `media`) passam por `remoteGET`, e as que ainda não existem (zip, busca, editor, extrair, duplicados, mapa,
-  envio em pedaços) respondem `ErrRemoteUnsupported`. `internal/integrations/webdav.go`: `davRemote`
-  (PROPFIND/GET/PUT/MKCOL/MOVE/COPY/DELETE em `/remote.php/dav/files/<usuário>`, cliente com `safeTransport`,
-  sem seguir redirecionamento e sem prazo total); `Hub.FileRemotes()` monta um por Integração Nextcloud com
-  `files_user` + `Secret2`. `Integration.Secret2`: segunda credencial cifrada (só Tipos que declaram o campo
-  `secret2`; trocar o endereço pede de novo).
-- **`internal/sysinfo/gpu.go`** (0.36.0): `Snapshot.GPUs` (id, vendor, name, busy, busyEst, freq,
-  freqMax, vramUsed, vramTotal, temp, power). Intel (i915/xe) pelo `/sys/class/drm/card*`: frequência e uso
-  estimado pelo RC6 (`power/rc6_residency_ms`); temperatura = sensor "GPU" da placa-mãe. AMD (amdgpu): uso,
-  VRAM e o hwmon da placa. `SetGPUHost` recebe o pedido `gpu` do script (versão 20: RAPL "uncore" e
-  `nvidia-smi`), chamado pelo `gpuLoop` (`monitors.go`) uma vez por minuto (30 min sem nada a medir).
-  Históricos: `gpu.<id>.busy|freq|temp|power|vram`. Interface: Métricas `brunos.gpu_*` (`hist: 'gpu'` +
-  `gk`), Modelos "GPU" e "GPU 24 h", e o 5º cartão da janela Uso ao vivo (`S.gpuHist` = 5 min).
-- **`internal/files/media.go`** (0.34.0): `ProbeMedia(io.ReaderAt, size)` lê só o cabeçalho de MKV/WebM
-  (EBML: Segment → Tracks, ou pelo SeekHead quando o Tracks vem depois dos Clusters) e de MP4/MOV (caixas
-  `moov/trak`: `hdlr`, `mdhd`, `tkhd`, `stsd`; `moov` no fim custa só pular as caixas). Devolve
-  `{container, tracks:[{kind, codec, name, lang, default, channels}]}`; quem decide se toca é o navegador.
-- **`web/web.go`**: arquivos estáticos com gzip e ETag em memória; rotas desconhecidas caem no SPA.
-- **`limits.go`** (revisão de segurança de 19/11/2026): prazo para o corpo dos pedidos (anda junto com os
-  dados nos envios de arquivo e sai quando o corpo termina), prazo de escrita nos SSE e teto de conexões
-  abertas. `internal/integrations/ssrf.go`: destinos que as integrações nunca alcançam (o próprio container,
-  link-local, o proxy do Docker), conferidos no IP já resolvido. `web/static/js/safe.js`: `cssVal`,
-  `safeUrl`, `demoAllowed` e `withKey` (funções puras, `tests/security.test.mjs`).
-- **`guard.go`** (lote 4 da revisão): proxies confiáveis (`BRUNOS_TRUSTED_PROXIES`, padrão: os nomes do
-  container do Traefik do Runtipi; só deles vale o `X-Forwarded-For`/`-Proto`) e nomes de endereço aceitos
-  (`hostCheck`, 421 para o resto: IPs, nomes sem ponto, `.local .lan .home .internal .home.arpa .localdomain
-  .localhost .ts.net`, domínio local do Runtipi e subdomínios, domínios do app `brunos`, preferência
-  `allowedHosts` e `BRUNOS_HOSTS`). `internal/files/protect.go` (lote 3): ocultos da pasta pessoal
-  (`<raiz place>/<usuário>/.*`) só leitura (`ErrProtected` → 403) e segredos fora do Arquivos (pasta de dados
-  do BrunOS e `app.env`/`.env` do Runtipi reconhecidos pelo caminho real, `~/.ssh/id_*`).
+- `main.go`: rotas, middleware, `sudoRoutes`. `apps.go`: ações, logs e vigia de apps (`watchApps`/
+  `checkApps`, a cada minuto: porta do app, forma de acesso, janela). `watch.go`: bateria, discos
+  (desmontado, quente, cheio), avisos de login. `monitors.go`: rotinas (inclui `gpuLoop`). `settings.go`,
+  `store.go` (Loja), `install.go` (instalar/Ajustes), `logsnap.go` (app ocupado e "Logs de antes").
+- `guard.go`: proxies confiáveis e `hostCheck` (421 para nomes de fora: aceita IPs, nomes sem ponto,
+  `.local .lan .home .internal .home.arpa .localdomain .localhost .ts.net`, o domínio do Runtipi, os do app
+  `brunos`, a preferência `allowedHosts` e `BRUNOS_HOSTS`).
+- `limits.go`: prazo do corpo dos pedidos (anda junto com os dados nos envios), prazo de escrita nos SSE e
+  teto de conexões. `web/web.go`: estáticos com gzip e ETag; rota desconhecida cai no SPA.
+
+### Pacotes (`internal/`)
+
+- `auth`: usuários e sessões (30 dias deslizante, guarda só resumos), limitador por IP (`limiter.go`),
+  `OnBlock`. Parâmetros: `docs/privado/seguranca.md`.
+- `store`: gravação atômica (`WriteJSON`, `WriteFile`, `ReadJSON`).
+- `secret`: chave de arquivo + AES-256-GCM, só para credenciais de integrações.
+- `termkey`: Chave do Terminal cifrada pela senha; aberta por Sessão só na memória; `Rekey` ao trocar a senha.
+- `sshknown`: TOFU compartilhado (uma instância por arquivo); segue a ordem do OpenSSH (ED25519 primeiro).
+- `terminal`: até 4 Abas, 12 aberturas/min, buffers de 256 KB para reabrir (`replay=1`). Aba pertence à
+  Sessão que abriu; sem leitor, confere com `ps` se algo roda e fecha após `termIdleMin` (padrão 15, 0 =
+  nunca); Bloqueio não fecha; aviso `terminal-done`.
+- `hostcmd`: cliente SSH do **script fixo** do servidor (`HostScript`). `Test` não abre sessão; `ReadAllowed`/
+  `ActAllowed`/`StoreActAllowed` conferem o pedido antes de mandar (o script confere de novo).
+  `ScriptVersion` sobe a cada pedido novo; `SetupVersion` só quando muda o que se cola no servidor. Script
+  antigo = `ErrOldScript`. Desenho de segurança: `docs/privado/seguranca.md`.
+- `power`: bateria a cada 5 s, quedas, desligamento seguro (off → armed → countdown → running →
+  done/cancelled/failed; sair da simulação exige `testedAt`; na bateria tenta a cada 1 min sem limite),
+  limite de carga (`charge.go`) e desligar/reiniciar pela interface (`manual.go`, temporizador de 1 min no
+  servidor, cancelável).
+- `energy`: Medidor (tomada Tuya local → bateria → estimativa), consumo, custo e assistente Tuya.
+- `sysinfo`: coleta a cada 2 s com ouvintes, 15 s sem. CPU, memória, temperatura (hwmon), ventoinha,
+  bateria, discos (partições reais ≥ 1 GiB), rede sem interfaces virtuais. `drivetemp.go`: no máximo 1×/min e
+  HD só de novo se `/sys/block/sdX/stat` mudou (ler pode acordar). `gpu.go`: Intel (frequência, uso pelo RC6)
+  e AMD pelo `/sys`; RAPL e NVIDIA pelo pedido `gpu` do script (`SetGPUHost`).
+- `history` + `tsdb`: Históricos em três camadas (1 min × 48 h, 5 min × 7 dias, 20 min × 30 dias), até 400
+  séries; `tsdb/snapshot.bin` a cada 6 h e no desligamento + `journal.log` a cada 5 min. Séries:
+  `sys.cpu|mem|temp|rx|tx|fan|bat`, `app.<projeto>.cpu|mem|up`, `net.lat|up`, `disk.<sda>.rd|wr|busy|temp`,
+  `gpu.<id>.busy|freq|temp|power|vram`.
+- `diskhist`: um ponto por dia (180 dias); previsão de cheio por regressão dos últimos 30 dias (aviso só com
+  `diskForecast` ligada). `disk-full` ≥ 90 %.
+- `smart`: um disco por vez (50 s; temperatura 30 s); USB tenta `sat`, depois `auto`, e guarda o modo por
+  número de série; travou → `noSmart` e nunca mais lê sozinho. Testes do próprio disco.
+- `disks`: janela Discos (`lsblk` + fstab + `by-id` a cada 10 min e quando `/proc/diskstats` muda), Linha do
+  tempo, velocidade, ejetar, montar/desmontar/renomear/formatar (formatar pede senha do BrunOS e Senha de
+  configuração; `Release` solta a pasta no Arquivos antes de desmontar).
+- `procs`: processos por `/host/proc`, com segredos do comando mascarados (`mask.go`).
+- `netmon`: TCP 443 em três provedores a cada minuto; 2 min sem nenhum = `internet-down`.
+- `events`: central do sino (500 avisos / 30 dias). `Emit` com `Key` não repete enquanto ativo; `Resolve`
+  fecha. `Subscribe` alimenta o SSE.
+- `logins`: aparelhos conhecidos (navegador|sistema|lugar). `notes`: texto dos widgets de Notas.
+- `dockerc`: cliente mínimo da API Docker (containers, stats, start/stop/restart, logs com `Demux`).
+- `appmon`: CPU, memória e disponibilidade por app (24 h na memória); avisa só após 2 min fora.
+- `framecheck`: o app aceita Janela de app? (`X-Frame-Options` e `frame-ancestors`; cache 6 h, "não sei" 5 min).
+- `access`: o domínio do app responde pelo Traefik? (SNI + Host no IP interno; "up" vale 10 min, "down" 2).
+- `icons`: Ícones guardados (envio até 1 MB, formato pelo conteúdo, nome = hash; catálogo baixado do
+  jsDelivr uma vez). Servidos com tipo fixo, `nosniff` e CSP `sandbox`.
+- `runtipi`: apps instalados (cache 20 s; do `app.env` **só** as chaves de uma lista) e a Loja
+  (`catalog.go`: `repos/<loja>/apps/`, sem seguir symlink, tamanhos limitados, `garimpo.json`, cache 2 min;
+  `recipe.go`: `Priv`, os privilégios que a receita pede). Projeto compose = `<app>_<loja>`.
+- `appcfg`: Ajustes no `user-config` (edita a árvore `yaml.v3`, preserva o resto; `Risks` impede acrescentar
+  algo perigoso; `CheckRaw` para o editor) e leitura da receita (`recipe.go`, mesmas frases do Garimpo).
+- `files`: raízes com `os.Root`; discos só se mapeados (`disks.json`; sem ele, os pontos de montagem).
+  Lixeira em `<raiz>/.brunos-trash/`; edição de texto até 5 MB (409 se mudou); envio em pedaços (até 32 MB,
+  pendentes > 48 h apagados); extrair com orçamento de espaço e sem links; duplicados e mapa com limites de
+  tempo; tipos de mídia próprios; `media.go` lê o cabeçalho de MKV/WebM/MP4; `protect.go` (ocultos da pasta
+  pessoal só leitura, segredos fora do Arquivos); `remote.go` (lugares remotos: Nextcloud; o que não existe
+  neles responde `ErrRemoteUnsupported`).
+- `updates`: apps (loja × instalado pelo `tipi_version`), Linux e o próprio script. A atualização roda solta
+  no servidor e o BrunOS acompanha (até 3 h, retoma ao reiniciar). `DockerErr`: o `runtipi-cli` devolve 0
+  mesmo quando a imagem não baixa. Troca do script só se `ScriptSignature()` não estiver vazia (CI).
+- `integrations`: um arquivo por Tipo (AdGuard, Speedtest, Immich, Plex, WatchYourLAN, Tailscale,
+  Transmission, Syncthing, Nextcloud, clima). `kinds.go` (catálogo de Métricas e Avisos), `store.go`
+  (credenciais cifradas; a API só devolve `hasSecret`; `Secret2`), `hub.go` (busca só o que está em uso:
+  com alguém no SSE no intervalo; gráfico/aviso a cada 5 min; `Live`/`LiveEvery`), `series.go`,
+  `actions.go` (Ações: AdGuard, Transmission), `webdav.go` (Nextcloud como pasta), `ssrf.go` (destinos
+  proibidos), `AppWatch` (avisa uma vez de app compatível novo). Métricas com `_` ficam só no cache.
 
 ### API
 
-Todas as rotas `/api/*` exceto health/public exigem sessão (cookie) **e o código da aba**: o login/setup
-devolve `key`, a interface guarda no `localStorage` (`brunos.k`, separado por porta, ao contrário do cookie) e
-manda em `X-BrunOS` (nos GET que o navegador faz sozinho, imagem/download/SSE, em `?k=`; logos, ícones e papéis
-de parede não precisam). Sessões gravadas guardam só o hash do código. Métodos que alteram exigem o cabeçalho
-`X-BrunOS` (qualquer valor; `1` antes do login) e origem igual. Ações destrutivas (`sudoRoutes` em `main.go`,
-remover loja, trocar o servidor da Energia) respondem `403 {"reauth": true}` sem a senha confirmada nos últimos
-5 min (`POST /api/auth/reauth {password}`; toda senha certa confirmada também conta). Abas do Terminal são da
-Sessão que abriu (`mine` na lista; `POST /api/terminal/adopt {ids, password}`). Erros: `{"error": "mensagem em pt-BR"}`.
+Tudo em `/api/*` (menos health e public) exige o cookie de sessão **e o código da aba** (`key` do login,
+guardado em `localStorage` `brunos.k`; vai em `X-BrunOS`, ou `?k=` em imagem/download/SSE; logos, ícones e
+papéis de parede dispensam). Métodos que alteram exigem `X-BrunOS` e mesma origem. Ações destrutivas
+(`sudoRoutes`) respondem `403 {"reauth": true}` sem senha confirmada nos últimos 5 min
+(`POST /api/auth/reauth`). Bloqueio com senha: o resto responde 423. Erros: `{"error": "…em pt-BR"}`.
 
-```
-GET  /api/health                      GET  /api/public · /api/public/wallpaper
-POST /api/auth/setup · login · logout · password      GET/PUT /api/auth/me
-GET/PUT /api/settings                 (JSON livre do frontend, até 512 KB, /data/settings.json)
-GET/PUT /api/wallpapers · GET/DELETE /api/wallpapers/{name}   (nome ^[a-f0-9]{16}\.(jpg|png|webp|avif|gif)$)
-PUT /api/icons (corpo = arquivo, até 1 MB) · GET /api/icons/{name} · GET /api/icons/di/{nome}   (0.24.0)
-POST /api/power/manual {action, password} · POST /api/power/manual/cancel   (0.25.0, menu de energia)
-GET  /api/stats · /api/stats/stream (SSE: event init {snapshot,history}; data {snapshot,point})
-GET  /api/system                      (info, runtipi, docker, dockerActions, terminal, version...)
-GET  /api/apps (com health/uptime) · /api/apps/logo?urn= · /api/usage   POST /api/apps/restart · start · stop {urn}
-GET  /api/apps/containers?urn · /api/apps/history?urn ({points,step,health,uptime?}) · /api/apps/logs?urn&id&tail
-GET  /api/apps/logs/stream?urn&id     (SSE: ready, data = linha em JSON, end)
-GET  /api/stats/history?range=1h|24h|48h|7d|30d ({range,step,points:[{t,cpu,mem,temp?,rx,tx,cpuMax?...}]})
-GET  /api/history?serie=<nome>&serie=...&periodo=5m|1h|24h|48h|7d|30d ({periodo,step,series:{nome:[[t,v,pico?]]}})
-     só prefixos sys., app., net., disk.; até 16 séries; GET /api/history/series?prefixo=disk. lista as que existem
-GET  /api/apps/history?urn=&range= (mesmos períodos; points [{t,cpu,mem,up,cpuMax?,memMax?}], uptime %)
-GET  /api/processes[?kernel=1]        ({procs:[{pid,ppid,name,cmd,masked?,user,state,threads,cpu,mem,memPct,app?}],summary};
-                                      cmd com os segredos trocados por "••••", masked=true quando escondeu algo)
-GET  /api/processes/cmd?pid=N         comando inteiro, sem esconder (modo sudo: pede a senha; V13, 0.29.0)
-GET  /api/internet                    ({up,checked,ms,avg,uptime?,points:[{t,ms}],outages:[{start,end}],enabled})
-GET  /api/files/roots · disks · list · raw · zip · search · trash
-PUT  /api/files/disks · upload        POST /api/files/mkdir · rename · paste · trash · delete · trash/restore · trash/delete · trash/empty
-GET  /api/terminal/sessions · stream?id=[&replay=1] (SSE base64; eventos ready/exit/replaced/locked)
-POST /api/terminal/open (useKey: Chave do Terminal) · input · resize · close · forget · busy ({known,names})
-GET/POST/DELETE /api/terminal/key · POST /api/terminal/key/unlock   (Chave do Terminal, 0.10.0)
-GET/POST /api/auth/lock · POST /api/auth/unlock     (Bloqueio com senha: o resto responde 423)
-GET/PUT/DELETE /api/notes/{id}                      (texto dos widgets de Notas)
-GET  /api/integrations/geocode?q=                   (cidade para o Clima, via Open-Meteo)
-GET  /api/events                      POST /api/events/read {ids:[]} (vazio = todos) · /api/events/clear
-GET  /api/power (config, status, outages, drainW, keyReady, suggestedHost) · /api/power/setup
-PUT  /api/power/config                POST /api/power/cancel · /api/power/test {host,port,user,trust}
-GET  /api/disks/forecast              ({disks:[{name,perDay,daysLeft?,enough,points:[{d,u,f}]}]})
-GET  /api/disks                       ({disks:[disco+parts+smart+temp+apps+speed],checkedAt,err,oldScript,loading})
-POST /api/disks/refresh               GET /api/disks/timeline?key · /api/disks/state?dev · /api/disks/errors?dev
-POST /api/disks/speed {dev} (202)     POST /api/disks/eject {dev}   POST /api/smart/selftest {key,kind}
-POST /api/disks/mount {uuid,folder}   POST /api/disks/unmount {folder} → {stuck,fstabKept}   POST /api/disks/label {uuid,label}
-GET  /api/disks/format ({hasPassword,lockedUntil,fails,job})   POST /api/disks/format {dev,fs,label,password,formatPassword} (202)
-POST /api/system/restart              (reinicia o próprio container pelo proxy; 501 sem Docker)
-GET  /api/files/text?root&path        ({text,mtime(ms),size,readOnly}; 413 grande, 415 binário/não-UTF-8)
-PUT  /api/files/text?root&path&mtime  (corpo = texto; 409 se o arquivo mudou)   POST /api/files/newfile
-POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?id&offset (409 {offset})
-GET  /api/files/upload/status?id      POST /api/files/upload/finish {id} · upload/cancel {id}
-POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min · /api/files/usage?root&path[&refresh=1]
-GET  /api/files/media?root&path → {container,tracks}  (415 se não for vídeo/áudio conhecido; 0.34.0)
-POST /api/integrations/{id}/action {action,minutes,target?}   GET /api/integrations/plex/find?name → {url,none}  (0.34.0)
-GET  /api/integrations/kinds · /api/integrations ({integrations:[Public],views}) · /api/integrations/suggest
-POST /api/integrations {kind,name,url,user,secret?,interval,alerts}   PUT/DELETE /api/integrations/{id}
-POST /api/integrations/test {…, id?}  (busca uma vez sem salvar; com id usa o token guardado; 502 {error})
-GET  /api/tuya/cloud                  Assistente de tomadas (0.31.0): {cloud:{configured,region,accessId(mascarado)},regions}
-PUT  /api/tuya/cloud {region,accessId,secret}  confere na nuvem da Tuya e guarda cifrado (tuya-cloud.json) · sudo
-DELETE /api/tuya/cloud                esquece a credencial · sudo
-POST /api/tuya/scan                   lista da nuvem + busca na rede (porta 6668, faixa /24) → {plugs:[{id,name,ip,version,
-                                      power,known,knownAs,same,notFound,noKey}]} (sem a chave local) · sudo
-POST /api/tuya/apply {id,mode:update|add,name}  grava a tomada achada (chave da memória, 15 min) · sudo
-GET  /api/metrics/series?id=<integração>.<métrica>&range=1h|24h|7d ({range,series:{step,start,points}})
+```text
+/api/health · /api/public[/wallpaper]
+/api/auth/ setup login logout password me lock unlock reauth
+/api/settings (JSON livre, até 512 KB) · /api/wallpapers[/{name}] · /api/icons[/{name} | /di/{nome}]
+/api/stats · /api/stats/stream (SSE: init, dados, event notify|metrics|note) · /api/stats/history?range=
+/api/history?serie=&periodo=5m|1h|24h|48h|7d|30d (prefixos sys. app. net. disk.) · /api/history/series
+/api/system · /api/system/restart (o próprio container)
+/api/apps[/logo] · /api/usage · /api/apps/ restart start stop containers history logs logs/stream logs/prev
+/api/processes · /api/processes/cmd?pid= (sudo) · /api/internet
+/api/files/ roots disks list raw zip search media mkdir newfile rename paste delete text
+   upload upload/{start,chunk,status,finish,cancel} extract duplicates usage
+   trash[/restore|delete|empty]
+/api/terminal/ sessions stream open input resize close forget busy adopt key key/unlock
+/api/notes/{id} · /api/events[/read|clear]
+/api/power[/setup|config|cancel|test|charge|manual|manual/cancel]
+/api/disks[/forecast|refresh|timeline|state|errors|speed|eject|mount|unmount|label|format]
+/api/smart[/refresh|retry|selftest]
+/api/updates[/check|config|run|backup-size|script]
+/api/store · /api/store/ app logo form install reconfig status settings settings/raw stores
+/api/integrations[/{id}] · /api/integrations/ kinds suggest test geocode plex/find
+/api/integrations/{id}/ action image · /api/metrics/series
+/api/tuya/ cloud scan apply (sudo)
 ```
 
-O stream `/api/stats/stream` também manda `event: notify` com cada aviso novo da central e
-`event: metrics` (`{id,at,err,values}` ou `{id,removed}`) quando uma integração é buscada; o `init`
-traz `metrics` com o cache atual. Abrir o stream é o que faz o servidor começar a buscar.
-`POST /api/power/test` responde 409 `{unknownHost, fingerprint}` na primeira vez, igual ao terminal.
-
-`POST /api/terminal/open` devolve 409 com `{unknownHost, addr, keyType, fingerprint}` na primeira
-conexão ou `{hostKeyChanged, known, fingerprint}` se a chave mudou; o cliente reenvia com `trust`.
+Primeira conexão SSH (terminal ou energia) devolve 409 com a impressão digital; o cliente reenvia com
+`trust`. Instalar app com privilégios exige `acceptRisks` e a Senha de configuração; app ocupado no
+Runtipi → 409 `busy`.
 
 ### Dados em `/data` (todos 0600)
 
-Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/privado/seguranca.md`),
-`settings.json` (+ `settings-backup/`), `wallpapers/`, `icons/` (+ `icons/di/`, 0.24.0), `disks.json`, `known_hosts.json`, `events.json`,
-`power.json`, `power-events.json`, `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos
-discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 30 dias: `snapshot.bin` +
-`journal.log`; o `history.json` antigo some na primeira vez),
-`internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `integrations-seen.json`
-(apps compatíveis já vistos no Runtipi: o sino avisa uma vez dos novos, `integrations.AppWatch`, 0.39.0), `metric-history.json`
-(séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`,
-`disk-events.json` (Linha do tempo dos discos; não confundir com `disks.json`, os discos mapeados).
+`auth.json`, `sessions.json`, chaves e segredos (`docs/privado/seguranca.md`), `terminal_key.json`,
+`known_hosts.json`, `settings.json` + `settings-backup/`, `wallpapers/`, `icons/` (+ `icons/di/`),
+`img-cache/`, `disks.json` (discos mapeados), `disk-events.json` (Linha do tempo, não confundir),
+`disk-history.json`, `smart.json` (`v: 2`), `events.json`, `logins.json`, `power.json`,
+`power-events.json`, `energy.json`, `updates.json`, `internet.json`, `uploads.json`, `tsdb/`,
+`integrations.json`, `integrations-seen.json`, `metric-history.json`, `tuya-cloud.json`, `notes.json`.
 
 ## Frontend (`web/static`)
 
-- `index.html` + `css/app.css` (base adaptada do umbrelOS) + `css/extra.css` (componentes novos,
-  `@font-face` Inter). Fontes Inter (latin e latin-ext, OFL) em `assets/fonts`.
-- `assets/wallpapers` (12 AVIF do Umbrel + miniaturas), `assets/icons` (16 webp do dashboard-icons),
-  `favicon.svg`.
-- `js/api.js`: `call()` lança `Error` com `.status` e `.data`; `export let api` + `initApi()`; **modo
-  demonstração** quando não há `/api` (dados simulados do servidor do Bruno, shell de mentira no terminal).
-- `js/app.js`: estado global `S`, preferências `DEFAULTS`, render da área de trabalho, widgets
-  (`WIDGETS`, até `MAX_WIDGETS = 6`), grade de apps, dock (`SYS`: files, runtipi, store, live, settings),
-  folhas (`openSheet('files'|'settings')`, classe `sheet-<tipo>`), configurações (`settingsRows()`),
-  paleta `Ctrl+K`, diálogos (Uso ao vivo, dispositivo, senha, atalho, personalizar app), lista suspensa
-  do dock (`dockPicker`). O atalho de teclado global ignora eventos dentro de `.xterm`.
-- `js/ui.js`: `$`, `$$`, `esc`, `html`, `fmt*`, `svg(nome)` (ícones inline), `contextMenu`,
-  `openDialog(html, {width, cls, closeBtn, backdropClose, onClose})`, `confirmDialog`, `promptDialog`, `toast`.
-- `js/windows.js` (0.17.0, decisão 58): gerenciador de Janelas (genérico; hoje só Janelas de app).
-  `initWindows({settings, confirm, onChange})`, `open({id, title, icon, originEl, mount, tools})`,
-  `focus`, `minimize`, `restore`, `close`, `closeAll`, `dockClick`, `has`, `count`, `list`,
-  `frontId`, `layout`, `allowUnload`. Fica em `#win-host` (camada 33: acima da pesquisa e do sino, abaixo
-  da faixa `#dock-peek` e da dock; folha do sistema aberta sobe para 36). Modos por `data-mode`: `float`
-  (arrastar com Pointer Events, redimensionar por `.win-rz`, encaixe topo/laterais com `#win-snap`),
-  `sheet` (uma visível, `#win-backdrop` minimiza) e `full` (tela estreita: até 759 px ou altura < 500).
-  Classes no `body`: `has-wins`, `dock-auto`/`dock-peek` (dock que se esconde) e `dock-above`. Animações
-  com Web Animations (só transform/opacity). Lembra `{rect, state}` por app em `localStorage`
-  (`brunos.win.<id>`). Voltar do navegador (`pushState`/`popstate`) minimiza a da frente; `beforeunload`
-  pergunta com janela aberta. Contas puras em `js/winmath.js` (testadas em `tests/windows.test.mjs`).
-- `js/appwindow.js` (0.17.0): `appWindow(a, url, {iconHTML, originEl, blocked})` → opções do
-  `windows.open` com iframe sem sandbox, ⟳ e ↗ (sempre a página inicial do app) ou a explicação de Só em
-  aba. No `app.js`: `openApp(a, {mode, originEl})`, `appClick` (clique normal vira janela só com
-  "Abrir apps em: No BrunOS"; Ctrl/clique do meio seguem o navegador), `windowBlock(a)` (`frame: "no"` ou
-  https→http), dock com apps abertos não fixados depois de um segundo divisor. Preferências: `openIn`
-  (`tab`|`same`|`brunos`), `winStyle`, `dockWithMax` (`visible`|`auto`|`above`), `winLimitPc`,
-  `winLimitMobile`; por app `forceTab`. Demonstração: `demoUrl` → `assets/demo-app.html`.
-- `js/storeforms.js` (0.20.0, decisão 61): formulário de instalação, editar a instalação e Ajustes;
-  importado pelo `store.js` só quando a pessoa clica em Instalar, Instalação ou Ajustes
-- `js/store.js` + `css/store.css` (0.18.0, decisão 59): janela Loja, carregados só quando ela abre
-  (import dinâmico e `<link>` criado na hora). `storeWindow(ctx, {originEl, urn})` → opções do
-  `windows.open` (id `sys:store`); `showStoreApp(urn)`; `md(texto)` (Markdown mínimo: títulos, listas,
-  negrito, código e links http(s); descarta HTML e imagens). Abas Descobrir / Instalados / Atualizações,
-  filtro por loja, categorias (nomes em pt-BR), busca sem acento, prateleiras (Favoritos, Novos na loja,
-  Atualizados recentemente) e lista desenhada de 90 em 90 (`IntersectionObserver`). A página do app fica
-  por cima da lista (a rolagem da lista é mantida). O arranjo usa container query (`st`, 720 px): janela
-  estreita e celular são o mesmo desenho. No `app.js`: `openStore`, `storeCtx`, `openRuntipiPanel` (tela
-  de instalar do Runtipi em Janela de app `sys:runtipi`, ou nova aba se o painel recusar, se o BrunOS
-  estiver em https com painel em http ou se "Abrir apps em" não for "No BrunOS"). Janelas `sys:<nome>`
-  minimizam para o ícone `data-sys="<nome>"` da dock. Preferência: `storeFavs` (lista de urn).
-- `js/files.js`: janela Arquivos; exporta `mountFiles`, `navigate`, `mapDisksDialog(ctx, onDone)`.
-- `js/battery.js`: `paintBattery(root, battery)`, `batteryDialog`.
-- `js/terminal.js`: `terminalWindow(ctx)`; carrega `vendor/xterm/xterm.mjs` e `addon-fit.mjs` sob demanda.
-- `js/notifications.js` (0.4.0): sino `#bell` (no `index.html`), painel, `onNotify(e)` (toast),
-  `refreshNotifications()` (chamado no `init` do stream, ou seja, também a cada reconexão). 0.25.0:
-  avisos Aviso/Importante abrem com os detalhes de `js/notifdetails.js` (`notifDetail(e)`: explicação, o
-  que fazer, dados do `meta` e botão de atalho, tratado por `setNotifActions` em `app.js`); clicar no balão
-  chama `showNotification(id)`; abrir marca o aviso como lido.
-- `js/powermenu.js` (0.25.0): botão `#power-btn` (depois do sino; o sino foi para `right: 58px` e as
-  Atualizações para `102px`), menu Bloquear/Sair/Reiniciar/Desligar, `powerAction(action)` (diálogo com a
-  senha; também nas Configurações, na busca e no "Reiniciar agora" das Atualizações), contagem no botão e
-  no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`. 0.33.0: contagem no zero
-  abre a Tela de atualização (`reboot`/`shutdown`).
-- `js/adguard.js` (0.34.0, decisão 73): escudo `#adg-btn` no canto esquerdo (0.34.1; antes ao lado das
-  Atualizações), só com Integração AdGuard. Lê `protection_on`/`pause_left` de `S.metrics` (`on('metrics')`;
-  o `loadIntegrations` também emite), contagem a cada segundo e verde assim que ela zera; menu
-  Pausar 5/30/60 min ou Até eu ligar / Ligar agora, sem confirmação, valendo para todos os AdGuards.
-- Aviso de vídeo mudo (`files.js`, 0.34.0): `mediaCheck` pede `api.files.media`, `mediaProblem` compara a
-  faixa padrão com `canPlayType` (`CODEC_MIME`) e põe o `.pv-warn` por cima do player, com Baixar e Abrir no
-  Plex (`plexFind`, aberto por `filesCtx.openUrl` em nova aba). O `mediaFallback` usa o mesmo texto quando o
-  vídeo dá erro.
-- Formato Torrents (`widgets.js`, 0.35.0): `torrentsHTML` + `torUI` (filtro e linha aberta por widget, só na
-  tela); o widget é `div` (como Atalhos e Notas) e os cliques em `[data-tor]` vão para `torClick` no `app.js`
-  (filtro, abrir linha, Ações). Largo = tabela; estreito = duas linhas por torrent (container query em
-  `.wfm-torrents`). 0.38.0: opções em `item.tor` = `{ density: comfy|compact, cols: [...], sort }`
-  (`torOpts` confere; `TOR_COLS` dá nome, cabeçalho e largura, e a grade vai em `--tor-cols`); no estreito,
-  nome + barra + as 2 primeiras Colunas na ordem de `TOR_NARROW` (`.tor-k1`/`.tor-k2`); a linha aberta
-  mostra tudo e o botão de pausar/retomar só aquele torrent (`data-target` = id).
-- `js/updscreen.js` (0.33.0, decisão 70; 0.35.0: na atualização do próprio BrunOS só recarrega quando
-  responde a versão de destino `to`, porque o backup do Runtipi religa a versão antiga antes da troca;
-  `updScreenJobDone()` libera quando o job termina bem): Tela de atualização. `showUpdScreen({kind, from, to, backup,
-  step, expectDownMs})` (`self`, `linux`, `reboot`, `restart`, `shutdown`), `updScreenStep(i)`,
-  `hideUpdScreen()`. Pergunta `api.public()` a cada 2 s: duas falhas seguidas = caiu (etapa "Reiniciando");
-  voltou depois de cair ou com outra versão = recarrega a página; não caiu em `expectDownMs` = some com
-  aviso. Chamada por `updates.js` (atualização do app `brunos`, e o Linux quando o servidor para de
-  responder), `powermenu.js` e `disksapp.js` (reiniciar o BrunOS). O anel no ícone do app que atualiza é um
-  `<style id="upd-ring-css">` posto pelo `updates.js` (`paintRing`), com o desenho em `extra.css`.
-- `js/novidades.js` (0.33.0, decisão 71): `NOVIDADES` (lista por versão, a mais nova primeiro: título +
-  frase curta), `checkNovidades(versão)` ao entrar (compara com `localStorage['brunos.seenVersion']`;
-  instalação nova só marca, `markSeen`), `showNovidades()` (clique na versão em Configurações). **A cada
-  versão lançada, acrescentar as novidades dela aqui** (data do lançamento).
-- `js/scale.js` (0.33.0, decisão 72): Escala por aparelho (`localStorage['brunos.scale']` = `{home, sys}`
-  em %, 70–110, mínimo 85 abaixo de 640 px). `applyScale()` põe `--hs`/`--ss` no `:root`; o CSS aplica
-  `zoom` (Tela inicial: `.home-header`, `.page-body`, `.page-dots`, busca; Sistema: dock, botões do canto,
-  painéis, avisos, diálogos, barra e corpo das janelas menos as de app). `app.js` desconta `--hs` no
-  arrastar (`areaZoom`, fantasmas, FLIP); acima de 100 % a Área útil diminui na mesma proporção. Os menus
-  (`.ctx`) não escalam: são posicionados por coordenadas em vários lugares.
-- `js/power.js` (0.4.0): `powerDialog({openTerminal})` (Configurações → Sistema → Energia),
-  `paintBanner(status)`/`refreshPowerBanner()` (faixa da contagem; usa `status.remaining` do servidor),
-  `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço
-  mostra a faixa de contagem.
-- `js/disks.js` (0.5.0): `diskRowsHTML(disks, forecast)` (lista de discos do Uso ao vivo, com
-  temperatura e previsão), `forecastText(f)`, `driveTempHelp()` (comandos do drivetemp). Desde a 0.15.0
-  cada linha é um botão (`data-open-dev`) que abre o disco na janela Discos.
-- `js/disksapp.js` (0.15.0): janela Discos (`openSheet('disks')`, ícone fixo na dock depois de Arquivos).
-  `mountDisks(body, {ctx, key|dev, tab})`, `focusDisk(opts)`. Lista + abas Visão geral, Saúde (tabelas
-  `ATA`/`NVME` com nome, explicação e regra normal/preocupante), Desempenho (`mountChart` com Período e
-  amostras ao vivo do `snapshot.diskIO`), Espaço (`diskhist` + `filetools.js`) e Linha do tempo. Atualiza
-  a cada 20 s (3 s com algo andando) e só refaz o que mudou. Lembra a aba e o disco no `localStorage`.
-- `js/editor.js` (0.6.0): `openEditor({root, path, name, onSaved})`; importa
-  `vendor/codemirror/codemirror.mjs` (bundle gerado por `tools/codemirror`, ver o README de lá) só ao abrir.
-- `js/filetools.js` (0.6.0): `spaceDialog` (treemap "squarified" em divs + lista) e `duplicatesDialog`.
-- `js/api.js`: arquivos > 16 MB vão por `chunkedUpload` (pedaços de 8 MB, até 8 tentativas com espera
-  crescente, id guardado no `localStorage` por raiz|pasta|nome|tamanho|lastModified para retomar).
-- `js/ui.js`: `openDialog(..., {beforeClose})` (devolver false cancela o fechamento).
-- `js/internet.js` (0.8.0): `internetDialog()`.
-  O Uso ao vivo (`app.js`) ganhou o seletor 5 min / 24 h / 7 dias e a aba Processos (com filtro).
-- `js/appinfo.js` (0.7.0): `appDetails(a, ctx)` (estado, linha do tempo de 96 blocos de 15 min, gráfico
-  SVG de 24 h, logs com "Ao vivo", ligar/parar/reiniciar, "Abrir no Runtipi", "Desinstalar…" que abre
-  `/apps/<loja>/<app>` no painel do Runtipi, "Avisar se este app cair").
-- `js/app.js` (0.7.0): `homeItems()` (apps fora de pastas + pastas, na ordem de `order`, que agora guarda
-  também `folder:<id>`), `perPage()` (colunas × linhas que cabem abaixo dos widgets, mínimo 2 linhas),
-  páginas com `scroll-snap` + pontinhos + setas + roda do mouse; arrastar no meio de um ícone junta numa
-  pasta, na borda reordena; pasta com 1 app se desfaz.
-- **Widgets (0.9.0)**:
-  - `js/widgets.js`: `SIZES` (s, w, t, l, f), `FORMATS` (stat, grid, list, chart, shortcuts),
-    `BRUNOS_METRICS` + `brunosValue(id, {snapshot, internet, apps})` (fonte BrunOS calculada no navegador,
-    sem coleta nova), `fmtVal`/`levelOf` (unidade, casas, compacto, cores por faixa `{warn, crit}`),
-    `modelGroups(integrações)`, `normalize`, `migrate(widgets antigos)`, `innerHTML(item, ctx)` (miolo,
-    redesenhado só quando o texto muda) e `widgetHTML` (moldura `wfm-<formato>` + rótulo).
-  - `js/charts.js`: `lineSVG`, `barSVG`, `donutSVG`, `sparkSVG`, `stats` (SVG puro, sem biblioteca).
-  - `js/widgetsapp.js`: janela Widgets (`mountWidgets(body, {ctx, edit, add, modelTab})`, `focusWidgets`):
-    Meus widgets, Modelos (abas por app, 0.38.0) e editor com prévia ao vivo; o botão Integrações abre a
-    janela própria.
-  - `js/integapp.js` (0.39.0, decisão 74): janela Integrações (`mountIntegrations`, `focusIntegrations(
-    {edit} | {kind, app} | {view})`): Conectadas (cartões com o que cada uma libera, `unlocks()`, e as
-    sugestões do Runtipi ainda não conectadas), Apps compatíveis e o formulário (Testar, frequência,
-    Avisos prontos). Abre pelo dock (`SYS.integrations`), pelo menu do app ("Conectar integração", casando
-    `S.integSugg[].app` com o id do app no Runtipi), por Widgets, Configurações → Apps e Ctrl+K. Dock
-    configurável: `dockHide` vale para todos os ícones do sistema menos Configurações.
-  - `js/app.js`: `W2()` (preferência `widgets2`, converte a antiga na primeira vez), `widgetCtx()`
-    (`value`, `def`, `spark`, `series` com cache de `statsHistory` e `metricSeries`, redução para 240
-    pontos), Área de widgets no topo de cada página (`pagePer` mede quantos ícones cabem embaixo),
-    `paintWidgets()` a cada amostra/valor novo (nada com a aba escondida), menu rápido (botão direito ou
-    segurar), modo "Organizar widgets" (arrastar entre Áreas, `−` remove, `+` adiciona).
-  - 0.9.1 (`app.js`): Páginas reais montadas por `renderApps` a partir de `appPagesPlan(itens)` (apps
-    colocados + soltos) e `widgetsOn(página)`; páginas de continuação (`data-cont`) quando os apps não
-    cabem (`pagePer` mede); `data-real` em cada `.app-page` (`realOf`, `currentReal`, `goReal`);
-    `fixLoosePlaces` antes de mover, `compactPages` depois. Arrastar widget vale sempre (alvo = Área ou
-    página); alça `[data-wresize]` com `pointer*` + `sizeFor(colunas, linhas)`; barra `.w-area-bar`
-    (− N colunas + / Automático) no modo Organizar, que também desenha uma página nova vazia no fim.
-    `widgets.js`: `spanStyle(tamanho, colunas)` limita a largura às colunas da Área.
-  - 0.13.0 (decisão 48): `js/layout.js` (puro, testado em `tests/layout.test.mjs`): `fits`, `firstFree`,
-    `nearestFree`, `place` (encaixa em ordem), `dragPlan` (lugar livre → só ele muda; ocupado → o atingido
-    vai para o lugar deixado ou o livre mais perto; senão null), `compact` (ordem de leitura em N colunas),
-    `quadro` (zoom da Área entre 150 e 260 px). `app.js`: `pageCfg(p)`/`setPageCfg`, `migrateAreas`
-    (v1/v2 → v3), `putWidget(id, item, página, lugar?)`, `drawHome` (cada Página real → telas no trilho
-    conforme a Disposição; `fillWidgets` escala ou compacta; `appsPer` com Medida fixa ou automática),
-    seletores `gridPickHTML`/`wireGridPick`/`dispPickHTML` num `popover`, `setWidgetMedida` (pergunta
-    antes de mandar widgets para outra Página), `setWidgetSize`, `areaSnapshot`/`restoreSnapshot` +
-    `undoToast`. Arrastar de widgets e de ícones com `pointer*` (fantasma `position: fixed`, prévia FLIP,
-    move/soltar ouvidos em `window`). `widgets.js`: `w`/`h` no item, `sizeKey` só para o desenho,
-    `minSize` (gráfico de linha/barras ≥ 2 × 1), `posStyle(lugar)`.
+- `index.html`; `css/app.css` (base), `extra.css` (componentes), `store.css` (só com a Loja). Zoom, escala
+  (`--hs`/`--ss`) e container queries: o arranjo das janelas segue a largura da janela.
+- `assets/`: fontes Inter, papéis de parede + miniaturas, ícones, `demo-app.html`. `vendor/`: xterm.js e
+  CodeMirror, sob demanda.
+- **Base**: `app.js` (estado `S`, `DEFAULTS`, tela inicial, dock `SYS`, Configurações, Ctrl+K, Área de
+  widgets, arrastar), `api.js` (`call` lança erro com `.status`/`.data`; modo demonstração quando não há
+  `/api`; envios > 16 MB em pedaços retomáveis), `ui.js` (utilitários, ícones, diálogos, menus), `safe.js` e
+  `access.js` (funções puras testadas).
+- **Janelas**: `windows.js` (float, sheet, full; Janelas `sys:<nome>` minimizam para o ícone do dock; Voltar
+  minimiza) + `winmath.js` (puro), `appwindow.js` (iframe do app ou "Só em aba").
+- **Telas**: `files.js` (+ `filetabs.js`, um estado por janela/guia; `filetools.js`; `editor.js`),
+  `terminal.js`, `store.js` (+ `storeforms.js`), `disks.js` (resumo) e `disksapp.js`, `widgetsapp.js`,
+  `integapp.js`, `appinfo.js`, `updates.js` (+ `updscreen.js`: só recarrega quando responde a versão de
+  destino), `power.js`, `powermenu.js`, `energy.js`, `tuya.js`, `battery.js`, `internet.js`,
+  `notifications.js` (+ `notifdetails.js`: todo aviso nível Aviso precisa de explicação, há teste),
+  `adguard.js`, `lockscreen.js`, `notes.js`, `icons.js`, `scale.js`, `novidades.js` (**acrescentar a cada
+  versão**).
+- **Widgets**: `widgets.js` (Tamanhos, Formatos, Métricas da fonte `brunos` calculadas no navegador,
+  Modelos, Torrents), `layout.js` (encaixe puro: lugares, arrastar, compactar, Quadro), `charts.js` (SVG
+  puro, `mountChart`).
+- Atalhos globais ignoram eventos dentro de `.xterm`.
 
-### Preferências (`/api/settings`, objeto do frontend)
+### Preferências (`/api/settings`)
 
-`wallpaper` (`builtin:24` | `upload:<nome>` | `local`), `accentMode` (`auto`|`vibrant`|`manual`),
-`manualHue`, `glass`, `blur`, `iconSize` (`p`|`m`|`g`|`e`, Tamanho do ícone pela Régua; o número antigo
-48–88 é lido como o degrau mais próximo), `iconGap` (`fixo`|`elastico`|`preencher`), `lastRow`
-(`centro`|`celular`), `homeFit` (`encolher`|`widgets`), `widgets` (`files`, `storage`, `system`, `network`, `battery`),
-`showStatus`, `reduceMotion`, `openIn` (`tab`|`same`), `urlMode` (`auto`|`domain`|`port`), `serverHost`,
-`runtipiUrl`, `dock` (ids), `order`, `apps` (personalizações por id: nome, ícone, url, hidden), `links`
-(atalhos), ícone de app/atalho (`icon`: `auto` | `letter` | `builtin:<nome>` | `di:<nome do catálogo>` |
-`up:<16hex>.<ext>` enviado, 0.24.0), `favorites` (pastas), `welcomed`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`,
-`sshPort`, `sshUser`, `sshMethod`, `termFontSize`, `diskForecast` (0.5.0, previsão de disco cheio),
-`netMonitor` (0.8.0, padrão true), widget `internet` (0.8.0), `appMonitor` (0.7.0, padrão true), `appPages` (0.7.0, padrão true), `folders` (0.7.0,
-`[{id,name,apps:[ids]}]`), `apps[id].noMonitor`, `widgets2` (0.9.0: `{v:1, areas:{"<página>":[ids]},
-items:{id:{model?, format, size, title, caption, slots:[{metric, label?, unit?, decimals?, compact?, icon?,
-spark?, max?, colors?:{warn,crit}|null}], layout, list:{max,bars}, chart:{type,range,stats}, bar,
-click:{kind:auto|app|window|url|none, target}, look:{follow, opacity?, hue?, hideLabel?}}}}`; a antiga
-`widgets` fica só para voltar de versão). 0.9.1: `widgets2.cols` (`{"<página>": 1–6}`, ausente =
-automático), no formato Atalhos `folders:[{root, path, name?, icon?, color?(matiz)}]` (vazio = favoritas)
-e `files:{layout: grid|list, showFree}`; `appPlace` (`{"<id do app ou folder:id>": página}`; sem entrada =
-solto, vai para a última página com apps). 0.9.2: no formato Mídia `media:{rotate (min), caption}`;
-`wallpaperMode` (`single` | `schedule`) e `wallpaperSchedule` (`[{at:"HH:MM", wp}]`). 0.13.0:
-`widgets2.v = 3` (`areas:{"<página>":[{id, x, y}]}`, cada item com `w`/`h` em Quadros no lugar de
-`size`; `cols` some), `pageCfg` (`{"<página>": {disp: wtop|atop|wleft|wright|wonly|aonly, wm:[colunas,
-linhas] até 6 × 4, am: "auto" | [colunas, linhas] até 16 × 6}}`) e `mobileSplit` (padrão true). **Nunca**
-guardar senhas aqui.
+**Nunca** guardar senhas aqui.
+
+- Aparência: `wallpaper` (`builtin:N` | `upload:<nome>` | `local`), `wallpaperMode` (`single`|`schedule`),
+  `wallpaperSchedule`, `accentMode`, `manualHue`, `glass`, `blur`, `reduceMotion`.
+- Ícones e tela inicial: `iconSize` (`p|m|g|e`), `iconGap`, `lastRow`, `homeFit`, `mobileSplit`, `order`
+  (ids e `folder:<id>`), `folders`, `appPages`, `appPlace`, `pageCfg` (`{"<página>":{disp, wm, am}}`),
+  `apps[id]` (nome, ícone, url, hidden, noMonitor, urlMode, forceTab), `links`, `icon`
+  (`auto|letter|builtin:|di:|up:`).
+- Widgets: `widgets2` (`v: 3`, `areas:{"<página>":[{id,x,y}]}`, `items:{id:{format, w, h, title, slots,
+  look, tor…}}`).
+- Comportamento: `openIn` (`tab|same|brunos`), `urlMode` (`auto|domain|port`), `serverHost`, `runtipiUrl`,
+  `winStyle`, `dockWithMax`, `winLimitPc`, `winLimitMobile`, `dock`, `dockHide`, `showStatus`, `welcomed`,
+  `allowedHosts`, `appMonitor`, `netMonitor`, `diskForecast`, `storeFavs`.
+- Arquivos e terminal: `favorites`, `filesView`, `filesHidden`, `filesDisksOpen`, `sshHost`, `sshPort`,
+  `sshUser`, `sshMethod`, `termFontSize`, `termIdleMin`.
+- Por aparelho, no `localStorage`: `brunos.scale`, `brunos.win.<id>`, `brunos.seenVersion`, guias do Arquivos.
 
 ## Testes
 
-- `internal/terminal/terminal_test.go`: servidor SSH em processo (TOFU, senha errada, eco, resize,
-  saída com código, troca de chave, validação).
-- `tests/fixture.sh <dir>`: cria servidor fictício (home, dois discos em `/mnt`, link
-  simbólico de fuga, Runtipi falso com apps, JPEG real).
-- `tests/apitest.py`: 63 checagens da API (auth, CSRF, limites, arquivos, fuga por links, discos,
-  terminal, lixeira, wallpapers...). Precisa de servidor novo (faz o setup).
-- `tests/smoke.sh <imagem>`: sobe socket-proxy + OpenSSH (linuxserver/openssh-server) + BrunOS com as
-  restrições do Runtipi; roda o apitest; confere Docker, uso por container, sistema, estatísticas;
-  terminal SSH real; proxy recusando outros containers; memória e tamanho da imagem.
-- CI (`.github/workflows/docker.yml`): confere `vendor/` contra os módulos oficiais, `go vet`, `go test
-  -race`, build, gofmt (fora do vendor), build da imagem, smoke; publica no GHCR quando `VERSION` é nova.
+- `go test -race ./...` (inclui servidor SSH em processo para o terminal).
+- `tests/*.test.mjs` (`node --test`): encaixe, janelas, acesso, ícones, segurança, detalhes dos avisos.
+- `tests/apitest.py` contra o servidor de `tests/fixture.sh <dir>` (precisa ser novo: faz o setup).
+- `tests/script-*.sh`: o script do servidor de verdade, como root, com ferramentas falsas.
+- `tests/smoke.sh <imagem>`: socket-proxy + OpenSSH + BrunOS com as restrições do Runtipi.
+- CI (`.github/workflows/docker.yml`): confere `vendor/`, `govulncheck`, vet, testes, gofmt, imagem, smoke,
+  assinatura do script e publicação quando `VERSION` é nova. `pages.yml` publica a demonstração.
