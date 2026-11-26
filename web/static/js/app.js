@@ -777,12 +777,13 @@ async function torClick(el) {
   else if (kind === 'row') ui.open = ui.open === el.dataset.tid ? '' : el.dataset.tid;
   else if (kind === 'act') {
     if (el.getAttribute('aria-disabled') === 'true' || el.classList.contains('busy')) return;
-    const iid = el.closest('[data-iid]')?.dataset.iid, action = el.dataset.act;
+    const iid = el.closest('[data-iid]')?.dataset.iid, action = el.dataset.act, target = el.dataset.target; // target: um torrent só (0.38.0)
     el.classList.add('busy');
     try {
-      await api.integrations.action(iid, { action });
-      const v = S.metrics[iid]; // a tartaruga muda já na tela; o resto chega na busca que a Ação dispara
+      await api.integrations.action(iid, target ? { action, target } : { action });
+      const v = S.metrics[iid]; // a tartaruga e o torrent mudam já na tela; o resto chega na busca que a Ação dispara
       if (v?.values && action.startsWith('turtle')) v.values = { ...v.values, turtle: { n: action === 'turtle_on' ? 1 : 0 } };
+      if (v?.values?.torrents?.l && target) v.values = { ...v.values, torrents: { ...v.values.torrents, l: v.values.torrents.l.map((x) => (x.id === target ? { ...x, v: action === 'pause' ? 'Pausado' : 'Na fila' } : x)) } };
     } catch (x) { toastError(x, 'O Transmission não aceitou o pedido'); }
     el.classList.remove('busy');
   }
@@ -1019,6 +1020,9 @@ function drawHome() {
   $$('#desktop > .w-area-bar').forEach((x) => x.remove());
   const row = $('#widgets'); row.style.display = 'none'; row.innerHTML = '';
   grid.classList.add('paged'); grid.classList.toggle('stacked', !paged);
+  // 0.38.0 (decisão 74): no celular, cada tela rola sozinha e a saudação fica parada em cima; antes a
+  // rolagem era a da tela inicial inteira e a tela de apps abria no meio, na altura da tela mais alta
+  $('#desktop').classList.toggle('m-pages', mobile && paged);
   grid.innerHTML = '<div class="pages-track"></div><div class="page-dots"></div>';
   const track = $('.pages-track', grid);
   const plan = appPagesPlan(items);
@@ -1612,9 +1616,10 @@ export function openSheet(kind, originEl, opts = {}) {
     if (kind === 'disks') import('./disksapp.js').then((m) => m.focusDisk(opts));
     return;
   }
-  const title = SYS_TITLE[kind] + (id.startsWith('sys:files:') ? ` (${id.split(':')[2]})` : '');
+  // 0.38.0: as janelas do Arquivos mudam de título para a pasta da Guia ativa (onTitle, abaixo)
+  const title = kind === 'files' && opts.adopt?.title ? opts.adopt.title : SYS_TITLE[kind];
   wins.open({
-    id, title, icon: sysIcon(kind), originEl,
+    id, title, icon: sysIcon(kind), originEl, at: opts.at, fromRect: opts.fromRect, slide: opts.slide,
     mount(body) {
       body.classList.add('sys-body', `sys-${kind}`);
       let cleanup = null, gone = false;
@@ -1622,7 +1627,8 @@ export function openSheet(kind, originEl, opts = {}) {
       if (kind === 'settings') { renderSettings(body); return () => { gone = true; pickClose?.(); }; }
       body.innerHTML = '<div class="sheet-loading"></div>';
       const load = { files: () => import('./filetabs.js').then((m) => keep(m.mountTabs(body, { ctx: filesCtx, opts, adopt: opts.adopt, persist: id === 'sys:files',
-          closeWin: () => wins.close(id), detach: (tab) => openSheet('files', null, { adopt: tab }) }))),
+          closeWin: () => wins.close(id), onTitle: (t) => wins.setTitle(id, t || SYS_TITLE.files),
+          detach: (tab, drop) => openSheet('files', null, { adopt: tab, ...drop }) }))),
         widgets: () => import('./widgetsapp.js').then((m) => keep(m.mountWidgets(body, { ...opts, ctx: widgetsCtx }))),
         disks: () => import('./disksapp.js').then((m) => keep(m.mountDisks(body, { ...opts, ctx: disksCtx }))) }[kind];
       load?.().catch((e) => toastError(e, `Não deu para abrir ${SYS_TITLE[kind]}`));

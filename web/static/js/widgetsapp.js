@@ -2,7 +2,7 @@
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
 import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp, cssVal } from './ui.js';
-import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText, sizeLabel, minSize } from './widgets.js';
+import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, TOR_COLS, TOR_SORTS, torOpts, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText, sizeLabel, minSize } from './widgets.js';
 
 const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
 const KIND_GLYPH = { weather: 'wx-partly', tuya: 'plug' }; // tipos sem ícone de app: um desenho próprio
@@ -111,18 +111,24 @@ function drawMine() {
 /* ── Modelos ───────────────────────────────────────────────────── */
 function drawModels() {
   st.ctx.refreshInternet(true); // o modelo Internet precisa da medição para a prévia
+  // 0.38.0: os Modelos ficam em abas por app (BrunOS · cada Integração · Em branco), não numa rolagem só
   const groups = modelGroups(st.ctx.integrations);
+  const cur = groups.find((g) => g.key === st.modelTab) || groups[0];
+  st.modelTab = cur.key;
   st.models = new Map();
   const total = st.ctx.pages();
   main().innerHTML = `<div class="wapp-head"><div><h3>Modelos</h3><p>Escolha um ponto de partida; dá para mudar tudo depois.</p></div><span class="f-spacer"></span>
     <label class="wapp-inline">Colocar na <select class="text-input sm" data-f="page">${Array.from({ length: total + 1 }, (_, i) => `<option value="${i}" ${i === st.page ? 'selected' : ''}>${i < total ? `página ${i + 1}` : 'página nova'}</option>`).join('')}</select></label></div>
     ${st.ctx.integrations.length ? '' : `<div class="wapp-note">${svg('link')}<span>Cadastre uma integração (AdGuard, Speedtest…) para ver os modelos com dados dos seus apps.</span><button class="pill-btn" data-view="integrations">Integrações</button></div>`}
-    ${groups.map((g) => `<div class="wapp-sec">${esc(g.group)}</div><div class="wapp-cards">${g.models.map((m) => {
+    <div class="wapp-tabs" role="tablist" aria-label="Modelos por app">${groups.map((g) => `<button class="wapp-tab ${g.key === cur.key ? 'on' : ''}" role="tab" aria-selected="${g.key === cur.key}" data-mtab="${esc(g.key)}"><span class="wapp-tab-ico">${groupIcon(g.kind)}</span>${esc(g.group)}<small>${g.models.length}</small></button>`).join('')}</div>
+    <div class="wapp-cards" role="tabpanel">${cur.models.map((m) => {
       const it = normalize(m.item);
       st.models.set(m.id, it);
       return `<div class="wapp-card model" data-model-use="${esc(m.id)}">${previewBox(it).replace('data-wid=""', `data-wid="" data-model="${esc(m.id)}"`)}<div class="wapp-card-txt"><b>${esc(m.name)}</b><small>${esc(m.desc)}</small></div></div>`;
-    }).join('')}</div>`).join('')}`;
+    }).join('')}</div>`;
+  $('.wapp-tab.on', st.body)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+const groupIcon = (kind) => (kind === 'brunos' ? svg('sparkles') : kind === 'blank' ? svg('plus') : kindIcon(kind));
 
 /* ── Editor ────────────────────────────────────────────────────── */
 function openEditor(id, draft) {
@@ -202,6 +208,7 @@ function drawEditor() {
       ${d.format === 'grid' ? `<div class="wed-sec"><span class="wed-lbl">Disposição</span><div class="seg">${[['auto', 'Automática'], ['cols', 'Em colunas'], ['rows', 'Em linhas']].map(([k, l]) => `<button type="button" class="${d.layout === k ? 'on' : ''}" data-layout="${k}">${l}</button>`).join('')}</div></div>` : ''}
       ${d.format === 'list' ? `<div class="wed-sec"><label>Itens no máximo<select class="text-input" data-f="listmax"><option value="0">conforme o tamanho</option>${[3, 5, 8].map((n) => `<option value="${n}" ${d.list.max === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label class="wsw">Barrinhas proporcionais${sw(d.list.bars !== false, 'data-f="listbars"')}</label></div>` : ''}
       ${d.format === 'stat' ? `<div class="wed-sec"><label class="wsw">Barra de progresso (quando há máximo)${sw(d.bar !== false, 'data-f="bar"')}</label></div>` : ''}
+      ${d.format === 'torrents' ? torOptsHTML() : ''}
       ${d.format === 'media' ? `<div class="wed-sec"><span class="wed-lbl">Mídia</span>
         ${st.ctx.defs().get(d.slots[0]?.metric)?.look === 'poster' ? '<small class="hint">Mostra a capa do que está tocando; com mais de uma sessão, a primeira e um “+N”.</small>'
           : `<label>Trocar a foto a cada<select class="text-input" data-f="rotate">${ROTATE.map(([m, l]) => `<option value="${m}" ${d.media.rotate === m ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -236,6 +243,18 @@ function clockOptsHTML() {
     <label class="wsw">Mostrar a data${sw(c.date !== false, 'data-f="ckdate"')}</label>
     <label>Fuso horário<select class="text-input" data-f="cktz">${TIMEZONES.map(([z, l]) => `<option value="${esc(z)}" ${c.tz === z ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
     <small class="hint">A hora vem do próprio aparelho, sempre em 24 horas. Para ter a hora de outro lugar, crie um segundo relógio com outro fuso.</small></div>`;
+}
+/* Formato Torrents (0.38.0): Densidade, Colunas e Ordenar por */
+function torOptsHTML() {
+  const o = (st.draft.tor = torOpts(st.draft.tor));
+  return `<div class="wed-sec"><span class="wed-lbl">Torrents</span>
+    <span class="wed-lbl">Densidade</span>
+    <div class="seg">${[['comfy', 'Confortável'], ['compact', 'Compacta']].map(([k, l]) => `<button type="button" class="${o.density === k ? 'on' : ''}" data-tordens="${k}">${l}</button>`).join('')}</div>
+    <small class="hint">Compacta: linhas finas e o filtro, os totais e os botões numa barra só em cima. Cabem mais torrents num widget baixo.</small>
+    <span class="wed-lbl">Colunas <small>${o.cols.length}/${TOR_COLS.length}</small></span>
+    <div class="wed-chips">${TOR_COLS.map(([k, l]) => `<button type="button" class="wchip ${o.cols.includes(k) ? 'on' : ''}" data-torcol="${k}" aria-pressed="${o.cols.includes(k)}">${o.cols.includes(k) ? svg('check') : ''}${l}</button>`).join('')}</div>
+    <small class="hint">O nome sempre aparece. No widget estreito (e no celular) aparecem o nome, a barra de progresso e duas das Colunas marcadas; o resto, ao tocar no torrent.</small>
+    <label>Ordenar por<select class="text-input" data-f="torsort">${TOR_SORTS.map(([k, l]) => `<option value="${k}" ${o.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
 }
 /* Formato Notas: texto livre ou lista de tarefas */
 function notesOptsHTML() {
@@ -445,6 +464,7 @@ async function onClick(e) {
   const q = (s) => e.target.closest(s);
   let el;
   if ((el = q('[data-view]'))) { show(el.dataset.view); return; }
+  if ((el = q('[data-mtab]'))) { st.modelTab = el.dataset.mtab; drawModels(); main().scrollTop = 0; return; }
   if ((el = q('[data-dup]'))) { const w2 = st.ctx.w2, id = el.dataset.dup, n = st.ctx.newId(); st.ctx.put(n, structuredClone(w2.items[id]), st.ctx.pageOf(id)); st.ctx.save(); drawMine(); return; }
   if ((el = q('[data-del]'))) { const id = el.dataset.del; if (await confirmDialog('Remover este widget?', 'Ele sai da tela inicial. Dá para criar de novo a partir dos modelos.', 'Remover', { danger: true })) { st.ctx.remove(id); drawMine(); } return; }
   if ((el = q('[data-pmedida]'))) { st.ctx.pagePicker('wm', +el.dataset.pmedida, el, () => { if (st?.view === 'mine') drawMine(); }); return; }
@@ -473,6 +493,12 @@ async function onClick(e) {
     if ((el = q('[data-flayout]'))) { d.files.layout = el.dataset.flayout; redrawEditor(); return; }
     if ((el = q('[data-ckstyle]'))) { d.clock.style = el.dataset.ckstyle; redrawEditor(); return; }
     if ((el = q('[data-nmode]'))) { d.notes.mode = el.dataset.nmode; redrawEditor(); return; }
+    if ((el = q('[data-tordens]'))) { d.tor = { ...torOpts(d.tor), density: el.dataset.tordens }; redrawEditor(); return; }
+    if ((el = q('[data-torcol]'))) {
+      const o = torOpts(d.tor), k = el.dataset.torcol;
+      const cols = o.cols.includes(k) ? o.cols.filter((c) => c !== k) : [...o.cols, k];
+      d.tor = { ...o, cols }; redrawEditor(); return;
+    }
     if ((el = q('[data-format]'))) { setFormat(el.dataset.format); redrawEditor(); return; }
     if ((el = q('[data-layout]'))) { d.layout = el.dataset.layout; redrawEditor(); return; }
     if ((el = q('[data-ctype]'))) { d.chart.type = el.dataset.ctype; if (d.chart.type !== 'donut' && d.w < 2) d.w = 2; redrawEditor(); return; }
@@ -555,6 +581,7 @@ function onInput(e) {
     else if (k === 'listmax') d.list.max = +t.value;
     else if (k === 'rotate') d.media.rotate = +t.value;
     else if (k === 'cktz') d.clock.tz = t.value;
+    else if (k === 'torsort') d.tor = { ...torOpts(d.tor), sort: t.value };
     else if (k === 'click') { d.click = { kind: t.value }; if (t.value === 'window') d.click.target = 'live'; if (t.value === 'app') d.click.target = st.ctx.integrations[0]?.id; if (e.type === 'change') redrawEditor(); return; }
     else if (k === 'clicktarget') d.click.target = t.value;
     else if (k === 'opacity') { d.look.opacity = +t.value; t.style.setProperty('--p', `${t.value}%`); }

@@ -12,6 +12,24 @@ celular.
 - Entregue e testada no servidor: tudo até a 0.28.0 (o Bruno confirmou em 21/11/2026 que todos os testes
   pendentes passaram, inclusive a tomada Tuya).
 
+## Plano de 26/11/2026 (combinado com o Bruno, duas versões; decisão 74)
+
+Testar tudo também em tela de celular (390 px), com prints.
+
+1. **0.38.0: correções e polimento** (lançada em 26/11, aguardando teste do Bruno):
+   - celular: cada tela da tela inicial rola sozinha; saudação fixa no topo de todas;
+   - Arquivos: cabeçalho da lista com a cor da janela; Janela com o nome da pasta da Guia ativa (todas);
+     arrastar a Guia para fora mostra uma miniatura que segue o mouse e a Janela nova cresce onde soltou
+     (no celular, só "Mover para nova janela", com a Janela deslizando);
+   - Bateria: ícone de estado (tomada / carregando / na bateria) ao lado da % e texto curto;
+   - Modelos em abas por app (BrunOS · cada Integração · Em branco);
+   - Torrents: Densidade Confortável/Compacta, Colunas escolhidas (mais Enviado, Baixado, Falta, Pares,
+     Adicionado em), "Ordenar por" e pausar/retomar um torrent na linha aberta.
+2. **0.39.0: janela Integrações + dock configurável**: janela do sistema com cartões do que cada
+   Integração libera e sugestões dos apps instalados; abre pelo dock (computador e celular), menu do app,
+   Widgets, Configurações e Ctrl+K; aviso no sino uma vez por app compatível instalado. Dock: escolher os
+   ícones do sistema (a mesma escolha em todos os aparelhos; Configurações sempre fica).
+
 ## Plano de 25/11/2026, parte 2 (combinado com o Bruno, quatro versões; decisão 73)
 
 Testar tudo também em tela de celular (390 px), com prints.
@@ -35,7 +53,7 @@ Testar tudo também em tela de celular (390 px), com prints.
    RAPL "uncore" via script, temperatura; AMD: uso, VRAM, temperatura, consumo; NVIDIA pelo `nvidia-smi`
    via script, sem teste real), Modelo "GPU", seção no monitor de hardware, histórico de 30 dias. Junto:
    estudo de aceleração por GPU no BrunOS (parecer para o Bruno, sem código).
-4. **0.37.0: Nextcloud por WebDAV** (lançada em 26/11, aguardando teste; fora da 1ª versão: zip, busca,
+4. **0.37.0: Nextcloud por WebDAV** (lançada e testada pelo Bruno em 26/11: "Deu certo!"; fora da 1ª versão: zip, busca,
    editor, extrair, duplicados, mapa do espaço e envio em pedaços com retomada): usuário + senha de app na Integração Nextcloud ligam o lugar
    "Nextcloud" na janela Arquivos: navegar, ver (vídeo com avançar/voltar), baixar, enviar, criar pasta,
    renomear, mover, apagar (lixeira do Nextcloud) e copiar/mover entre o Nextcloud e os discos.

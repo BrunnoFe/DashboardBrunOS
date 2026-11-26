@@ -19,6 +19,16 @@ O arranjo interno de um Widget: Destaque, Grade, Lista, Gráfico, Mídia, Atalho
 (a lista do Transmission com progresso, velocidades, filtro e botões de pausar).
 _Evite_: layout, tipo de widget, estilo
 
+**Densidade** (do Formato Torrents):
+Quão juntas ficam as linhas do Widget: Confortável (o padrão) ou Compacta (linhas finas, para caber mais
+torrents num Widget baixo). Escolhida pelo Bruno no editor do Widget.
+_Evite_: zoom, escala (a Escala é a da Tela inicial ou do Sistema)
+
+**Coluna** (do Formato Torrents):
+Uma informação mostrada em cada torrent (Progresso, Tamanho, Down, Up, Estado, Razão, Enviado, Baixado,
+Falta, Pares, Adicionado em); o Bruno escolhe quais aparecem.
+_Evite_: campo, métrica (a Métrica é a lista inteira de torrents)
+
 **Espaço**:
 Lugar de um Formato que recebe uma Métrica, com rótulo, unidade, ícone e cores próprios.
 _Evite_: slot, campo, célula
@@ -133,6 +143,11 @@ _Evite_: livre, solta, janela do Windows
 **Folha**:
 Estilo em que a Janela fica centralizada, uma por vez, com o fundo escurecido.
 _Evite_: sheet, painel, modal
+
+**Guia** (do Arquivos):
+Uma pasta aberta dentro de uma Janela do Arquivos, como a guia de um navegador; arrastada para fora da
+barra, vira uma Janela própria, que tem como nome a pasta da Guia ativa.
+_Evite_: aba (Aba é a sessão SSH do Terminal), separador
 
 **Janela de app**:
 Janela que mostra um app (do Runtipi ou um link) dentro do BrunOS, sem abrir outra aba.

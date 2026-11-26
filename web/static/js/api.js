@@ -653,7 +653,8 @@ function makeDemo() {
       fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:9091', required: true }, { id: 'user', label: 'Usuário (se tiver)', type: 'text' }, { id: 'secret', label: 'Senha (se tiver)', type: 'secret' }],
       metrics: [M('down', 'Download agora', 'num', { unit: 'B/s', icon: 'download' }), M('up', 'Upload agora', 'num', { unit: 'B/s', icon: 'upload' }), M('downloading', 'Baixando', 'num', { icon: 'download' }), M('seeding', 'Semeando', 'num', { icon: 'upload' }), M('active', 'Ativos', 'num', { icon: 'activity' }), M('paused', 'Pausados', 'num', { icon: 'clock' }), M('total', 'Torrents no total', 'num', { icon: 'box' }), M('errors', 'Com erro', 'num', { icon: 'alert' }), M('downloaded', 'Baixado no total', 'num', { unit: 'B', icon: 'download' }), M('uploaded', 'Enviado no total', 'num', { unit: 'B', icon: 'upload' }), M('downloading_list', 'Lista: baixando agora', 'list', { icon: 'download' }),
         M('torrents', 'Torrents (todos, com detalhes)', 'torrents', { icon: 'download' }), M('ratio', 'Razão geral (enviado ÷ baixado)', 'num', { icon: 'activity' }), M('turtle', 'Modo tartaruga (1 = ligado)', 'num', { icon: 'clock' })],
-      actions: [{ id: 'resume_all', name: 'Retomar todos' }, { id: 'pause_all', name: 'Pausar todos' }, { id: 'turtle_on', name: 'Ligar o modo tartaruga' }, { id: 'turtle_off', name: 'Desligar o modo tartaruga' }], liveEvery: 5,
+      actions: [{ id: 'resume_all', name: 'Retomar todos' }, { id: 'pause_all', name: 'Pausar todos' }, { id: 'turtle_on', name: 'Ligar o modo tartaruga' }, { id: 'turtle_off', name: 'Desligar o modo tartaruga' },
+        { id: 'pause', name: 'Pausar um torrent' }, { id: 'resume', name: 'Retomar um torrent' }], liveEvery: 5,
       alerts: [{ id: 'errors', name: 'Torrent com erro', desc: 'Avisa quando algum torrent fica com erro', metric: 'errors', op: '>', default: 0, level: 'info', fixed: true }, { id: 'down', name: 'Transmission sem responder', op: 'down', level: 'info', fixed: true }] },
     { id: 'syncthing', name: 'Syncthing', desc: 'Pastas sincronizadas, quanto falta e aparelhos conectados', interval: 60,
       fields: [{ id: 'url', label: 'Endereço', type: 'url', placeholder: 'http://192.168.0.10:8384', required: true }, { id: 'secret', label: 'Chave da API', type: 'secret', required: true, help: 'No Syncthing: Ações → Configurações → Geral → Chave da API' }],
@@ -693,8 +694,10 @@ function makeDemo() {
   const trValues = () => ({ down: { n: 2.1e6 + Math.random() * 4e5 }, up: { n: 48e3 }, downloading: { n: 2 }, seeding: { n: 7 }, active: { n: 9 }, paused: { n: 1 }, total: { n: 12 }, errors: { n: 0 }, downloaded: { n: 5.2e11 }, uploaded: { n: 1.9e11 },
     downloading_list: { l: [{ k: 'ubuntu-24.04-live-server-amd64.iso', v: '82% · 1,8 MB/s · falta 2 min' }, { k: 'Documentário (2024) 1080p', v: '38% · 340 KB/s · falta 41 min' }] },
     // 0.35.0: lista do Formato Torrents (nomes genéricos), com pausa e tartaruga da demonstração
-    torrents: { l: trDemo.map(([id, k, n, st, size, down, up, ratio, eta]) => ({ k, n, v: trPaused ? 'Pausado' : st, id: String(id),
-      x: { size, down: trPaused ? 0 : down + (down ? Math.random() * 2e5 : 0), up: trPaused ? 0 : up, ratio, eta } })) },
+    // 0.38.0: também enviado/baixado, pares, adicionado em e a pausa de um torrent só
+    torrents: { l: trDemo.map(([id, k, n, st, size, down, up, ratio, eta], i) => { const off = trPaused || trOne.has(String(id)); return { k, n, v: off ? 'Pausado' : st, id: String(id),
+      x: { size, down: off ? 0 : down + (down ? Math.random() * 2e5 : 0), up: off ? 0 : up, ratio, eta, uploaded: Math.round(size * ratio), downloaded: Math.round((size * n) / 100),
+        peers: off ? 0 : [14, 6, 3, 0, 1, 0][i] ?? 0, added: Math.floor(Date.now() / 1000) - (i + 1) * 86400 * 3 } }; }) },
     ratio: { n: 1.59 }, turtle: { n: trTurtle ? 1 : 0 } });
   // [id, nome, %, estado, tamanho, ↓, ↑, razão, falta (s)]
   const trDemo = [
@@ -703,6 +706,7 @@ function makeDemo() {
     [5, 'Coletânea de músicas livres', 100, 'Semeando', 1.7e9, 0, 0, 0.82, -1], [6, 'debian-13-netinst.iso', 64, 'Na fila', 0.7e9, 0, 0, 0, -1],
   ];
   let trPaused = false, trTurtle = false;
+  const trOne = new Set(); // torrents pausados um a um (ids)
   const syValues = () => ({ folders: { n: 4 }, synced: { n: 3 }, need: { n: 2.5e9 }, errors: { n: 0 }, devices_online: { n: 2 }, devices: { n: 3 }, version: { t: 'v1.29.0' }, uptime: { n: 3 * 86400 },
     folders_list: { l: [dev('Fotos do celular', 'em dia'), dev('Documentos', 'em dia'), dev('Música', 'sincronizando · falta 2,5 GB'), dev('Backups', 'em dia')] },
     devices_list: { l: [dev('Celular', 'conectado'), dev('Notebook', 'conectado'), dev('PC do trabalho', 'desconectado')] } });
@@ -977,7 +981,9 @@ function makeDemo() {
       action: (id, b) => {
         const it = demoInteg.find((x) => x.id === id);
         if (it?.kind === 'transmission') {
-          if (b.action === 'pause_all' || b.action === 'resume_all') trPaused = b.action === 'pause_all';
+          if (b.action === 'pause_all' || b.action === 'resume_all') { trPaused = b.action === 'pause_all'; trOne.clear(); }
+          else if (b.action === 'pause') trOne.add(b.target);
+          else if (b.action === 'resume') { trOne.delete(b.target); trPaused = false; }
           else trTurtle = b.action === 'turtle_on';
         } else if (it?.kind !== 'adguard') return Promise.reject(new Error('ação desconhecida'));
         else agPause = b.action === 'resume' ? null : (b.minutes ? Math.floor(Date.now() / 1000) + b.minutes * 60 : 0);

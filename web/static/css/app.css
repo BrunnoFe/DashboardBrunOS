@@ -413,8 +413,9 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 0; bord
 .f-scroll { flex: 1; overflow-y: auto; padding-bottom: 120px; }
 .f-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
 .f-table th { position: sticky; top: 0; z-index: 1; text-align: left; font-weight: 600; font-size: 11.5px; padding: 10px 10px 8px; color: rgba(255,255,255,.5);
-  /* 0.32.0: fundo de vidro, senão as linhas aparecem por trás ao rolar */
-  background: hsl(var(--bh) 14% 11% / .9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  /* 0.32.0: fundo de vidro, senão as linhas aparecem por trás ao rolar; 0.38.0: no tom da janela (antes
+     ficava mais escuro que ela) */
+  background: hsl(var(--bh) 14% 13% / .55); -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
   box-shadow: inset 0 -1px 0 rgba(255,255,255,.07); }
 .f-table td { padding: 0 10px; height: 38px; white-space: nowrap; }
 .f-table td:first-child { border-radius: 9px 0 0 9px; }

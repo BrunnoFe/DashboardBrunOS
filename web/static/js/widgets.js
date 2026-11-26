@@ -3,7 +3,7 @@
 // definições, séries), então serve igual para a tela inicial e para a prévia do editor.
 import { esc, fmt, fmtBytes, fmtRate, fmtDuration, timeAgo, svg, folderSVG, clamp, cssVal } from './ui.js';
 import { lineSVG, barSVG, donutSVG, sparkSVG, stats, initChartTips } from './charts.js';
-import { batteryGlyph, stateText } from './battery.js';
+import { batteryGlyph, stateText, stateBadge } from './battery.js';
 
 /* ── Tamanhos (em quadros) e Formatos ──────────────────────────── */
 // 0.13.0: Tamanho livre, largura × altura em Quadros (w × h, de 1 × 1 até a Medida da Área). Os nomes
@@ -123,7 +123,8 @@ export function brunosValue(id, S) {
       const p = b.percent;
       return { n: p, max: 100, glyph: b, level: p >= 90 ? 'ok' : p >= 30 ? '' : p >= 20 ? 'aviso' : 'critico' };
     }
-    case 'brunos.battery_state': { if (!sn) return undefined; const s = stateText(b); return { t: b ? `${s.title} · ${s.sub.charAt(0).toLowerCase()}${s.sub.slice(1)}` : s.sub }; }
+    // t: o texto inteiro (vale em qualquer widget); s: o curto, usado embaixo da bateria (o ícone já diz o estado)
+    case 'brunos.battery_state': { if (!sn) return undefined; const s = stateText(b); return { t: b ? `${s.title} · ${s.sub.charAt(0).toLowerCase()}${s.sub.slice(1)}` : s.sub, s: s.short }; }
     case 'brunos.battery_wh': return b?.energyWh != null ? { n: b.energyWh } : sn && { t: '—' };
     case 'brunos.battery_w': return b?.powerW != null ? { n: b.powerW } : sn && { t: '—' };
     case 'brunos.battery_health': return b?.health != null ? { n: b.health } : sn && { t: '—' };
@@ -281,14 +282,15 @@ const KIND_MODELS = {
   ],
 };
 
-/** Modelos agrupados: [{ group, models: [{ id, name, desc, item }] }]. */
+/** Modelos agrupados (cada grupo é uma aba na janela Widgets, 0.38.0):
+ *  [{ key, group, kind ('brunos' | tipo da Integração | 'blank'), models: [{ id, name, desc, item }] }]. */
 export function modelGroups(integrations = []) {
-  const groups = [{ group: 'BrunOS', models: brunosModels().map((m) => ({ ...m, id: `brunos:${m.id}` })) }];
+  const groups = [{ key: 'brunos', group: 'BrunOS', kind: 'brunos', models: brunosModels().map((m) => ({ ...m, id: `brunos:${m.id}` })) }];
   for (const it of integrations) {
     const mk = KIND_MODELS[it.kind];
-    if (mk) groups.push({ group: it.name, models: mk(it).map((m) => ({ ...m, id: `${it.id}:${m.id}` })) });
+    if (mk) groups.push({ key: it.id, group: it.name, kind: it.kind, models: mk(it).map((m) => ({ ...m, id: `${it.id}:${m.id}` })) });
   }
-  groups.push({ group: 'Em branco', models: Object.entries(FORMATS).map(([k, f]) => ({ id: `blank:${k}`, name: f.label, desc: f.desc, item: { format: k, title: f.label, size: k === 'chart' ? 'w' : 's' } })) });
+  groups.push({ key: 'blank', group: 'Em branco', kind: 'blank', models: Object.entries(FORMATS).map(([k, f]) => ({ id: `blank:${k}`, name: f.label, desc: f.desc, item: { format: k, title: f.label, size: k === 'chart' ? 'w' : 's' } })) });
   return groups;
 }
 
@@ -305,6 +307,7 @@ export function normalize(item) {
   it.clock = { style: 'digital', seconds: false, date: true, tz: '', ...(item?.clock || {}) };
   it.notes = { mode: 'text', ...(item?.notes || {}) };
   if (!FORMATS[it.format]) it.format = 'stat';
+  if (it.format === 'torrents') it.tor = torOpts(item?.tor); else delete it.tor; // 0.38.0: Densidade, Colunas, Ordenar por
   // Tamanho livre (0.13.0); widgets guardados antes têm só a letra
   const old = SIZES[item?.size] || SIZES.s;
   const [mw, mh] = minSize(it);
@@ -372,14 +375,14 @@ function statHTML(item, ctx) {
   const glyph = val?.glyph ? batteryGlyph(val.glyph, 'wf-glyph') : wx ? svg(wx, 'wf-glyph wx') : '';
   let subTxt = '';
   if (sub) {
-    const sv = subVal, sd = ctx.def(sub.metric);
+    const sv = val?.glyph && subVal?.s ? { ...subVal, t: subVal.s } : subVal, sd = ctx.def(sub.metric);
     const lbl = sub.label != null ? sub.label : labelOf(sub, sd);
     subTxt = `${fmtText(sv, sd, sub)}${lbl ? ` ${lbl}` : ''}`;
   }
   const pct = max && val?.n != null ? clamp((val.n / max) * 100, 0, 100) : null;
   const big = item.size === 't' || item.size === 'l';
   return `${item.caption ? `<span class="w-caption">${esc(item.title)}</span>` : ''}
-    <span class="w-value wf-main${lv(levelOf(val, def, main))}">${glyph}<span>${esc(f.v)}</span><span class="w-unit">${esc(f.u + maxTxt)}</span></span>
+    <span class="w-value wf-main${lv(levelOf(val, def, main))}">${glyph}<span>${esc(f.v)}</span><span class="w-unit">${esc(f.u + maxTxt)}</span>${val?.glyph ? stateBadge(val.glyph) : ''}</span>
     ${main.spark ? `<span class="wf-spark ${cells.length && !big ? 'low' : ''}">${sparkFor(main, ctx, item.size, 200, big ? 70 : cells.length ? 18 : 30)}</span>` : ''}
     ${subTxt ? `<span class="w-sub wf-sub">${esc(subTxt)}</span>` : ''}
     ${pct != null && item.bar !== false && (!cells.length || big) ? `<span class="track wf-bar ${item.look?.follow === false ? '' : 'white'}"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}
@@ -570,43 +573,87 @@ const TOR_ST = { Baixando: 'dl', Semeando: 'seed', Pausado: 'pause', 'Na fila': 
 const torMatch = (f, x) => (f === 'down' ? ['Baixando', 'Na fila', 'Verificando'].includes(x.v) : f === 'seed' ? x.v === 'Semeando' : true);
 const torRate = (b) => (b > 0 ? fmtRate(b) : '—');
 const torPct = (n) => `${fmt(n ?? 0, (n ?? 0) % 1 && n < 100 ? 1 : 0)}%`;
+// 0.38.0 (decisão 74): Colunas que o Bruno escolhe [chave, nome no editor, cabeçalho, largura na tabela]
+export const TOR_COLS = [
+  ['progress', 'Progresso', 'Progresso', 'minmax(86px, 1.2fr)'], ['size', 'Tamanho', 'Tamanho', '66px'],
+  ['down', 'Download agora', 'Down', '70px'], ['up', 'Upload agora', 'Up', '70px'], ['state', 'Estado', 'Estado', '84px'],
+  ['ratio', 'Razão (enviado ÷ baixado)', 'Razão', '52px'], ['uploaded', 'Enviado no total', 'Enviado', '70px'],
+  ['downloaded', 'Baixado no total', 'Baixado', '70px'], ['eta', 'Tempo que falta', 'Falta', '64px'],
+  ['peers', 'Pares conectados', 'Pares', '46px'], ['added', 'Adicionado em', 'Adicionado', '74px'],
+];
+export const TOR_DEFAULT_COLS = ['progress', 'size', 'down', 'up', 'state'];
+export const TOR_SORTS = [['state', 'Estado (com erro e baixando primeiro)'], ['name', 'Nome'], ['progress', 'Progresso'], ['down', 'Download agora'],
+  ['up', 'Upload agora'], ['size', 'Tamanho'], ['ratio', 'Razão'], ['uploaded', 'Enviado no total'], ['added', 'Mais recentes primeiro']];
+// no widget estreito (celular), além do nome e da barra cabem 2 Colunas: as primeiras escolhidas nesta ordem
+const TOR_NARROW = ['state', 'down', 'up', 'eta', 'ratio', 'size', 'uploaded', 'downloaded', 'peers', 'added'];
+const torDate = (s) => (s > 0 ? new Date(s * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
+function torCell(k, x, X, st) {
+  switch (k) {
+    case 'progress': return `<span class="tor-bar st-${st}"><i style="width:${clamp(x.n ?? 0, 0, 100).toFixed(1)}%"></i></span><small>${torPct(x.n)}</small>`;
+    case 'size': return X.size ? fmtBytes(X.size) : '—';
+    case 'down': return torRate(X.down);
+    case 'up': return torRate(X.up);
+    case 'state': return `<b class="tor-st st-${st}">${esc(x.v || '')}</b>`;
+    case 'ratio': return X.ratio != null ? fmt(X.ratio, 2) : '—';
+    case 'uploaded': return X.uploaded > 0 ? fmtBytes(X.uploaded) : '—';
+    case 'downloaded': return X.downloaded > 0 ? fmtBytes(X.downloaded) : '—';
+    case 'eta': return x.v === 'Baixando' && X.eta > 0 ? fmtDuration(X.eta) : '—';
+    case 'peers': return X.peers != null ? String(X.peers) : '—';
+    case 'added': return torDate(X.added);
+  }
+  return '';
+}
+const TOR_KEY = { name: (x) => x.k.toLowerCase(), progress: (x) => x.n ?? 0, down: (x) => x.x?.down || 0, up: (x) => x.x?.up || 0, size: (x) => x.x?.size || 0,
+  ratio: (x) => x.x?.ratio || 0, uploaded: (x) => x.x?.uploaded || 0, added: (x) => x.x?.added || 0 };
+function torSort(list, by) {
+  const key = TOR_KEY[by]; if (!key) return list; // 'state': a ordem que o servidor manda
+  return [...list].sort((a, b) => (by === 'name' ? key(a).localeCompare(key(b), 'pt-BR') : key(b) - key(a)));
+}
+// Opções do Formato (item.tor), conferidas: Densidade, Colunas (na ordem da tabela) e "Ordenar por"
+export function torOpts(o = {}) {
+  const valid = new Set(TOR_COLS.map(([k]) => k));
+  const cols = Array.isArray(o.cols) ? TOR_COLS.map(([k]) => k).filter((k) => o.cols.includes(k) && valid.has(k)) : TOR_DEFAULT_COLS;
+  return { density: o.density === 'compact' ? 'compact' : 'comfy', cols, sort: TOR_SORTS.some(([k]) => k === o.sort) ? o.sort : 'state' };
+}
 function torrentsHTML(item, ctx, id) {
   const slot = item.slots[0];
   if (!slot) return `<span class="w-empty">Escolha os torrents de uma integração do Transmission</span>`;
   const iid = slot.metric.split('.')[0], val = ctx.value(slot.metric);
   const ui = torUI[id || 'prev'] ||= { filter: 'all', open: '' };
+  const o = torOpts(item.tor), dense = o.density === 'compact';
   const all = val?.l || [];
-  const list = all.filter((x) => torMatch(ui.filter, x));
+  const list = torSort(all.filter((x) => torMatch(ui.filter, x)), o.sort);
   const num = (m) => ctx.value(`${iid}.${m}`)?.n;
   const turtle = num('turtle') === 1, ratio = num('ratio');
   const anyActive = all.some((x) => x.v !== 'Pausado');
   const count = (f) => all.filter((x) => torMatch(f, x)).length;
+  const narrow = TOR_NARROW.filter((k) => o.cols.includes(k)).slice(0, 2);
+  const tpl = ['minmax(0, 2.4fr)', ...o.cols.map((k) => TOR_COLS.find((c) => c[0] === k)[3])].join(' ');
   const rows = list.map((x) => {
-    const st = TOR_ST[x.v] || 'queue', X = x.x || {}, open = ui.open === x.id;
-    const eta = x.v === 'Baixando' && X.eta > 0 ? `falta ${fmtDuration(X.eta)}` : '';
+    const st = TOR_ST[x.v] || 'queue', X = x.x || {}, open = ui.open === x.id, paused = x.v === 'Pausado';
+    const cells = o.cols.map((k) => `<span class="${k === 'progress' ? 'tor-prog' : `tor-c tor-${k}`}${narrow[0] === k ? ' tor-k1' : narrow[1] === k ? ' tor-k2' : ''}">${torCell(k, x, X, st)}</span>`).join('');
+    // linha aberta: tudo o que se sabe do torrent e o botão de pausar/retomar só ele (Ação reversível)
+    const more = open ? `<span class="tor-more">${TOR_COLS.filter(([k]) => k !== 'progress' && k !== 'state').map(([k, , h]) => { const v = torCell(k, x, X, st); return v === '—' ? '' : `<span><small>${h}</small> ${v}</span>`; }).join('')}
+      ${x.id ? `<span class="tor-btn tor-one" data-tor="act" data-act="${paused ? 'resume' : 'pause'}" data-target="${esc(x.id)}" role="button" tabindex="0" title="${paused ? 'Retomar' : 'Pausar'} este torrent">${svg(paused ? 'play' : 'pause')}<span>${paused ? 'Retomar' : 'Pausar'}</span></span>` : ''}</span>` : '';
     return `<span class="tor-row ${open ? 'open' : ''}" data-tor="row" data-tid="${esc(x.id || '')}" role="button" tabindex="0" aria-expanded="${open}">
-      <span class="tor-name" title="${esc(x.k)}"><i class="tor-dot st-${st}"></i>${esc(x.k)}</span>
-      <span class="tor-prog"><span class="tor-bar st-${st}"><i style="width:${clamp(x.n ?? 0, 0, 100).toFixed(1)}%"></i></span><small>${torPct(x.n)}</small></span>
-      <span class="tor-c tor-size">${X.size ? fmtBytes(X.size) : '—'}</span>
-      <span class="tor-c tor-dn">${torRate(X.down)}</span>
-      <span class="tor-c tor-up">${torRate(X.up)}</span>
-      <span class="tor-c tor-stc"><b class="tor-st st-${st}">${esc(x.v || '')}</b></span>
-      ${open ? `<span class="tor-more"><span>${esc(x.v || '')}</span><span>${X.size ? fmtBytes(X.size) : '—'}</span><span>↓ ${torRate(X.down)}</span><span>↑ ${torRate(X.up)}</span>${X.ratio != null ? `<span>Razão ${fmt(X.ratio, 2)}</span>` : ''}${eta ? `<span>${esc(eta)}</span>` : ''}</span>` : ''}
-    </span>`;
+      <span class="tor-name" title="${esc(x.k)}"><i class="tor-dot st-${st}"></i>${esc(x.k)}</span>${cells}${more}</span>`;
   }).join('');
   const empty = !val ? 'carregando…' : !all.length ? 'Nenhum torrent no Transmission' : 'Nenhum torrent neste filtro';
-  return `<span class="tor">
-    <span class="tor-top">${TOR_FILTERS.map(([k, l]) => `<span class="tor-chip ${ui.filter === k ? 'on' : ''}" data-tor="filter" data-f="${k}" role="button" tabindex="0">${l}<small>${count(k)}</small></span>`).join('')}</span>
-    <span class="tor-head"><span>Nome</span><span>Progresso</span><span class="tor-c">Tamanho</span><span class="tor-c">Down</span><span class="tor-c">Up</span><span class="tor-c">Estado</span></span>
-    <span class="tor-list">${rows || `<span class="w-empty">${empty}</span>`}</span>
-    <span class="tor-foot">
-      <span class="tor-tot"><span title="Download agora">↓ ${torRate(num('down'))}</span><span title="Upload agora">↑ ${torRate(num('up'))}</span>${ratio != null ? `<span class="tor-ratio" title="Razão geral (enviado ÷ baixado)">Razão ${fmt(ratio, 2)}</span>` : ''}</span>
-      <span class="tor-acts" data-iid="${esc(iid)}">
+  const chips = TOR_FILTERS.map(([k, l]) => `<span class="tor-chip ${ui.filter === k ? 'on' : ''}" data-tor="filter" data-f="${k}" role="button" tabindex="0">${l}<small>${count(k)}</small></span>`).join('');
+  const tot = `<span class="tor-tot"><span title="Download agora">↓ ${torRate(num('down'))}</span><span title="Upload agora">↑ ${torRate(num('up'))}</span>${ratio != null ? `<span class="tor-ratio" title="Razão geral (enviado ÷ baixado)">Razão ${fmt(ratio, 2)}</span>` : ''}</span>`;
+  const acts = `<span class="tor-acts">
         <span class="tor-btn" data-tor="act" data-act="resume_all" role="button" tabindex="0" title="Retomar todos" aria-label="Retomar todos">${svg('play')}</span>
         <span class="tor-btn" data-tor="act" data-act="pause_all" role="button" tabindex="0" title="Pausar todos" aria-label="Pausar todos" ${anyActive ? '' : 'aria-disabled="true"'}>${svg('pause')}</span>
         <span class="tor-btn tor-turtle ${turtle ? 'on' : ''}" data-tor="act" data-act="${turtle ? 'turtle_off' : 'turtle_on'}" role="button" tabindex="0" title="${turtle ? 'Modo tartaruga ligado (velocidade limitada): desligar' : 'Ligar o modo tartaruga (limita a velocidade)'}" aria-pressed="${turtle}">${svg('turtle')}</span>
-      </span>
-    </span>
+      </span>`;
+  const listHTML = `<span class="tor-list">${rows || `<span class="w-empty">${empty}</span>`}</span>`;
+  // Compacta: filtro, totais e botões numa linha só em cima, sem cabeçalho; sobra altura para mais torrents
+  if (dense) return `<span class="tor dense" data-iid="${esc(iid)}" style="--tor-cols:${tpl}"><span class="tor-top">${chips}<span class="tor-sp"></span>${tot}${acts}</span>${listHTML}</span>`;
+  return `<span class="tor" data-iid="${esc(iid)}" style="--tor-cols:${tpl}">
+    <span class="tor-top">${chips}</span>
+    <span class="tor-head"><span>Nome</span>${o.cols.map((k) => `<span${k === 'progress' ? '' : ' class="tor-c"'}>${TOR_COLS.find((c) => c[0] === k)[2]}</span>`).join('')}</span>
+    ${listHTML}
+    <span class="tor-foot">${tot}${acts}</span>
   </span>`;
 }
 

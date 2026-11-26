@@ -46,7 +46,8 @@ func (transmission) Info() KindInfo {
 			{ID: "turtle", Name: "Modo tartaruga (1 = ligado)", Kind: Num, Icon: "clock"},
 		},
 		Actions: []ActionDef{{ID: "resume_all", Name: "Retomar todos"}, {ID: "pause_all", Name: "Pausar todos"},
-			{ID: "turtle_on", Name: "Ligar o modo tartaruga"}, {ID: "turtle_off", Name: "Desligar o modo tartaruga"}},
+			{ID: "turtle_on", Name: "Ligar o modo tartaruga"}, {ID: "turtle_off", Name: "Desligar o modo tartaruga"},
+			{ID: "pause", Name: "Pausar um torrent"}, {ID: "resume", Name: "Retomar um torrent"}},
 		LiveEvery: 5,
 		Alerts: []AlertDef{
 			{ID: "errors", Name: "Torrent com erro", Desc: "Avisa quando algum torrent fica com erro", Metric: "errors", Op: ">", Default: 0, Level: "info", Fixed: true},
@@ -175,9 +176,11 @@ func (transmission) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[
 			Ratio   float64 `json:"uploadRatio"`
 			Up      float64 `json:"uploadedEver"`
 			Down    float64 `json:"downloadedEver"`
+			Peers   float64 `json:"peersConnected"`
+			Added   float64 `json:"addedDate"`
 		} `json:"torrents"`
 	}
-	fields := []string{"id", "name", "percentDone", "rateDownload", "rateUpload", "status", "eta", "error", "sizeWhenDone", "uploadRatio", "uploadedEver", "downloadedEver"}
+	fields := []string{"id", "name", "percentDone", "rateDownload", "rateUpload", "status", "eta", "error", "sizeWhenDone", "uploadRatio", "uploadedEver", "downloadedEver", "peersConnected", "addedDate"}
 	if err := trCall(ctx, c, cfg, &sid, "torrent-get", map[string]any{"fields": fields}, &tg); err != nil {
 		return nil, err
 	}
@@ -202,7 +205,9 @@ func (transmission) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[
 		downAll += t.Down
 		all = append(all, trRow{t.ID, t.Name, t.Status, t.Error != 0, Item{
 			Label: t.Name, Num: fp(round1(t.Percent * 100)), Text: trState(t.Status, t.Error != 0), ID: strconv.Itoa(t.ID),
-			X: map[string]float64{"size": t.Size, "down": t.Rate, "up": t.RateUp, "ratio": round2(t.Ratio), "eta": t.ETA},
+			// 0.38.0: também o total enviado/baixado, pares conectados e quando foi adicionado (Colunas do widget)
+			X: map[string]float64{"size": t.Size, "down": t.Rate, "up": t.RateUp, "ratio": round2(t.Ratio), "eta": t.ETA,
+				"uploaded": t.Up, "downloaded": t.Down, "peers": t.Peers, "added": t.Added},
 		}})
 		switch t.Status {
 		case 4: // baixando
@@ -298,13 +303,24 @@ func trState(status int, err bool) string {
 
 func round2(v float64) float64 { return float64(int64(v*100+0.5)) / 100 }
 
-// Action: pausar/retomar todos (torrent-stop/torrent-start sem ids = todos) e o modo tartaruga
-// (limite de velocidade alternativo do próprio Transmission). Nada apaga torrent (decisão 73).
+// Action: pausar/retomar todos (torrent-stop/torrent-start sem ids = todos), um torrent só (0.38.0, pelo
+// id em Target) e o modo tartaruga (limite de velocidade alternativo do próprio Transmission). Nada apaga
+// torrent (decisão 73).
 func (transmission) Action(ctx context.Context, c *http.Client, cfg Config, req ActionReq) (string, error) {
 	sid := ""
 	var out struct{}
 	var err error
 	switch req.Action {
+	case "pause", "resume":
+		id, e := strconv.Atoi(req.Target)
+		if e != nil || id <= 0 {
+			return "", &ErrInput{"torrent inválido"}
+		}
+		method := map[string]string{"pause": "torrent-stop", "resume": "torrent-start"}[req.Action]
+		if err = trCall(ctx, c, cfg, &sid, method, map[string]any{"ids": []int{id}}, &out); err != nil {
+			return "", err
+		}
+		return map[string]string{"pause": "pausar o torrent ", "resume": "retomar o torrent "}[req.Action] + strconv.Itoa(id), nil
 	case "pause_all":
 		err = trCall(ctx, c, cfg, &sid, "torrent-stop", map[string]any{}, &out)
 	case "resume_all":

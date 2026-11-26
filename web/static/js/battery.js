@@ -25,21 +25,33 @@ export function batteryGlyph(b, cls = '') {
   </svg>`;
 }
 
+// state: 'battery' | 'charging' | 'ac' (o ícone do widget); short: a linha curta do widget (0.38.0), que
+// cabe no Largo porque o estado já aparece no ícone ao lado da porcentagem.
 export function stateText(b) {
-  if (!b) return { title: 'Sem bateria', sub: 'Nenhuma bateria encontrada' };
+  if (!b) return { title: 'Sem bateria', sub: 'Nenhuma bateria encontrada', short: 'Nenhuma bateria encontrada', state: '' };
   const ac = b.ac ?? b.status !== 'Discharging';
   if (b.status === 'Discharging' || ac === false) {
-    return { title: 'Na bateria', sub: b.minutesLeft != null ? `${fmtMinutes(b.minutesLeft)} restantes` : 'Calculando autonomia…' };
+    const sub = b.minutesLeft != null ? `${fmtMinutes(b.minutesLeft)} restantes` : 'Calculando autonomia…';
+    return { title: 'Na bateria', sub, short: sub, state: 'battery' };
   }
   if (b.status === 'Charging') {
     const lim = b.chargeLimit ? ` até ${b.chargeLimit}%` : '';
-    return { title: 'Carregando', sub: b.minutesFull != null ? `Cheia${lim} em ${fmtMinutes(b.minutesFull)}` : `Carregando${lim}` };
+    const sub = b.minutesFull != null ? `Cheia${lim} em ${fmtMinutes(b.minutesFull)}` : `Carregando${lim}`;
+    return { title: 'Carregando', sub, short: sub, state: 'charging' };
   }
   const full = b.status === 'Full' || b.percent >= 99;
+  const kept = full ? 'Carga completa' : b.chargeLimit ? `Carga mantida em ${b.chargeLimit}%` : 'Carga mantida';
   return {
-    title: 'Na tomada',
-    sub: b.estimate != null ? `Autonomia estimada: ${fmtMinutes(b.estimate)}` : full ? 'Carga completa' : b.chargeLimit ? `Carga mantida em ${b.chargeLimit}%` : 'Carga mantida',
+    title: 'Na tomada', state: 'ac',
+    sub: b.estimate != null ? `Autonomia estimada: ${fmtMinutes(b.estimate)}` : kept,
+    short: b.estimate != null ? `Autonomia ~${fmtMinutes(b.estimate)}` : kept,
   };
+}
+const STATE_ICON = { ac: ['plug', 'Na tomada'], charging: ['bolt', 'Carregando'], battery: ['battery', 'Na bateria'] };
+// Selo do estado ao lado da porcentagem no widget: tomada, raio (carregando) ou bateria (descarregando).
+export function stateBadge(b) {
+  const s = stateText(b), [ic, label] = STATE_ICON[s.state] || [];
+  return ic ? `<span class="wb-state st-${s.state}" title="${label}" aria-label="${label}">${svg(ic)}</span>` : '';
 }
 
 const setText = (el, v) => { if (el && el.textContent !== v) el.textContent = v; };

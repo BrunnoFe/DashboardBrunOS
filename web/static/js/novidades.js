@@ -6,6 +6,12 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.38.0', date: '2026-11-26', items: [
+    { t: 'Celular: cada tela rola sozinha', d: 'Desceu até o fim dos widgets e deslizou para o lado? Os apps já aparecem lá em cima, e a saudação fica parada no topo.' },
+    { t: 'Arquivos com o nome da pasta', d: 'A janela mostra o nome da pasta em que você está, em vez de "Arquivos (2)". Ao arrastar uma guia para fora, uma miniatura acompanha o mouse e a janela nova nasce onde você soltar.' },
+    { t: 'Torrents do seu jeito', d: 'No editor do widget, escolha as colunas (enviado, pares, quando foi adicionado...), a ordem e o modo Compacto, que cabe mais torrents. Toque num torrent para pausar ou retomar só ele.' },
+    { t: 'Modelos em abas e bateria mais clara', d: 'Os modelos de widget ficam separados por app. O widget da bateria ganhou um ícone de tomada, raio ou bateria, e o texto não corta mais.' },
+  ] },
   { v: '0.37.0', date: '2026-11-26', items: [
     { t: 'Seu Nextcloud dentro do Arquivos', d: 'Na integração do Nextcloud, coloque seu usuário e uma senha de app. A pasta dele aparece em Nuvem, como uma pasta do servidor.' },
     { t: 'Leve e traga arquivos', d: 'Copie ou mova entre o Nextcloud e os discos do servidor, envie, renomeie e crie pastas. O que você apaga vai para a lixeira do próprio Nextcloud.' },

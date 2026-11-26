@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -228,7 +229,7 @@ func TestTransmissionTorrents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"result":"success","arguments":{"alt-speed-enabled":true}}`))
 		case "torrent-get":
 			_, _ = w.Write([]byte(`{"result":"success","arguments":{"torrents":[
-				{"id":3,"name":"Zeta semeando","percentDone":1,"rateUpload":5000,"status":6,"eta":-1,"error":0,"sizeWhenDone":7.4e9,"uploadRatio":1.587,"uploadedEver":3e9,"downloadedEver":2e9},
+				{"id":3,"name":"Zeta semeando","percentDone":1,"rateUpload":5000,"status":6,"eta":-1,"error":0,"sizeWhenDone":7.4e9,"uploadRatio":1.587,"uploadedEver":3e9,"downloadedEver":2e9,"peersConnected":4,"addedDate":1700000000},
 				{"id":1,"name":"Alfa parado","percentDone":0.5,"status":0,"eta":-1,"error":0,"sizeWhenDone":2e9,"uploadedEver":0,"downloadedEver":1e9},
 				{"id":2,"name":"Beta baixando","percentDone":0.256,"rateDownload":2e6,"status":4,"eta":600,"error":0,"sizeWhenDone":1e9,"uploadedEver":0,"downloadedEver":0}]}}`))
 		default:
@@ -252,6 +253,10 @@ func TestTransmissionTorrents(t *testing.T) {
 	if l[1].Text != "Semeando" || l[1].X["ratio"] != 1.59 || l[2].Text != "Pausado" {
 		t.Fatalf("estados: %+v %+v", l[1], l[2])
 	}
+	// 0.38.0: Colunas novas (enviado, baixado, pares, adicionado em)
+	if z := l[1].X; z["uploaded"] != 3e9 || z["downloaded"] != 2e9 || z["peers"] != 4 || z["added"] != 1700000000 {
+		t.Fatalf("colunas novas: %+v", z)
+	}
 	if *vals["ratio"].Num != 1 || *vals["turtle"].Num != 1 { // 3e9 enviados ÷ 3e9 baixados
 		t.Fatalf("razão %v tartaruga %v", vals["ratio"], vals["turtle"])
 	}
@@ -268,6 +273,46 @@ func TestTransmissionTorrents(t *testing.T) {
 	}
 	if !hasAction(transmission{}.Info(), "turtle_on") || hasAction(transmission{}.Info(), "remove") {
 		t.Fatal("Ações do Transmission erradas")
+	}
+}
+
+// 0.38.0: pausar/retomar um torrent só manda o id dele; id que não é número nem chega ao Transmission.
+func TestTransmissionOneTorrent(t *testing.T) {
+	var mu sync.Mutex
+	got := []string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method    string `json:"method"`
+			Arguments struct {
+				IDs []int `json:"ids"`
+			} `json:"arguments"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		ids := []string{}
+		for _, id := range req.Arguments.IDs {
+			ids = append(ids, strconv.Itoa(id))
+		}
+		got = append(got, req.Method+":"+strings.Join(ids, ","))
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"result":"success","arguments":{}}`))
+	}))
+	defer srv.Close()
+	cfg := Config{URL: srv.URL}
+	for _, a := range []ActionReq{{Action: "pause", Target: "3"}, {Action: "resume", Target: "12"}} {
+		if _, err := (transmission{}).Action(context.Background(), srv.Client(), cfg, a); err != nil {
+			t.Fatal(a, err)
+		}
+	}
+	for _, bad := range []string{"", "abc", "-1", "0", "3;rm"} {
+		if _, err := (transmission{}).Action(context.Background(), srv.Client(), cfg, ActionReq{Action: "pause", Target: bad}); err == nil {
+			t.Fatalf("aceitou o alvo %q", bad)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(got, " ") != "torrent-stop:3 torrent-start:12" {
+		t.Fatalf("chamadas: %v", got)
 	}
 }
 

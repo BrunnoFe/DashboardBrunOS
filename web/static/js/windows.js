@@ -73,7 +73,18 @@ function save(w) { try { localStorage.setItem(KEY + w.id, JSON.stringify({ rect:
 function pushHist() { if (histPushed) return; try { history.pushState({ brunosWin: 1 }, ''); histPushed = true; } catch { /* ok */ } }
 function changed() { cfg.onChange?.(); }
 
-// Abre (ou traz de volta) uma janela. o = { id, title, icon (HTML), originEl, mount(body, w) → limpeza?, tools: [{icon, label, run}] }
+// Troca o título de uma janela aberta (0.38.0: as janelas do Arquivos mostram a pasta da Guia ativa).
+export function setTitle(id, title) {
+  const w = wins.get(id); if (!w || !title || w.title === title) return;
+  w.title = title;
+  const t = $('.win-title', w.el); if (t) t.textContent = title;
+  w.el.setAttribute('aria-label', title);
+  changed();
+}
+
+// Abre (ou traz de volta) uma janela. o = { id, title, icon (HTML), originEl, mount(body, w) → limpeza?, tools: [{icon, label, run}],
+//   at: {x, y} (Flutuante: a barra da janela fica debaixo deste ponto), fromRect (a janela cresce a partir dele),
+//   slide (tela cheia: entra deslizando de lado) }
 export async function open(o) {
   const old = wins.get(o.id);
   if (old) { if (old.min) setMin(old, false); else focus(old.id); return true; }
@@ -95,6 +106,10 @@ export async function open(o) {
     state: saved?.state === 'max' ? 'max' : 'normal',
     rect: saved?.rect && saved.rect.w > 0 ? saved.rect : defaultRect(innerWidth, innerHeight, dockSpace()),
   };
+  if (o.at) { // Guia solta fora da barra: a janela nova nasce onde o mouse soltou, no tamanho de sempre
+    w.state = 'normal';
+    w.rect = clampRect({ ...w.rect, x: Math.round(o.at.x - Math.min(140, w.rect.w / 3)), y: Math.round(o.at.y - 18) }, innerWidth, innerHeight);
+  }
   w.el = html(`<section class="win" role="dialog" aria-label="${esc(o.title)}" data-win="${esc(o.id)}">
     <header class="win-bar"><span class="win-ico">${o.icon || ''}</span><span class="win-title">${esc(o.title)}</span><span class="win-sp"></span>
       <span class="win-tools">${w.tools.map((t, i) => `<button class="win-btn" data-tool="${i}" title="${esc(t.label)}" aria-label="${esc(t.label)}">${svg(t.icon)}</button>`).join('')}</span>
@@ -109,7 +124,7 @@ export async function open(o) {
   bind(w);
   try { w.cleanup = o.mount?.($('.win-body', w.el), w) || null; } catch (e) { console.error(e); }
   layout();
-  animateOpen(w, o.originEl);
+  animateOpen(w, o.originEl, o);
   pushHist();
   changed();
   return true;
@@ -315,10 +330,14 @@ function dockTarget(w) {
   const it = sys || document.querySelector(`.dock-item[data-app="${CSS.escape(w.id)}"]`) || $('#dock');
   return it?.getBoundingClientRect();
 }
-function animateOpen(w, originEl) {
+function animateOpen(w, originEl, opts = {}) {
   const el = w.el;
   if (reduced()) return animate(el, [{ opacity: 0 }, { opacity: 1 }], 120);
-  if (mode() === 'full') return animate(el, [{ transform: 'translateY(35%)', opacity: 0 }, { transform: 'none', opacity: 1 }], 260);
+  if (mode() === 'full') return animate(el, opts.slide ? [{ transform: 'translateX(100%)' }, { transform: 'none' }] : [{ transform: 'translateY(35%)', opacity: 0 }, { transform: 'none', opacity: 1 }], 260);
+  if (opts.fromRect?.width) { // cresce a partir da miniatura da Guia arrastada
+    const r = el.getBoundingClientRect();
+    return animate(el, [{ transform: toward(r, opts.fromRect), opacity: 0.6 }, { transform: 'none', opacity: 1 }], 260);
+  }
   const o = originEl?.isConnected && originEl.getBoundingClientRect();
   if (o && o.width) {
     const r = el.getBoundingClientRect();

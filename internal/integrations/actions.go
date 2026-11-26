@@ -22,10 +22,12 @@ type ActionDef struct {
 	Name string `json:"name"`
 }
 
-// ActionReq é o pedido de uma Ação. Minutes serve às pausas (0 = até ligar de novo).
+// ActionReq é o pedido de uma Ação. Minutes serve às pausas (0 = até ligar de novo). Target é o item
+// em que a Ação age, quando ela é de um item só (0.38.0: o id de um torrent); cada Tipo confere o formato.
 type ActionReq struct {
 	Action  string `json:"action"`
 	Minutes int    `json:"minutes"`
+	Target  string `json:"target,omitempty"`
 }
 
 // ActionKind é um Tipo que aceita Ações. Devolve um texto curto para o registro (ex.: "pausar 30 min").
@@ -64,6 +66,9 @@ func (h *Hub) DoAction(ctx context.Context, id string, req ActionReq) error {
 	}
 	if req.Minutes < 0 || req.Minutes > maxPauseMinutes {
 		return &ErrInput{"tempo inválido"}
+	}
+	if len(req.Target) > 64 {
+		return &ErrInput{"item inválido"}
 	}
 	cfg, err := h.Store.Config(it)
 	if err != nil {

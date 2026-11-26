@@ -5,8 +5,9 @@
 //
 // Atalhos: Alt+T nova guia, Alt+W fecha a guia, Alt+1…9 vai para a guia (o Chrome não deixa sites usarem
 // Ctrl+T, Ctrl+W nem Ctrl+Tab, que são das abas dele). Clique do meio numa guia fecha.
-import { $, esc, svg, contextMenu } from './ui.js';
+import { $, esc, svg, html, contextMenu } from './ui.js';
 import { mountFiles } from './files.js';
+import { mode as winMode } from './windows.js';
 
 const KEY = 'brunos.files.tabs';
 const MAX = 12;
@@ -17,7 +18,8 @@ const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || null;
 const store = (v) => { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* sem localStorage */ } };
 
 /** o = { ctx, opts (pasta pedida), adopt (guia vinda de outra janela), persist (janela principal),
- *        closeWin(), detach(tab) → abre uma janela nova com a guia } */
+ *        closeWin(), onTitle(título da Guia ativa) → nome da janela,
+ *        detach(tab, { at, fromRect } | { slide }) → abre uma janela nova com a guia } */
 export function mountTabs(body, o) {
   body.innerHTML = `<div class="ftabs"><div class="ftabs-bar"><div class="ftabs-list" role="tablist"></div>
     <button class="ftabs-add" data-tb="add" title="Nova guia (Alt+T)" aria-label="Nova guia">${svg('plus')}</button></div>
@@ -58,13 +60,13 @@ export function mountTabs(body, o) {
     if (!T.tabs.length) { save(); o.closeWin(); return; }
     if (T.active === tab) activate(T.tabs[Math.min(i, T.tabs.length - 1)]); else { draw(); save(); }
   }
-  function detach(tab) {
+  function detach(tab, drop) {
     if (T.tabs.length < 2) return; // a única guia já é a janela inteira
     const i = T.tabs.indexOf(tab);
     T.tabs.splice(i, 1);
     tab.el.remove(); // sai do DOM sem descartar: a janela nova adota a mesma página
     if (T.active === tab) activate(T.tabs[Math.min(i, T.tabs.length - 1)]); else { draw(); save(); }
-    o.detach(tab);
+    o.detach(tab, drop || (winMode() === 'full' ? { slide: true } : {})); // tela cheia: a janela nova entra deslizando
   }
   function draw() {
     list.innerHTML = T.tabs.map((t, i) => `<div class="ftab ${t === T.active ? 'on' : ''}" role="tab" tabindex="0" aria-selected="${t === T.active}" data-tab="${t.id}" title="${esc(t.title)}${i < 9 ? ` (Alt+${i + 1})` : ''}">
@@ -72,6 +74,7 @@ export function mountTabs(body, o) {
       <button class="ftab-x" data-tb="close" aria-label="Fechar a guia ${esc(t.title)}" title="Fechar a guia (Alt+W)">${svg('x')}</button></div>`).join('');
     bar.classList.toggle('single', T.tabs.length === 1);
     $('[data-tb="add"]', body).disabled = T.tabs.length >= MAX;
+    o.onTitle?.(T.active?.title);
   }
   function save() {
     if (!o.persist) return;
@@ -102,16 +105,27 @@ export function mountTabs(body, o) {
       { icon: 'x', label: 'Fechar as outras guias', hidden: T.tabs.length < 2, run: () => { for (const t of [...T.tabs]) if (t !== tab) closeTab(t); } },
     ]);
   });
-  // arrastar uma guia para fora da barra: vira uma janela nova (dentro da barra, só reordena)
+  // arrastar uma guia para fora da barra: vira uma janela nova (dentro da barra, só reordena). 0.38.0: fora
+  // da barra, uma miniatura da janela segue o mouse e a janela nova cresce dela, onde soltou. Em tela
+  // cheia (celular) não sai da barra: lá fica o "Mover para nova janela" do menu.
   list.addEventListener('pointerdown', (e) => {
     const tab = byId(e.target);
     if (!tab || e.button !== 0 || e.target.closest('[data-tb]')) return;
-    const el = e.target.closest('.ftab'), sx = e.clientX, sy = e.clientY;
-    let out = false, moved = false;
+    const el = e.target.closest('.ftab'), sx = e.clientX, sy = e.clientY, canOut = winMode() !== 'full';
+    let out = false, moved = false, ghost = null, last = { x: sx, y: sy };
+    const showGhost = (on, ev) => {
+      if (on && !ghost) {
+        ghost = html(`<div class="ftab-ghost" aria-hidden="true"><div class="ftab-ghost-bar"><span class="ftab-ico">${svg(tab.loc?.mode === 'trash' ? 'trash' : 'folder')}</span><b>${esc(tab.title)}</b></div><div class="ftab-ghost-body"><i></i><i></i><i></i><i></i></div></div>`);
+        document.body.append(ghost);
+      } else if (!on && ghost) { ghost.remove(); ghost = null; }
+      if (ghost && ev) ghost.style.transform = `translate(${ev.clientX - 70}px, ${ev.clientY - 14}px)`;
+    };
     const move = (ev) => {
       const r = bar.getBoundingClientRect();
       moved ||= Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6;
-      out = T.tabs.length > 1 && (ev.clientY < r.top - 30 || ev.clientY > r.bottom + 40);
+      out = canOut && T.tabs.length > 1 && (ev.clientY < r.top - 30 || ev.clientY > r.bottom + 40);
+      last = { x: ev.clientX, y: ev.clientY };
+      showGhost(out, ev);
       el.classList.toggle('dragging', moved); el.classList.toggle('out', out);
       if (moved && !out) { // reordena pela posição do mouse
         const over = byId(document.elementFromPoint(ev.clientX, r.top + r.height / 2));
@@ -121,7 +135,9 @@ export function mountTabs(body, o) {
     const up = () => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
       el.classList.remove('dragging', 'out');
-      if (out) detach(tab);
+      const fromRect = ghost?.getBoundingClientRect();
+      showGhost(false);
+      if (out) detach(tab, { at: last, fromRect });
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   });

@@ -260,6 +260,19 @@ narrativa de cada versão está em `historico.md`; a versão longa deste arquivo
     (imagem de ~4 MB para ~80 MB e CPU do servidor). (d) GPU: Métricas da fonte BrunOS (Intel e AMD pelo
     sistema, sem privilégio; consumo da Intel e NVIDIA pelo script do servidor). Aceleração por GPU no
     próprio BrunOS: só um estudo antes de qualquer código.
+74. **Integrações numa janela própria, telas do celular com rolagem própria e dock configurável** (plano
+    0.38.0 e 0.39.0, combinado com o Bruno em 26/11/2026): (a) as Integrações saem da janela Widgets e ganham
+    uma **janela do sistema própria**, com cartões que mostram o que cada uma libera (widgets, lugar no
+    Arquivos, escudo, Avisos prontos, Ações) e sugestões dos apps do Runtipi já instalados. Ela abre pelo
+    dock, pelo menu do app, por Widgets, Configurações e Ctrl+K, e o sino avisa uma vez quando é instalado um
+    app compatível. Recusados: uma categoria nas Configurações e uma seção em Apps (escondem uma função que o
+    Bruno vê como central), e a mesma tela em dois lugares. (b) No celular, **cada tela da tela inicial rola
+    sozinha** e a saudação fica fixa no topo de todas. Antes, a faixa de telas tinha a altura da mais alta e
+    a rolagem era uma só, então a tela de apps abria no meio. Recusado: subir para o topo ao trocar de tela
+    (o Bruno prefere que cada tela guarde onde parou). (c) **Dock configurável**: os ícones do sistema podem
+    sair do dock, com a mesma escolha em todos os aparelhos, e Configurações sempre fica (é por ela que se
+    volta atrás). (d) Formato Torrents ganha **Densidade** manual (Confortável/Compacta), **Colunas**
+    escolhidas e Ações por torrent (pausar/retomar, reversíveis, como na 73).
 
 ## Loja, Garimpo, instalação
 

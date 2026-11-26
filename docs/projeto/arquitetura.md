@@ -436,7 +436,7 @@ POST /api/files/upload/start {root,path,name,size} → {id} · PUT upload/chunk?
 GET  /api/files/upload/status?id      POST /api/files/upload/finish {id} · upload/cancel {id}
 POST /api/files/extract {root,path}   GET /api/files/duplicates?root&path&min · /api/files/usage?root&path[&refresh=1]
 GET  /api/files/media?root&path → {container,tracks}  (415 se não for vídeo/áudio conhecido; 0.34.0)
-POST /api/integrations/{id}/action {action,minutes}   GET /api/integrations/plex/find?name → {url,none}  (0.34.0)
+POST /api/integrations/{id}/action {action,minutes,target?}   GET /api/integrations/plex/find?name → {url,none}  (0.34.0)
 GET  /api/integrations/kinds · /api/integrations ({integrations:[Public],views}) · /api/integrations/suggest
 POST /api/integrations {kind,name,url,user,secret?,interval,alerts}   PUT/DELETE /api/integrations/{id}
 POST /api/integrations/test {…, id?}  (busca uma vez sem salvar; com id usa o token guardado; 502 {error})
@@ -538,7 +538,10 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
 - Formato Torrents (`widgets.js`, 0.35.0): `torrentsHTML` + `torUI` (filtro e linha aberta por widget, só na
   tela); o widget é `div` (como Atalhos e Notas) e os cliques em `[data-tor]` vão para `torClick` no `app.js`
   (filtro, abrir linha, Ações). Largo = tabela; estreito = duas linhas por torrent (container query em
-  `.wfm-torrents`).
+  `.wfm-torrents`). 0.38.0: opções em `item.tor` = `{ density: comfy|compact, cols: [...], sort }`
+  (`torOpts` confere; `TOR_COLS` dá nome, cabeçalho e largura, e a grade vai em `--tor-cols`); no estreito,
+  nome + barra + as 2 primeiras Colunas na ordem de `TOR_NARROW` (`.tor-k1`/`.tor-k2`); a linha aberta
+  mostra tudo e o botão de pausar/retomar só aquele torrent (`data-target` = id).
 - `js/updscreen.js` (0.33.0, decisão 70; 0.35.0: na atualização do próprio BrunOS só recarrega quando
   responde a versão de destino `to`, porque o backup do Runtipi religa a versão antiga antes da troca;
   `updScreenJobDone()` libera quando o job termina bem): Tela de atualização. `showUpdScreen({kind, from, to, backup,

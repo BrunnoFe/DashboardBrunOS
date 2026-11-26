@@ -309,6 +309,18 @@ credencial cifrada (`Secret2`). Navegar, ver (Range), baixar, enviar, criar past
 duplicados, mapa do espaço e envio em pedaços. Lição: um `defer` que mexe na variável devolvida só vale com
 retorno nomeado (o Nextcloud não aparecia na lista de lugares; o teste pegou).
 
+## 0.38.0 (26/11/2026): telas do celular, Arquivos, Torrents, Modelos e bateria
+Primeira das duas versões do plano de 26/11 (decisão 74). Celular com páginas: `#desktop.m-pages` tira a
+rolagem da tela inicial e cada `.app-page` rola sozinha (a saudação fica parada); antes a faixa de telas
+tinha a altura da mais alta e a tela de apps abria no meio. Arquivos: cabeçalho da lista no tom da janela;
+título da Janela = pasta da Guia ativa (`wins.setTitle`); arrastar uma Guia para fora mostra uma miniatura
+e a Janela nova nasce onde soltou (`open({ at, fromRect })`; tela cheia: desliza, sem arrastar para fora).
+Torrents: `item.tor` (Densidade, Colunas, Ordenar por, conferido em `torOpts`), colunas novas vindas do
+RPC (`peersConnected`, `addedDate`, total enviado/baixado) e Ações `pause`/`resume` com `target` (id do
+torrent). Modelos em abas (`modelGroups` ganhou `key` e `kind`). Bateria: ícone de estado e linha curta
+(`stateText().short`). Lição: uma tela inicial com uma rolagem só não serve para telas lado a lado com
+alturas diferentes.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.
