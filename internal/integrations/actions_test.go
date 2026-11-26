@@ -208,6 +208,69 @@ func TestAdGuardPauseLeft(t *testing.T) {
 	}
 }
 
+// 0.35.0: lista completa para o Formato Torrents, razão geral, tartaruga e as Ações do Transmission.
+func TestTransmissionTorrents(t *testing.T) {
+	var mu sync.Mutex
+	calls := []string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method    string         `json:"method"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		calls = append(calls, req.Method)
+		mu.Unlock()
+		switch req.Method {
+		case "session-stats":
+			_, _ = w.Write([]byte(`{"result":"success","arguments":{"downloadSpeed":100,"uploadSpeed":50}}`))
+		case "session-get":
+			_, _ = w.Write([]byte(`{"result":"success","arguments":{"alt-speed-enabled":true}}`))
+		case "torrent-get":
+			_, _ = w.Write([]byte(`{"result":"success","arguments":{"torrents":[
+				{"id":3,"name":"Zeta semeando","percentDone":1,"rateUpload":5000,"status":6,"eta":-1,"error":0,"sizeWhenDone":7.4e9,"uploadRatio":1.587,"uploadedEver":3e9,"downloadedEver":2e9},
+				{"id":1,"name":"Alfa parado","percentDone":0.5,"status":0,"eta":-1,"error":0,"sizeWhenDone":2e9,"uploadedEver":0,"downloadedEver":1e9},
+				{"id":2,"name":"Beta baixando","percentDone":0.256,"rateDownload":2e6,"status":4,"eta":600,"error":0,"sizeWhenDone":1e9,"uploadedEver":0,"downloadedEver":0}]}}`))
+		default:
+			_, _ = w.Write([]byte(`{"result":"success","arguments":{}}`))
+		}
+	}))
+	defer srv.Close()
+	cfg := Config{URL: srv.URL}
+	vals, err := transmission{}.Fetch(context.Background(), srv.Client(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := vals["torrents"].List
+	if len(l) != 3 || l[0].Label != "Beta baixando" || l[1].Label != "Zeta semeando" || l[2].Label != "Alfa parado" {
+		t.Fatalf("ordem: %+v", l)
+	}
+	b := l[0]
+	if *b.Num != 25.6 || b.Text != "Baixando" || b.ID != "2" || b.X["size"] != 1e9 || b.X["down"] != 2e6 || b.X["eta"] != 600 {
+		t.Fatalf("baixando: %+v", b)
+	}
+	if l[1].Text != "Semeando" || l[1].X["ratio"] != 1.59 || l[2].Text != "Pausado" {
+		t.Fatalf("estados: %+v %+v", l[1], l[2])
+	}
+	if *vals["ratio"].Num != 1 || *vals["turtle"].Num != 1 { // 3e9 enviados ÷ 3e9 baixados
+		t.Fatalf("razão %v tartaruga %v", vals["ratio"], vals["turtle"])
+	}
+	for _, a := range []string{"pause_all", "resume_all", "turtle_off"} {
+		if _, err := (transmission{}).Action(context.Background(), srv.Client(), cfg, ActionReq{Action: a}); err != nil {
+			t.Fatal(a, err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	got := strings.Join(calls[len(calls)-3:], ",")
+	if got != "torrent-stop,torrent-start,session-set" {
+		t.Fatalf("chamadas das Ações: %s", got)
+	}
+	if !hasAction(transmission{}.Info(), "turtle_on") || hasAction(transmission{}.Info(), "remove") {
+		t.Fatal("Ações do Transmission erradas")
+	}
+}
+
 func TestPlexQuery(t *testing.T) {
 	for in, want := range map[string]string{
 		"X2.2003.REMASTERED.PROPER.1080p.BluRay.mkv":    "X2",

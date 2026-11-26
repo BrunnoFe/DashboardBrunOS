@@ -24,7 +24,9 @@ Testar tudo também em tela de celular (390 px), com prints.
      pelo nome; sem resultado, o botão não aparece); formatos também em Propriedades;
    - Ações de integração (base comum) e escudinho do AdGuard na barra do topo: verde protegendo, pausado com
      o tempo que falta; menu 5 min / 30 min / 1 h / Até eu ligar, sem confirmação; só com Integração AdGuard.
-2. **0.35.0: widget do Transmission**: Formato de tabela (nome, barra de progresso, tamanho, download,
+2. **0.35.0: widget do Transmission** (lançada em 26/11, aguardando teste; junto, pedidos do Bruno: a tela
+   de atualização avisar quando o Docker não baixa a imagem e a página recarregar de verdade na versão nova):
+   Formato de tabela (nome, barra de progresso, tamanho, download,
    upload, estado); todos os torrents com filtro Todos / Baixando / Semeando; rodapé com velocidades
    totais, razão geral, pausar/retomar todos e modo tartaruga; a cada 5 s só com alguém olhando; no
    celular nome + barra + velocidade, o resto ao tocar.

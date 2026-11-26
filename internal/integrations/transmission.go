@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -39,7 +40,14 @@ func (transmission) Info() KindInfo {
 			{ID: "downloaded", Name: "Baixado no total", Kind: Num, Unit: "B", Icon: "download"},
 			{ID: "uploaded", Name: "Enviado no total", Kind: Num, Unit: "B", Icon: "upload"},
 			{ID: "downloading_list", Name: "Lista: baixando agora", Kind: List, Icon: "download"},
+			// 0.35.0: lista completa para o Formato Torrents (cada item com tamanho, velocidades, razão...)
+			{ID: "torrents", Name: "Torrents (todos, com detalhes)", Kind: Torrents, Icon: "download"},
+			{ID: "ratio", Name: "Razão geral (enviado ÷ baixado)", Kind: Num, Icon: "activity"},
+			{ID: "turtle", Name: "Modo tartaruga (1 = ligado)", Kind: Num, Icon: "clock"},
 		},
+		Actions: []ActionDef{{ID: "resume_all", Name: "Retomar todos"}, {ID: "pause_all", Name: "Pausar todos"},
+			{ID: "turtle_on", Name: "Ligar o modo tartaruga"}, {ID: "turtle_off", Name: "Desligar o modo tartaruga"}},
+		LiveEvery: 5,
 		Alerts: []AlertDef{
 			{ID: "errors", Name: "Torrent com erro", Desc: "Avisa quando algum torrent fica com erro", Metric: "errors", Op: ">", Default: 0, Level: "info", Fixed: true},
 			{ID: "down", Name: "Transmission sem responder", Desc: "Avisa quando o Transmission para de responder por 5 minutos", Op: "down", Level: "info", Fixed: true},
@@ -155,28 +163,47 @@ func (transmission) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[
 	}
 	var tg struct {
 		Torrents []struct {
+			ID      int     `json:"id"`
 			Name    string  `json:"name"`
 			Percent float64 `json:"percentDone"`
 			Rate    float64 `json:"rateDownload"`
+			RateUp  float64 `json:"rateUpload"`
 			Status  int     `json:"status"`
 			ETA     float64 `json:"eta"`
 			Error   int     `json:"error"`
+			Size    float64 `json:"sizeWhenDone"`
+			Ratio   float64 `json:"uploadRatio"`
+			Up      float64 `json:"uploadedEver"`
+			Down    float64 `json:"downloadedEver"`
 		} `json:"torrents"`
 	}
-	fields := []string{"name", "percentDone", "rateDownload", "status", "eta", "error"}
+	fields := []string{"id", "name", "percentDone", "rateDownload", "rateUpload", "status", "eta", "error", "sizeWhenDone", "uploadRatio", "uploadedEver", "downloadedEver"}
 	if err := trCall(ctx, c, cfg, &sid, "torrent-get", map[string]any{"fields": fields}, &tg); err != nil {
 		return nil, err
 	}
-	var dl, seed, errs float64
+	var sess struct {
+		Alt bool `json:"alt-speed-enabled"`
+	}
+	turtle := Value{} // versão muito antiga sem session-get: a métrica fica vazia
+	if err := trCall(ctx, c, cfg, &sid, "session-get", map[string]any{"fields": []string{"alt-speed-enabled"}}, &sess); err == nil {
+		turtle = N(map[bool]float64{true: 1, false: 0}[sess.Alt])
+	}
+	var dl, seed, errs, upAll, downAll float64
 	type row struct {
 		pct  float64
 		item Item
 	}
-	rows := []row{}
+	rows, all := []row{}, []trRow{}
 	for _, t := range tg.Torrents {
 		if t.Error != 0 {
 			errs++
 		}
+		upAll += t.Up
+		downAll += t.Down
+		all = append(all, trRow{t.ID, t.Name, t.Status, t.Error != 0, Item{
+			Label: t.Name, Num: fp(round1(t.Percent * 100)), Text: trState(t.Status, t.Error != 0), ID: strconv.Itoa(t.ID),
+			X: map[string]float64{"size": t.Size, "down": t.Rate, "up": t.RateUp, "ratio": round2(t.Ratio), "eta": t.ETA},
+		}})
 		switch t.Status {
 		case 4: // baixando
 			dl++
@@ -195,9 +222,98 @@ func (transmission) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[
 		}
 		list = append(list, r.item)
 	}
+	ratio := Value{}
+	if downAll > 0 {
+		ratio = N(round2(upAll / downAll))
+	}
 	return map[string]Value{
 		"_sid": T(sid), "down": N(st.Down), "up": N(st.Up), "active": N(st.Active), "paused": N(st.Paused),
 		"total": N(st.Total), "downloading": N(dl), "seeding": N(seed), "errors": N(errs),
 		"downloaded": N(st.Cumulate.Down), "uploaded": N(st.Cumulate.Up), "downloading_list": {List: list},
+		"torrents": {List: trOrder(all)}, "ratio": ratio, "turtle": turtle,
 	}, nil
+}
+
+// trRow guarda o que a ordenação precisa ao lado do item.
+type trRow struct {
+	id     int
+	name   string
+	status int
+	err    bool
+	item   Item
+}
+
+// trOrder: com erro e baixando primeiro, depois na fila, semeando e parados; nome em ordem dentro de cada
+// grupo. No máximo 100 (o widget mostra os de cima; acima disso o Transmission já é o lugar certo).
+func trOrder(all []trRow) []Item {
+	rank := func(r trRow) int {
+		switch {
+		case r.err:
+			return 0
+		case r.status == 4:
+			return 1
+		case r.status == 3 || r.status == 1 || r.status == 2:
+			return 2
+		case r.status == 6 || r.status == 5:
+			return 3
+		}
+		return 4
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if a, b := rank(all[i]), rank(all[j]); a != b {
+			return a < b
+		}
+		return strings.ToLower(all[i].name) < strings.ToLower(all[j].name)
+	})
+	out := make([]Item, 0, min(len(all), 100))
+	for i, r := range all {
+		if i >= 100 {
+			break
+		}
+		out = append(out, r.item)
+	}
+	return out
+}
+
+// trState: o estado em pt-BR (status do RPC: 0 parado, 1/2 verificando, 3 na fila, 4 baixando, 5 na fila
+// para semear, 6 semeando).
+func trState(status int, err bool) string {
+	if err {
+		return "Erro"
+	}
+	switch status {
+	case 0:
+		return "Pausado"
+	case 1, 2:
+		return "Verificando"
+	case 3, 5:
+		return "Na fila"
+	case 4:
+		return "Baixando"
+	case 6:
+		return "Semeando"
+	}
+	return "—"
+}
+
+func round2(v float64) float64 { return float64(int64(v*100+0.5)) / 100 }
+
+// Action: pausar/retomar todos (torrent-stop/torrent-start sem ids = todos) e o modo tartaruga
+// (limite de velocidade alternativo do próprio Transmission). Nada apaga torrent (decisão 73).
+func (transmission) Action(ctx context.Context, c *http.Client, cfg Config, req ActionReq) (string, error) {
+	sid := ""
+	var out struct{}
+	var err error
+	switch req.Action {
+	case "pause_all":
+		err = trCall(ctx, c, cfg, &sid, "torrent-stop", map[string]any{}, &out)
+	case "resume_all":
+		err = trCall(ctx, c, cfg, &sid, "torrent-start", map[string]any{}, &out)
+	case "turtle_on", "turtle_off":
+		err = trCall(ctx, c, cfg, &sid, "session-set", map[string]any{"alt-speed-enabled": req.Action == "turtle_on"}, &out)
+	}
+	if err != nil {
+		return "", err
+	}
+	return map[string]string{"pause_all": "pausar todos", "resume_all": "retomar todos", "turtle_on": "ligar a tartaruga", "turtle_off": "desligar a tartaruga"}[req.Action], nil
 }

@@ -578,6 +578,8 @@ func (c *Checker) poll(ctx context.Context) bool {
 		switch {
 		case st.BackupFailed:
 			msg = "o backup do Runtipi falhou, então nada foi atualizado"
+		case st.DockerErr != "":
+			msg = st.DockerErr
 		case st.Exit != 0:
 			msg = exitMessage(st.Exit, st.Lines)
 		case st.Warn:
@@ -587,7 +589,7 @@ func (c *Checker) poll(ctx context.Context) bool {
 			}
 			warn += "; o resto foi instalado"
 		}
-		c.finish(st.Exit == 0 && !st.BackupFailed, msg, warn, st.Lines)
+		c.finish(st.Exit == 0 && !st.BackupFailed && st.DockerErr == "", msg, warn, st.Lines)
 		return true
 	case !st.Running && !st.Started && now.Sub(time.Unix(started, 0)) > startGrace:
 		c.finish(false, "a atualização não começou no servidor", "", st.Lines)
@@ -708,6 +710,22 @@ type Status struct {
 	BackupFailed bool     // "backup-falhou": nada foi atualizado
 	Warn         bool     // "aviso-repositorio": instalou, mas um repositório falhou no apt update
 	Repo         string   // o repositório que falhou (da linha "E: The repository '...'")
+	// DockerErr: o runtipi-cli devolve 0 mesmo quando o Docker não baixa a imagem (só imprime "✗" e
+	// "Error response from daemon"); aqui vira a mensagem do erro (0.35.0). "" = sem erro do Docker.
+	DockerErr string
+}
+
+// dockerErr diz se uma linha do registro é um erro do Docker e qual a mensagem para o Bruno.
+func dockerErr(ln string) (string, bool) {
+	low := strings.ToLower(ln)
+	switch {
+	case strings.Contains(low, "failed to resolve reference") && strings.Contains(low, "not found"),
+		strings.Contains(low, "manifest unknown"):
+		return "a imagem nova ainda não existe no servidor de imagens (a versão pode não ter sido publicada); nada foi trocado", true
+	case strings.Contains(low, "error response from daemon"), strings.HasPrefix(ln, "✗"):
+		return "o Docker não conseguiu baixar ou trocar a imagem nova; o app continua na versão anterior", true
+	}
+	return "", false
 }
 
 var repoRe = regexp.MustCompile(`The repository '([^']+)'`)
@@ -744,7 +762,7 @@ func ParseStatus(out []byte, startedAt int64, seen bool) Status {
 		if f := strings.Fields(ln); f[0] == "inicio" && len(f) >= 2 {
 			ts, _ := strconv.ParseInt(f[1], 10, 64)
 			s.Started, s.Done, s.Lines = ts >= startedAt-60 || s.Running || seen, false, nil
-			s.Phase, s.BackupFailed, s.Warn, s.Repo = "", false, false, ""
+			s.Phase, s.BackupFailed, s.Warn, s.Repo, s.DockerErr = "", false, false, "", ""
 			continue
 		} else if f[0] == "fim" && len(f) == 2 && s.Started {
 			s.Done = true
@@ -767,6 +785,10 @@ func ParseStatus(out []byte, startedAt int64, seen bool) Status {
 		}
 		if m := repoRe.FindStringSubmatch(ln); m != nil && s.Repo == "" {
 			s.Repo = m[1]
+		}
+		// a mensagem de "imagem não existe" é mais útil que a genérica: ela ganha se aparecer depois
+		if msg, ok := dockerErr(ln); ok && (s.DockerErr == "" || strings.HasPrefix(msg, "a imagem")) {
+			s.DockerErr = msg
 		}
 		if len(ln) > 200 {
 			ln = ln[:200] + "…"

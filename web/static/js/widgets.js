@@ -30,6 +30,7 @@ export function sizeLabel(w, h) {
 /** Menor Tamanho em que o Formato ainda fica bonito (o gráfico de linha/barras pede 2 de largura). */
 export function minSize(item) {
   if (item?.format === 'chart' && (item.chart?.type || 'line') !== 'donut') return [2, 1];
+  if (item?.format === 'torrents') return [2, 1];
   return [1, 1];
 }
 export const FORMATS = {
@@ -41,6 +42,7 @@ export const FORMATS = {
   shortcuts: { label: 'Atalhos', icon: 'folder', desc: 'Atalhos para pastas do Arquivos, em grade ou lista', max: 0, kinds: [] },
   clock: { label: 'Relógio', icon: 'clock', desc: 'Hora digital ou de ponteiros, com data e fuso horário à escolha', max: 0, kinds: [] },
   notes: { label: 'Notas', icon: 'note', desc: 'Texto livre ou lista de tarefas, escrito no próprio widget e salvo no servidor', max: 0, kinds: [] },
+  torrents: { label: 'Torrents', icon: 'download', desc: 'Torrents com progresso, velocidades e estado, filtro e botões de pausar (Transmission)', max: 1, kinds: ['torrents'] },
 };
 // Fusos para o Relógio ('' = o do aparelho)
 export const TIMEZONES = [['', 'Do aparelho'], ['America/Sao_Paulo', 'Brasília'], ['America/Manaus', 'Manaus'], ['America/Noronha', 'Fernando de Noronha'], ['America/Rio_Branco', 'Rio Branco'],
@@ -235,6 +237,7 @@ const KIND_MODELS = {
     { id: 'peers', name: `${it.name}: aparelhos`, desc: 'Quem está na sua rede Tailscale', item: { format: 'list', size: 't', title: 'Tailscale', slots: [S1(`${it.id}.peers`)], list: { max: 0, bars: false } } },
   ],
   transmission: (it) => [
+    { id: 'torrents', name: `${it.name}: torrents`, desc: 'Todos os torrents com progresso, velocidades e estado, filtro e botões de pausar', item: { format: 'torrents', size: 'l', w: 3, h: 2, title: it.name, caption: false, slots: [S1(`${it.id}.torrents`)] } },
     { id: 'speed', name: `${it.name}: velocidade`, desc: 'Download e upload agora, com mini-gráfico', item: { format: 'grid', title: it.name, caption: false, layout: 'rows', slots: [S1(`${it.id}.down`, { label: 'Download', spark: true }), S1(`${it.id}.up`, { label: 'Upload' }), S1(`${it.id}.downloading`, { label: 'Baixando' })] } },
     { id: 'list', name: `${it.name}: baixando agora`, desc: 'Cada torrent com progresso, velocidade e quanto falta', item: { format: 'list', size: 't', title: 'Baixando', slots: [S1(`${it.id}.downloading_list`)], list: { max: 0, bars: false } } },
   ],
@@ -537,7 +540,58 @@ function notesHTML(item, ctx, id) {
   return `${cap}<span class="wf-notes ${mode}" data-note="${esc(id)}" data-mode="${mode}"></span>`;
 }
 
-const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, media: mediaHTML, shortcuts: shortcutsHTML, clock: clockHTML, notes: notesHTML };
+/* ── Formato Torrents (0.35.0, decisão 73) ─────────────────────────
+   A lista completa do Transmission: filtro (Todos / Baixando / Semeando), cada torrent com barra de
+   progresso, tamanho, velocidades e estado; rodapé com os totais, a razão geral e as Ações (retomar e
+   pausar todos, modo tartaruga). Estreito (celular, widget de 2 colunas): nome + barra + velocidade, e o
+   resto aparece ao tocar na linha (container query no CSS). O filtro e a linha aberta valem só na tela. */
+export const torUI = {};
+const TOR_FILTERS = [['all', 'Todos'], ['down', 'Baixando'], ['seed', 'Semeando']];
+const TOR_ST = { Baixando: 'dl', Semeando: 'seed', Pausado: 'pause', 'Na fila': 'queue', Verificando: 'queue', Erro: 'err' };
+const torMatch = (f, x) => (f === 'down' ? ['Baixando', 'Na fila', 'Verificando'].includes(x.v) : f === 'seed' ? x.v === 'Semeando' : true);
+const torRate = (b) => (b > 0 ? fmtRate(b) : '—');
+const torPct = (n) => `${fmt(n ?? 0, (n ?? 0) % 1 && n < 100 ? 1 : 0)}%`;
+function torrentsHTML(item, ctx, id) {
+  const slot = item.slots[0];
+  if (!slot) return `<span class="w-empty">Escolha os torrents de uma integração do Transmission</span>`;
+  const iid = slot.metric.split('.')[0], val = ctx.value(slot.metric);
+  const ui = torUI[id || 'prev'] ||= { filter: 'all', open: '' };
+  const all = val?.l || [];
+  const list = all.filter((x) => torMatch(ui.filter, x));
+  const num = (m) => ctx.value(`${iid}.${m}`)?.n;
+  const turtle = num('turtle') === 1, ratio = num('ratio');
+  const anyActive = all.some((x) => x.v !== 'Pausado');
+  const count = (f) => all.filter((x) => torMatch(f, x)).length;
+  const rows = list.map((x) => {
+    const st = TOR_ST[x.v] || 'queue', X = x.x || {}, open = ui.open === x.id;
+    const eta = x.v === 'Baixando' && X.eta > 0 ? `falta ${fmtDuration(X.eta)}` : '';
+    return `<span class="tor-row ${open ? 'open' : ''}" data-tor="row" data-tid="${esc(x.id || '')}" role="button" tabindex="0" aria-expanded="${open}">
+      <span class="tor-name" title="${esc(x.k)}"><i class="tor-dot st-${st}"></i>${esc(x.k)}</span>
+      <span class="tor-prog"><span class="tor-bar st-${st}"><i style="width:${clamp(x.n ?? 0, 0, 100).toFixed(1)}%"></i></span><small>${torPct(x.n)}</small></span>
+      <span class="tor-c tor-size">${X.size ? fmtBytes(X.size) : '—'}</span>
+      <span class="tor-c tor-dn">${torRate(X.down)}</span>
+      <span class="tor-c tor-up">${torRate(X.up)}</span>
+      <span class="tor-c tor-stc"><b class="tor-st st-${st}">${esc(x.v || '')}</b></span>
+      ${open ? `<span class="tor-more"><span>${esc(x.v || '')}</span><span>${X.size ? fmtBytes(X.size) : '—'}</span><span>↓ ${torRate(X.down)}</span><span>↑ ${torRate(X.up)}</span>${X.ratio != null ? `<span>Razão ${fmt(X.ratio, 2)}</span>` : ''}${eta ? `<span>${esc(eta)}</span>` : ''}</span>` : ''}
+    </span>`;
+  }).join('');
+  const empty = !val ? 'carregando…' : !all.length ? 'Nenhum torrent no Transmission' : 'Nenhum torrent neste filtro';
+  return `<span class="tor">
+    <span class="tor-top">${TOR_FILTERS.map(([k, l]) => `<span class="tor-chip ${ui.filter === k ? 'on' : ''}" data-tor="filter" data-f="${k}" role="button" tabindex="0">${l}<small>${count(k)}</small></span>`).join('')}</span>
+    <span class="tor-head"><span>Nome</span><span>Progresso</span><span class="tor-c">Tamanho</span><span class="tor-c">Down</span><span class="tor-c">Up</span><span class="tor-c">Estado</span></span>
+    <span class="tor-list">${rows || `<span class="w-empty">${empty}</span>`}</span>
+    <span class="tor-foot">
+      <span class="tor-tot"><span title="Download agora">↓ ${torRate(num('down'))}</span><span title="Upload agora">↑ ${torRate(num('up'))}</span>${ratio != null ? `<span class="tor-ratio" title="Razão geral (enviado ÷ baixado)">Razão ${fmt(ratio, 2)}</span>` : ''}</span>
+      <span class="tor-acts" data-iid="${esc(iid)}">
+        <span class="tor-btn" data-tor="act" data-act="resume_all" role="button" tabindex="0" title="Retomar todos" aria-label="Retomar todos">${svg('play')}</span>
+        <span class="tor-btn" data-tor="act" data-act="pause_all" role="button" tabindex="0" title="Pausar todos" aria-label="Pausar todos" ${anyActive ? '' : 'aria-disabled="true"'}>${svg('pause')}</span>
+        <span class="tor-btn tor-turtle ${turtle ? 'on' : ''}" data-tor="act" data-act="${turtle ? 'turtle_off' : 'turtle_on'}" role="button" tabindex="0" title="${turtle ? 'Modo tartaruga ligado (velocidade limitada): desligar' : 'Ligar o modo tartaruga (limita a velocidade)'}" aria-pressed="${turtle}">${svg('turtle')}</span>
+      </span>
+    </span>
+  </span>`;
+}
+
+const RENDER = { stat: statHTML, grid: gridHTML, list: listHTML, chart: chartHTML, media: mediaHTML, shortcuts: shortcutsHTML, clock: clockHTML, notes: notesHTML, torrents: torrentsHTML };
 
 /** HTML de dentro do widget (o que muda quando chegam valores novos). id: o do widget (Notas). */
 export function innerHTML(item, ctx, id = '') {
@@ -565,7 +619,7 @@ export const posStyle = (p) => (p ? `grid-column:${p.x + 1} / span ${p.w};grid-r
 export function widgetHTML(item, ctx, { id = '', i = 0, editing = false, pos = null } = {}) {
   // Atalhos e Notas não são botão (as pastas e o texto são); Notas só arrasta no modo Organizar,
   // senão selecionar o texto com o mouse arrastaria o widget
-  const tag = item.format === 'shortcuts' || item.format === 'notes' ? 'div' : 'button';
+  const tag = item.format === 'shortcuts' || item.format === 'notes' || item.format === 'torrents' ? 'div' : 'button';
   const drag = id && (item.format !== 'notes' || editing);
   const own = item.look?.follow === false;
   const hideLabel = own && item.look?.hideLabel;

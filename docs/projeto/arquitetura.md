@@ -336,6 +336,14 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     0.34.1: métrica interna `_refetch` (s) pede uma busca extra (`entry.next`, ex.: fim da pausa) e
     `RemindKind` (`Remind`/`Settled`) deixa um lembrete no sino com a chave `integ:<id>:action` (AdGuard
     "até eu ligar"; não repete se o Aviso pronto `Covered` estiver ligado).
+    0.35.0: métrica do tipo `torrents` (lista com `Item.X`: size, down, up, ratio, eta; `Num` = %, `Text` =
+    estado em pt-BR) para o Formato Torrents; `transmission.go` lê também `session-get`
+    (`alt-speed-enabled` → `turtle`) e a razão geral (`uploadedEver ÷ downloadedEver`), e tem as Ações
+    `pause_all`/`resume_all` (`torrent-stop`/`torrent-start` sem ids) e `turtle_on`/`turtle_off`
+    (`session-set`). `KindInfo.LiveEvery` (Transmission: 5 s) vale com alguém olhando e um widget usando.
+  - 0.35.0 (`internal/updates`): `Status.DockerErr`. O `runtipi-cli app update` devolve 0 mesmo quando o
+    Docker não baixa a imagem ("✗", "Error response from daemon"); o registro é lido e isso vira falha com
+    mensagem amigável (imagem que não existe = "a versão pode não ter sido publicada").
     `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
     Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
 - **`internal/files/media.go`** (0.34.0): `ProbeMedia(io.ReaderAt, size)` lê só o cabeçalho de MKV/WebM
@@ -510,7 +518,13 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   faixa padrão com `canPlayType` (`CODEC_MIME`) e põe o `.pv-warn` por cima do player, com Baixar e Abrir no
   Plex (`plexFind`, aberto por `filesCtx.openUrl` em nova aba). O `mediaFallback` usa o mesmo texto quando o
   vídeo dá erro.
-- `js/updscreen.js` (0.33.0, decisão 70): Tela de atualização. `showUpdScreen({kind, from, to, backup,
+- Formato Torrents (`widgets.js`, 0.35.0): `torrentsHTML` + `torUI` (filtro e linha aberta por widget, só na
+  tela); o widget é `div` (como Atalhos e Notas) e os cliques em `[data-tor]` vão para `torClick` no `app.js`
+  (filtro, abrir linha, Ações). Largo = tabela; estreito = duas linhas por torrent (container query em
+  `.wfm-torrents`).
+- `js/updscreen.js` (0.33.0, decisão 70; 0.35.0: na atualização do próprio BrunOS só recarrega quando
+  responde a versão de destino `to`, porque o backup do Runtipi religa a versão antiga antes da troca;
+  `updScreenJobDone()` libera quando o job termina bem): Tela de atualização. `showUpdScreen({kind, from, to, backup,
   step, expectDownMs})` (`self`, `linux`, `reboot`, `restart`, `shutdown`), `updScreenStep(i)`,
   `hideUpdScreen()`. Pergunta `api.public()` a cada 2 s: duas falhas seguidas = caiu (etapa "Reiniciando");
   voltou depois de cair ou com outra versão = recarrega a página; não caiu em `expectDownMs` = some com

@@ -15,7 +15,8 @@ Widget pronto, já preenchido, que serve de ponto de partida para um Widget novo
 _Evite_: template, widget padrão, predefinição
 
 **Formato**:
-O arranjo interno de um Widget: Destaque, Grade, Lista, Gráfico, Mídia ou Atalhos.
+O arranjo interno de um Widget: Destaque, Grade, Lista, Gráfico, Mídia, Atalhos, Relógio, Notas ou Torrents
+(a lista do Transmission com progresso, velocidades, filtro e botões de pausar).
 _Evite_: layout, tipo de widget, estilo
 
 **Espaço**:

@@ -1,6 +1,6 @@
 // BrunOS — casca da interface: login, área de trabalho, dock, widgets, configurações.
 import { paintBattery, batteryDialog } from './battery.js';
-import { BRUNOS_METRICS, brunosValue, normalize, defaultWidgets, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H } from './widgets.js';
+import { BRUNOS_METRICS, brunosValue, normalize, defaultWidgets, innerHTML, widgetHTML, autoClick, newId, posStyle, minSize, sizeLabel, MAX_W, MAX_H, torUI } from './widgets.js';
 import {
   fits, firstFree, place, dragPlan, compact, usedRows, Q, iconSizeKey, iconMetrics, appCols, ICON_SIZES, ICON_GAPS, LAST_ROW, HOME_FIT,
   MOBILE_W, areaUtil, reguaFor, fitStack, fitSide, rowsFit,
@@ -760,6 +760,29 @@ function paintWidgets(root = document) {
   }
   mountNotes(root);
 }
+// Formato Torrents (0.35.0): filtro e linha aberta só na tela; os botões viram Ações do Transmission
+async function torClick(el) {
+  const id = el.closest('.widget-wrap[data-wid]')?.dataset.wid; if (!id) return;
+  const ui = torUI[id] ||= { filter: 'all', open: '' };
+  const kind = el.dataset.tor;
+  if (kind === 'filter') { ui.filter = el.dataset.f; ui.open = ''; }
+  else if (kind === 'row') ui.open = ui.open === el.dataset.tid ? '' : el.dataset.tid;
+  else if (kind === 'act') {
+    if (el.getAttribute('aria-disabled') === 'true' || el.classList.contains('busy')) return;
+    const iid = el.closest('[data-iid]')?.dataset.iid, action = el.dataset.act;
+    el.classList.add('busy');
+    try {
+      await api.integrations.action(iid, { action });
+      const v = S.metrics[iid]; // a tartaruga muda já na tela; o resto chega na busca que a Ação dispara
+      if (v?.values && action.startsWith('turtle')) v.values = { ...v.values, turtle: { n: action === 'turtle_on' ? 1 : 0 } };
+    } catch (x) { toastError(x, 'O Transmission não aceitou o pedido'); }
+    el.classList.remove('busy');
+  }
+  paintWidgets();
+}
+document.addEventListener('keydown', (e) => { // Enter/espaço nos botões do Formato Torrents
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('[data-tor]') && !wEditing) { e.preventDefault(); torClick(e.target.closest('[data-tor]')); }
+});
 // Relógios: redesenha a cada segundo só os widgets de Relógio (o HTML só muda quando a hora muda)
 setInterval(() => {
   if (document.hidden || document.body.classList.contains('is-locked')) return;
@@ -2578,6 +2601,8 @@ $('#desktop').addEventListener('click', (e) => {
   if (e.target.closest('[data-wresize]')) return;
   const fav = e.target.closest('[data-fav-root]');
   if (fav) { if (!wEditing) openSheet('files', $('[data-sys="files"]'), { root: fav.dataset.favRoot, path: fav.dataset.favPath }); return; }
+  const tor = e.target.closest('[data-tor]'); // Formato Torrents (0.35.0): filtro, linha e Ações
+  if (tor && !wEditing) { torClick(tor); return; }
   const w = e.target.closest('.widget-wrap[data-wid] > .widget');
   if (w) { if (wEditing) openWidgets({ edit: w.parentElement.dataset.wid }); else widgetClick(w.parentElement.dataset.wid); }
 });

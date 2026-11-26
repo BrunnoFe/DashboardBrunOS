@@ -280,6 +280,18 @@ ligar" não avisava porque o Aviso pronto estava desligado na integração dele:
 lembrete no sino (`RemindKind`: `Remind` abre, `Settled` fecha quando a proteção volta; não repete se o
 Aviso pronto estiver ligado). Lição: o que o menu promete ("avisa no sino") não pode depender de outra
 opção ligada em outro lugar.
+Depois do lançamento, o CI da imagem falhou (`notifdetails.test.mjs` exige explicação para todo aviso de nível
+Aviso) e a loja foi mesclada sem imagem: o servidor recebeu "not found" e a tela fingiu sucesso. Corrigido
+no mesmo dia (85d9ed3). Lições: rodar os 6 testes do Node; esperar o fluxo da imagem pelo nome e conferir a
+tag no GHCR antes de mesclar a loja.
+
+## 0.35.0 (26/11/2026): widget Torrents, atualização que falha avisa, recarregar na versão nova
+Formato Torrents (Transmission): filtro, barras por estado, tamanho, velocidades, razão, retomar/pausar todos
+e modo tartaruga; duas linhas por torrent no estreito (container query). Pedidos do Bruno junto: (1) o
+`runtipi-cli` devolve 0 com o pull falhando; o registro é lido (`DockerErr`) e a tela some com o erro; (2) a
+página recarregava na versão antiga porque o backup do Runtipi para e religa a versão velha antes da troca:
+a Tela de atualização só recarrega quando responde a versão de destino. Lição: "caiu e voltou" não quer
+dizer "voltou na versão nova".
 
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o

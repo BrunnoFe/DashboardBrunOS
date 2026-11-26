@@ -6,6 +6,11 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.35.0', date: '2026-11-26', items: [
+    { t: 'Widget de torrents', d: 'Em Widgets → Modelos → Transmission: torrents. Mostra cada torrent com progresso, velocidades e estado, com filtro e botões para pausar ou retomar tudo e ligar o modo tartaruga.' },
+    { t: 'Atualização que dá errado avisa', d: 'Se a versão nova não puder ser baixada, a tela de atualização some e diz o que aconteceu, em vez de fingir que deu certo.' },
+    { t: 'Volta já na versão nova', d: 'Depois de atualizar o BrunOS, a página só recarrega quando a versão nova estiver no ar. Sem precisar apertar F5.' },
+  ] },
   { v: '0.34.1', date: '2026-11-26', items: [
     { t: 'Escudo do AdGuard no canto esquerdo', d: 'Assim ele não fica em cima da logo no celular.' },
     { t: 'Volta ao verde na hora', d: 'Quando a pausa acaba, o escudo já mostra que o AdGuard voltou a proteger, sem demora.' },

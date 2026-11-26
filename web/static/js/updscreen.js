@@ -46,13 +46,19 @@ export function showUpdScreen(o) {
   document.body.append(el);
   document.body.classList.add('upd-screen-on');
   document.activeElement?.blur?.();
+  // 0.35.0: na atualização do próprio BrunOS, só recarrega quando responder a versão NOVA. O backup do
+  // Runtipi para e religa a versão antiga antes de trocar a imagem: recarregar nessa volta deixava a
+  // página na versão velha (o Bruno precisava apertar F5 depois).
   S = { el, kind: o.kind, steps, downStep: down, step: -1, fails: 0, downAt: 0, version0: '', startedAt: Date.now(),
-    expectBy: o.expectDownMs ? Date.now() + o.expectDownMs : 0, timer: 0 };
+    expectBy: o.expectDownMs ? Date.now() + o.expectDownMs : 0, timer: 0, to: o.kind === 'self' ? o.to || '' : '', needNew: o.kind === 'self' };
   setStep(o.step ?? 0);
   // a versão de agora: se mudar, é porque o BrunOS novo já está no ar
   api.public().then((j) => { if (S) S.version0 = j.version || ''; }).catch(() => {});
   S.timer = setTimeout(watch, EVERY);
 }
+
+/** A atualização do BrunOS terminou bem no servidor: a próxima resposta, de qualquer versão, recarrega. */
+export function updScreenJobDone() { if (S) S.needNew = false; }
 
 /** Avança para a etapa i (não volta para trás). */
 export function updScreenStep(i) { if (S && i > S.step) setStep(i); }
@@ -89,7 +95,10 @@ async function watch() {
     }
   } else {
     const changed = S.version0 && v && v !== S.version0;
-    if (S.downAt || changed) { back(); return; }
+    const norm = (x) => String(x || '').trim().replace(/^v/i, '');
+    const isNew = S.to ? norm(v) === norm(S.to) : changed; // versão de destino conhecida: tem que ser ela
+    if (isNew || (S.downAt && !S.needNew)) { back(); return; }
+    if (S.downAt) { S.downAt = 0; setStep(Math.max(0, S.downStep - 1)); } // voltou a antiga (backup): espera a troca
     S.fails = 0;
     if (S.expectBy && Date.now() > S.expectBy) { // o servidor não caiu: o pedido não foi adiante
       const kind = S.kind; hideUpdScreen();

@@ -159,6 +159,16 @@ func TestParseStatus(t *testing.T) {
 	if s.Phase != "atualizando" || !s.Done || s.Exit != 0 {
 		t.Fatalf("fase atualizando: %+v", s)
 	}
+	// 0.35.0: o runtipi-cli devolve 0 com o pull falhando (registro real da 0.34.1 sem imagem publicada)
+	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app brunos:personal-store sim\nbackup-inicio\nbackup-ok\n"+
+		"\x1b[31m✗\x1b[0m brunos-docker-proxy Pulling \n brunos Error failed to resolve reference \"ghcr.io/x/y:0.34.1\": ghcr.io/x/y:0.34.1: not found\n"+
+		"Error response from daemon: failed to resolve reference \"ghcr.io/x/y:0.34.1\": not found\nfim 0\n"), 1000, false)
+	if !s.Done || s.Exit != 0 || !strings.HasPrefix(s.DockerErr, "a imagem nova ainda não existe") {
+		t.Fatalf("pull falhou com fim 0: %+v", s)
+	}
+	if s := ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated\nPulling images...\nApp updated\nfim 0\n"), 1000, false); s.DockerErr != "" {
+		t.Fatalf("atualização boa marcada como erro do Docker: %q", s.DockerErr)
+	}
 	s = ParseStatus([]byte("parado\n=== registro\ninicio 1000 atualizar-app immich:migrated sim\nbackup-inicio\nNo space left on device\nbackup-falhou 1\nfim 1\n"), 1000, false)
 	if !s.BackupFailed || s.Exit != 1 {
 		t.Fatalf("backup falhou: %+v", s)

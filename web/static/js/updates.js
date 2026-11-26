@@ -4,7 +4,7 @@
 // painel mostra o andamento (decisão 47).
 import { api } from './api.js';
 import { $, esc, html, svg, toast, toastError, timeAgo, confirmDialog, openDialog, fmtBytes } from './ui.js';
-import { showUpdScreen, updScreenStep, hideUpdScreen, updScreenKind } from './updscreen.js';
+import { showUpdScreen, updScreenStep, hideUpdScreen, updScreenKind, updScreenJobDone } from './updscreen.js';
 
 // 0.33.0: a atualização do próprio BrunOS (o app "brunos" da loja) mostra a Tela de atualização
 const isSelf = (j) => j?.kind === 'app' && (j.target || '').split(':')[0] === 'brunos';
@@ -59,6 +59,8 @@ export function paintUpdates() {
   } else if (!run && updScreenKind() === 'self' && j && !j.ok) { // deu errado antes de reiniciar: volta e mostra o erro
     hideUpdScreen();
     toast(`Não deu para atualizar o BrunOS`, j.err || 'Veja o painel de Atualizações.', null, { error: true });
+  } else if (!run && updScreenKind() === 'self' && j?.ok) {
+    updScreenJobDone(); // terminou bem: a próxima resposta recarrega mesmo se a versão não puder ser conferida
   }
   // app comum: anel no ícone enquanto atualiza, ✓ quando termina bem
   if (run && j?.kind === 'app' && !isSelf(j)) { clearTimeout(ringOkT); paintRing(j.target); }

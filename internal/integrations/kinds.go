@@ -28,6 +28,9 @@ const (
 	List   = "list"   // lista de itens (rótulo + valor)
 	Series = "series" // série no tempo
 	Media  = "media"  // lista de itens com imagem (fotos do Immich, capa do Plex) para o formato Mídia
+	// Torrents: lista de torrents com detalhes em Item.X (size, down, up, ratio, eta) para o Formato
+	// Torrents (0.35.0); Num = % pronto, Text = estado.
+	Torrents = "torrents"
 )
 
 // Range é uma faixa de cor padrão: até Max (inclusive) usa Level (ok | aviso | critico).
@@ -95,6 +98,9 @@ type KindInfo struct {
 	// Live: buscado enquanto houver alguém com o BrunOS aberto, mesmo sem widget (o escudo do AdGuard
 	// na barra do topo mostra o estado da proteção).
 	Live bool `json:"live,omitempty"`
+	// LiveEvery: com alguém olhando e um widget usando, busca a cada tantos segundos (0 = o intervalo da
+	// Integração). O Transmission usa 5 s (velocidades "ao vivo" no Formato Torrents, 0.35.0).
+	LiveEvery int `json:"liveEvery,omitempty"`
 }
 
 // Item de uma lista. ID identifica o item entre buscas (ex.: MAC de um aparelho, para o aviso de
@@ -106,6 +112,8 @@ type Item struct {
 	ID    string   `json:"id,omitempty"`
 	Img   string   `json:"img,omitempty"`
 	Icon  string   `json:"i,omitempty"` // ícone que muda com o valor (ex.: tempo do Clima)
+	// X: números extras de um item (Formato Torrents: size, down, up, ratio, eta).
+	X map[string]float64 `json:"x,omitempty"`
 }
 
 // SeriesData é uma série com passo fixo; Points usa NaN para "sem dado" (vira null no JSON).

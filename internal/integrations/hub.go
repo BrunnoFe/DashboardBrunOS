@@ -126,6 +126,9 @@ func (h *Hub) Tick(ctx context.Context) {
 func (h *Hub) intervalLocked(it Integration, viewers bool) (time.Duration, bool) {
 	own := time.Duration(it.Interval) * time.Second
 	if viewers && h.live[it.ID] {
+		if k := KindByID(it.Kind); k != nil && k.Info().LiveEvery > 0 {
+			own = min(own, time.Duration(k.Info().LiveEvery)*time.Second)
+		}
 		return own, true
 	}
 	if k := KindByID(it.Kind); viewers && k != nil && k.Info().Live {

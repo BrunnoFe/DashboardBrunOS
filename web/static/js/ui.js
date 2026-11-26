@@ -58,6 +58,9 @@ const P = {
   eject: '<path d="M12 4l8 9H4z"/><path d="M4 18h16"/>',
   gauge: '<path d="M4.5 18a9 9 0 1 1 15 0"/><path d="M12 13l4-5"/><circle cx="12" cy="13" r="1.2"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+  pause: '<path d="M8.5 5.5v13M15.5 5.5v13"/>',
+  // 0.35.0: modo tartaruga do Transmission (casco, cabeça e patas)
+  turtle: '<path d="M4 15.5c0-4 3.6-7 8-7s8 3 8 7z"/><path d="M20 13.5h1.6a1.4 1.4 0 0 0 0-2.8H19M6.5 15.5l-.8 2.5M17.5 15.5l.8 2.5M9 8.8l1.5 3.4h3l1.5-3.4"/>',
   plug: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',
   plugOff: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4M3 3l18 18"/>',
   bag: '<path d="M5.5 8h13l-1 12.5h-11z"/><path d="M9 10.5V7a3 3 0 0 1 6 0v3.5"/>',
