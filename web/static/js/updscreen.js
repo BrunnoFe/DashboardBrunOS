@@ -19,7 +19,6 @@ const SLOW = 8 * 60 * 1000;        // fora do ar por mais que isso: avisa que es
 
 let S = null;
 
-export const updScreenOn = () => !!S;
 export const updScreenKind = () => S?.kind || '';
 
 /**

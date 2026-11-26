@@ -34,19 +34,6 @@ const (
 
 func newLimiter() *limiter { return &limiter{m: map[string]*attempt{}} }
 
-func (l *limiter) blocked(ip string) time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	a, ok := l.m[ip]
-	if !ok {
-		return 0
-	}
-	if d := time.Until(a.until); d > 0 {
-		return d
-	}
-	return 0
-}
-
 // reserve marca uma conferência de senha em andamento. Devolve false (não confira) se o IP está
 // bloqueado ou se os erros mais as conferências em andamento já chegam ao limite.
 // Toda reserva aceita precisa terminar em fail ou success.

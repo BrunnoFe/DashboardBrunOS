@@ -354,6 +354,12 @@ compacta (as versões longas estão no git); fatos do Runtipi 4.12 passaram do r
 Mantido de propósito: `staticcheck ST1005` em `apps.go` (mensagens de erro em português com inicial
 maiúscula, que vão para a interface).
 
+## Segunda limpeza (26/11/2026, depois da 0.39.0)
+Saíram `limiter.blocked` (Go), `adguardOpen` e `updScreenOn` (JS) e CSS órfão (a antiga folha: `has-sheet`,
+`sheet-close`; `dock-badge`, `term-title`, `w-net`, `smart-card`...). O `roadmap.md` voltou a ter só o que
+falta (os planos de 18 a 26/11, entregues, estão acima e nas decisões). Lição: o `staticcheck` precisa ser
+compilado com o mesmo Go do projeto (`GOTOOLCHAIN=go1.27.0 go install ...`).
+
 ## Resumo do roadmap antigo (itens feitos, por letra)
 A (apps), B (energia), C1 (central de notificações), D (discos), E (apps: logs, ligar/parar, pastas, páginas,
 atualizações, backup), F (arquivos), G (monitoramento), H3 (login novo), I1/I3 (WatchYourLAN, Tailscale,

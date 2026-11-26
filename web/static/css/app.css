@@ -124,7 +124,6 @@ body:not(.is-locked) #login { opacity: 0; transform: scale(1.06); visibility: hi
   transition: opacity 300ms ease, transform 400ms var(--ease-out), filter 300ms ease;
 }
 body.is-locked #desktop { opacity: 0; transform: scale(.96); pointer-events: none; }
-body.has-sheet #desktop { opacity: 0; transform: scale(.97); pointer-events: none; }
 body.has-dialog #desktop { opacity: .5; filter: blur(14px); pointer-events: none; }
 
 .home-header { display: flex; flex-direction: column; align-items: center; gap: calc(var(--home-gap) / 2); --home-gap: clamp(8px, calc(4dvh - 8px), 32px); }
@@ -239,7 +238,7 @@ button.widget:active { transform: scale(.98); }
 .search-pill:hover { background: rgba(20,20,24,.5); }
 .search-pill kbd { font: inherit; font-size: 11px; opacity: .5; font-weight: 500; }
 .orb { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--brand-lightest) 35%, var(--brand) 75%); box-shadow: 0 0 10px var(--brand-soft); }
-body.is-locked .search-pill, body.has-sheet .search-pill, body.has-dialog .search-pill { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
+body.is-locked .search-pill, body.has-dialog .search-pill { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
 
 /* ── Dock ────────────────────────────────────────────────────── */
 #dock {
@@ -268,11 +267,6 @@ body.has-dialog #dock { opacity: .35; filter: blur(6px); pointer-events: none; }
 @keyframes dock-bounce { 50% { translate: 0 -20px; } }
 .dock-item .open-dot { position: absolute; bottom: -8px; left: 50%; width: 10px; height: 2px; translate: -50% 0; border-radius: 9px; background: #fff; opacity: 0; transition: opacity .25s; }
 .dock-item.open .open-dot { opacity: 1; }
-.dock-badge {
-  position: absolute; top: -4px; right: -4px; z-index: 2; min-width: 17px; height: 17px; padding: 0 4px;
-  border-radius: 99px; background: #f53737; font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,.3);
-}
 .dock-divider { width: 1px; align-self: center; height: 34px; margin: 0 2px; background: rgba(255,255,255,.14); transform: translateY(6px); }
 .dark-tip {
   position: fixed; z-index: 60; pointer-events: none; padding: 5px 9px; border-radius: 8px;
@@ -299,12 +293,6 @@ body.has-dialog #dock { opacity: .35; filter: blur(6px); pointer-events: none; }
 .sheet.closing { animation: sheet-out 220ms var(--ease-sheet-out) both; }
 @keyframes sheet-in { from { transform: translateY(28px) scale(.94); opacity: 0; } 45% { opacity: 1; } }
 @keyframes sheet-out { 30% { opacity: 1; } to { transform: translateY(20px) scale(.96); opacity: 0; } }
-.sheet-close {
-  position: absolute; top: 16px; right: 16px; z-index: 5; width: 30px; height: 30px; border-radius: 50%;
-  display: grid; place-items: center; background: rgba(255,255,255,.06); font-size: 15px; opacity: .7;
-  transition: background .2s, opacity .2s;
-}
-.sheet-close:hover { opacity: 1; background: rgba(255,255,255,.12); }
 .sheet-title { font-size: 28px; font-weight: 700; letter-spacing: -0.035em; margin: 0; }
 .v1-note { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 99px; background: var(--brand-soft); color: var(--brand-lightest); }
 

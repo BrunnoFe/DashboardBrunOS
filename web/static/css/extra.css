@@ -77,7 +77,6 @@ select.text-input { appearance: auto; }
 .mini.sys { background: rgba(255,255,255,.1); }
 .sheet-loading { width: 100%; }
 .dlg-wrap { background: rgba(0,0,0,.12); }
-body.has-sheet.has-dialog .sheet { filter: brightness(.7); transition: filter .25s; }
 
 /* ── Configurações ─────────────────────────────────────────────── */
 .s-group-title { font-size: 11.5px; font-weight: 700; letter-spacing: .02em; opacity: .45; margin: 4px 4px 8px; text-transform: uppercase; }
@@ -90,10 +89,6 @@ body.has-sheet.has-dialog .sheet { filter: brightness(.7); transition: filter .2
 .s-ctrl .text-input { width: 200px; }
 
 /* ── Widgets e ícones ──────────────────────────────────────────── */
-.w-net { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; height: 100%; }
-.w-net .cell { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
-.w-net .k { font-size: 11.5px; font-weight: 600; opacity: .7; display: inline-flex; align-items: center; gap: 6px; }
-.w-net .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .w-empty { grid-column: 1 / -1; align-self: center; text-align: center; font-size: 12px; opacity: .6; }
 .app-icon img.full, .dock-item img.full, .mini img.full { width: 100%; height: 100%; object-fit: cover; }
 .app-icon .status-dot { z-index: 3; }
@@ -457,14 +452,11 @@ body.reduce-motion .pv-warn { animation: none; }
 }
 
 /* ── Ajustes 0.2 ───────────────────────────────────────────────── */
-/* X das janelas na mesma linha dos botões da barra de Arquivos */
-.sheet-files .sheet-close { top: 27px; right: 20px; }
 /* descrição das configurações nunca espreme: os controles descem para a linha de baixo */
 .s-row { flex-wrap: wrap; row-gap: 10px; }
 .s-text { flex: 1 1 220px; min-width: 200px; }
 .s-ctrl { margin-left: auto; max-width: 100%; }
 .s-ctrl .swatches { flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-@media (max-width: 900px) { .sheet-files .sheet-close { top: 24px; } }
 /* celular: interruptores, botões e setas ficam à direita do texto, como no computador.
    Só os controles largos (escolhas, campos, cores, controle deslizante) descem, alinhados ao texto. */
 @media (max-width: 640px) {
@@ -591,10 +583,6 @@ body.reduce-motion .pv-warn { animation: none; }
 .term-dlg { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .term-win { display: flex; flex-direction: column; min-height: 0; }
 .term-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 12px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-.term-title { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
-.term-title .svg { font-size: 17px; align-self: center; opacity: .8; }
-.term-title b { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.term-title small { font-size: 12px; opacity: .5; white-space: nowrap; }
 .term-tools { display: flex; align-items: center; gap: 4px; }
 .term-tools[hidden] { display: none; }
 .term-tools .pill-btn { margin-left: 6px; }
@@ -636,12 +624,10 @@ body.reduce-motion .pv-warn { animation: none; }
   .term-grid { grid-template-columns: 1fr 80px; }
   .term-grid .fld-user { grid-column: 1 / -1; }
   .term-fps { grid-template-columns: 1fr; }
-  .term-title small { display: none; }
   /* celular: a janela ocupa quase a tela toda e a área do terminal usa todo o espaço */
   .dlg-wrap:has(.term-dlg) { padding: 8px; }
   .term-dlg { width: 100% !important; border-radius: 20px; }
   .term-head { padding: 10px 10px 8px 14px; gap: 6px; }
-  .term-disc-txt { display: none; }
   .term-tools .pill-btn { width: 36px; padding: 0; justify-content: center; }
   .term-body { padding: 8px; }
   .term-screen { height: calc(100dvh - 190px); border-radius: 12px; padding: 6px 2px 4px 6px; }
@@ -679,7 +665,7 @@ body.reduce-motion .pv-warn { animation: none; }
 .st-badge.inst { background: var(--brand-soft); color: var(--brand-lightest); gap: 6px; }
 .st-badge.inst .upd-spin { width: 11px; height: 11px; }
 @media (prefers-reduced-motion: reduce) { .bell-btn.working::before, .np-bar i { animation-duration: 4s; } }
-body.is-locked .bell-btn, body.has-sheet .bell-btn { opacity: 0; pointer-events: none; transform: translateY(-8px); }
+body.is-locked .bell-btn { opacity: 0; pointer-events: none; transform: translateY(-8px); }
 
 .notif-panel {
   position: fixed; top: 58px; right: 14px; z-index: 75; width: min(380px, calc(100vw - 28px)); max-height: min(560px, calc(100dvh - 180px));
@@ -1114,7 +1100,7 @@ body.w-editing .widget-wrap, body.w-editing .app { touch-action: none; }
 .wf-lbar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-lighter), var(--brand-lightest)); }
 
 /* Gráfico */
-.wf-chart-wrap, .wf-chart { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.wf-chart { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .wf-chart > .w-empty { align-self: center; width: 100%; }
 .wf-chead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; min-width: 0; }
 .wf-cval { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1721,7 +1707,6 @@ i.wn-box { font-style: normal; }
 .smart-row .pill-btn { flex: none; }
 /* Configurações: pesquisando, a busca vale para todas as abas (nenhuma fica marcada) */
 .tabs.searching button.on { background: none; box-shadow: none; opacity: .65; }
-.smart-card .kv.bad span:last-child { color: #ffb3b3; font-weight: 700; }
 .app-upd { position: absolute; left: -4px; top: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: #fff; background: var(--brand); box-shadow: 0 2px 6px rgba(0,0,0,.35), 0 0 0 2px rgba(255,255,255,.85); z-index: 2; }
 .app-upd .svg { stroke-width: 2.6; }
 /* app que requer privilégios (0.21.0, decisão 62): escudo pequeno no canto de baixo */
@@ -1947,7 +1932,6 @@ button.disk-row { width: 100%; text-align: left; }
    aberta por cima de um app (36) < faixa da dock (39) < dock (40) < diálogos (45) < bloqueio (50) */
 #win-host { position: fixed; inset: 0; z-index: 33; pointer-events: none; --dock-space: 94px; }
 body.is-locked #win-host, body.screen-locked #win-host { visibility: hidden; }
-body.has-sheet #sheet-host { z-index: 36; }
 #win-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.38); opacity: 0; pointer-events: none; transition: opacity .25s; }
 #win-host[data-mode="sheet"].has-visible #win-backdrop { opacity: 1; pointer-events: auto; }
 .win {

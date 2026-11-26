@@ -17,8 +17,6 @@ export function initAdguard(c) {
   paint();
 }
 
-export const adguardOpen = () => !!panel;
-
 const now = () => Math.floor(Date.now() / 1000);
 const list = () => (ctx?.integrations() || []).filter((x) => x.kind === 'adguard');
 
