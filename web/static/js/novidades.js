@@ -6,6 +6,11 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.34.1', date: '2026-11-26', items: [
+    { t: 'Escudo do AdGuard no canto esquerdo', d: 'Assim ele não fica em cima da logo no celular.' },
+    { t: 'Volta ao verde na hora', d: 'Quando a pausa acaba, o escudo já mostra que o AdGuard voltou a proteger, sem demora.' },
+    { t: 'Lembrete no "Até eu ligar"', d: 'Desligou até ligar de novo? O sino lembra, e o aviso some sozinho quando a proteção volta.' },
+  ] },
   { v: '0.34.0', date: '2026-11-25', items: [
     { t: 'Chega de filme mudo sem explicação', d: 'Quando o som de um vídeo é de um tipo que o navegador não toca (DTS, Dolby, TrueHD), a prévia avisa e oferece baixar ou abrir no Plex, que converte o som.' },
     { t: 'Pausar o AdGuard num toque', d: 'Um escudinho ao lado das Atualizações mostra se o AdGuard está protegendo. Toque nele para pausar por 5 minutos, meia hora, 1 hora ou até ligar de novo.' },

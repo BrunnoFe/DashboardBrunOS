@@ -82,6 +82,22 @@ func (adguard) Action(ctx context.Context, c *http.Client, cfg Config, req Actio
 	return what, nil
 }
 
+// Remind: "Até eu ligar" deixa um lembrete no sino (o menu do escudo promete), a não ser que o Aviso
+// pronto "Proteção desligada" já esteja ligado; ligar de novo fecha o lembrete.
+func (adguard) Remind(req ActionReq) (Reminder, bool) {
+	if req.Action == "pause" && req.Minutes == 0 {
+		return Reminder{Title: "proteção desligada até você ligar", Covered: "protection_off",
+			Body: "Anúncios e rastreadores não estão sendo bloqueados. Toque no escudo, no canto da tela, para ligar de novo."}, true
+	}
+	return Reminder{}, false
+}
+
+// Settled: a proteção voltou (ligada de novo aqui, no painel do AdGuard ou sozinha).
+func (adguard) Settled(vals map[string]Value) bool {
+	v := vals["protection_on"]
+	return v.Num != nil && *v.Num == 1
+}
+
 // adgPost manda um POST com JSON e ignora a resposta (o AdGuard responde só "OK" ou nada).
 func adgPost(ctx context.Context, c *http.Client, cfg Config, u string, body any) (int, error) {
 	b, _ := json.Marshal(body)
@@ -159,7 +175,8 @@ func (adguard) Fetch(ctx context.Context, c *http.Client, cfg Config) (map[strin
 		out["protection"], out["protection_on"], out["_guard"] = T("Desligada"), N(0), N(0)
 		if status.PauseLeft > 0 {
 			out["protection"], out["_guard"] = T("Pausada"), N(1)
-			out["pause_left"] = N(float64(int64(status.PauseLeft / 1000)))
+			left := float64(int64(status.PauseLeft / 1000))
+			out["pause_left"], out["_refetch"] = N(left), N(left) // busca de novo logo que a pausa acaba
 		}
 	}
 	step := int64(3600)

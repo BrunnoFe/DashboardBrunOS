@@ -16,8 +16,9 @@ celular.
 
 Testar tudo também em tela de celular (390 px), com prints.
 
-1. **0.34.0: vídeo mudo + Ações + AdGuard** (lançada em 25/11, aguardando teste do Bruno; conferir com um .mkv
-   de verdade que ficava mudo, um .mp4 comum sem aviso e a pausa de 5 min do AdGuard voltando sozinha):
+1. **0.34.0: vídeo mudo + Ações + AdGuard** (lançada em 25/11 e testada pelo Bruno; os três ajustes do
+   escudo foram para a 0.34.1, lançada em 26/11, aguardando teste: canto esquerdo, verde no fim da pausa,
+   lembrete no "Até eu ligar"):
    - player: o servidor lê o cabeçalho do .mkv/.mp4/.webm e devolve os formatos de vídeo e áudio; áudio que
      o navegador não toca (AC3, E-AC3, DTS, TrueHD...) mostra um aviso com Baixar e Abrir no Plex (procura
      pelo nome; sem resultado, o botão não aparece); formatos também em Propriedades;

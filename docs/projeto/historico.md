@@ -272,6 +272,15 @@ só reversíveis) e o escudo do AdGuard na barra do topo: pausar 5/30/60 min ou 
 - O Aviso pronto "Proteção desligada" dispararia a cada pausa com tempo: ele passou a olhar a métrica interna
   `_guard` (0 só quando desligado sem prazo).
 
+## 0.34.1 (26/11/2026): escudo do AdGuard ajustado depois do teste
+O Bruno testou a 0.34.0 ("tudo certo, menos o ícone do adguard"): escudo para o canto esquerdo (no celular
+ficava em cima da logo); no fim da pausa ele voltava ao verde só na busca seguinte (até 60 s): agora a tela
+volta na hora e o Tipo pede uma busca extra (métrica interna `_refetch`, guardada em `entry.next`); "Até eu
+ligar" não avisava porque o Aviso pronto estava desligado na integração dele: a própria Ação deixa um
+lembrete no sino (`RemindKind`: `Remind` abre, `Settled` fecha quando a proteção volta; não repete se o
+Aviso pronto estiver ligado). Lição: o que o menu promete ("avisa no sino") não pode depender de outra
+opção ligada em outro lugar.
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

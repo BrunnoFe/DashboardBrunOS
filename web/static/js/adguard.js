@@ -5,7 +5,7 @@
 import { api } from './api.js';
 import { $, esc, html, svg, toastError, on } from './ui.js';
 
-let ctx = null, btn = null, panel = null, tick = 0, busy = false, reloadAt = 0;
+let ctx = null, btn = null, panel = null, tick = 0, busy = false;
 const PAUSES = [[5, '5 minutos'], [30, '30 minutos'], [60, '1 hora'], [0, 'Até eu ligar']];
 
 /** c = { integrations(), metrics(), openUrl(href), reload() } */
@@ -26,8 +26,11 @@ const list = () => (ctx?.integrations() || []).filter((x) => x.kind === 'adguard
 function stateOf(it) {
   const v = ctx.metrics()[it.id];
   if (!v?.values?.protection_on) return { it, unknown: true, err: v?.err || '' };
-  const on = v.values.protection_on.n === 1, left = v.values.pause_left?.n || 0;
-  return { it, on, until: !on && left > 0 ? (v.at || now()) + left : 0, err: v.err || '' };
+  const left = v.values.pause_left?.n || 0, until = v.values.protection_on.n !== 1 && left > 0 ? (v.at || now()) + left : 0;
+  // a pausa acabou: o AdGuard religa sozinho na hora; mostra "protegendo" já (o servidor busca de novo
+  // logo depois e confirma)
+  if (until && until <= now()) return { it, on: true, until: 0, err: v.err || '' };
+  return { it, on: v.values.protection_on.n === 1, until, err: v.err || '' };
 }
 
 // Juntando todos: desligado sem prazo > pausado > protegendo.
@@ -58,10 +61,9 @@ function paint() {
   badge.textContent = o.mode === 'paused' ? mmss(left) : '';
   btn.setAttribute('aria-label', { on: 'AdGuard: protegendo', paused: `AdGuard pausado: volta em ${mmss(left)}`, off: 'AdGuard desligado', err: 'AdGuard sem responder', wait: 'AdGuard' }[o.mode]);
   btn.title = btn.getAttribute('aria-label');
-  // a contagem anda sozinha; quando acaba, relê (o AdGuard já voltou, mas a próxima busca pode demorar 1 min)
+  // a contagem anda sozinha; no zero o escudo volta a verde (stateOf) e a busca do servidor confirma
   if (o.mode === 'paused' && !tick) tick = setInterval(paint, 1000);
   if (o.mode !== 'paused' && tick) { clearInterval(tick); tick = 0; }
-  if (o.mode === 'paused' && left === 0 && reloadAt !== o.until) { reloadAt = o.until; setTimeout(() => ctx.reload(), 2500); }
   if (panel) draw();
 }
 

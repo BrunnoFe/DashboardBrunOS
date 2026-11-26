@@ -728,8 +728,8 @@ body.reduce-motion .np-detail { animation: none; }
 #bell { right: 58px; }
 .upd-btn { right: 102px; }
 
-/* ── Escudo do AdGuard (0.34.0): à esquerda das Atualizações, só com Integração AdGuard ── */
-.adg-btn { right: 146px; }
+/* ── Escudo do AdGuard (0.34.0; 0.34.1 foi para o canto esquerdo, longe da logo no celular) ── */
+.adg-btn { right: auto; left: 14px; }
 .adg-btn[hidden] { display: none; }
 .adg-btn.adg-on .svg { color: #6ee7a8; }
 .adg-btn.adg-paused { background: rgba(110,80,10,.5); }
@@ -738,7 +738,7 @@ body.reduce-motion .np-detail { animation: none; }
 .adg-btn.adg-off .svg { color: #ffb0b0; }
 .adg-btn.adg-err .svg, .adg-btn.adg-wait .svg { opacity: .55; }
 .adg-btn .bell-badge { right: auto; left: 50%; top: auto; bottom: -9px; transform: translateX(-50%); min-width: 34px; background: #e09a1f; color: #2b1d00; }
-.adg-menu { right: 14px; }
+.adg-menu { right: auto; left: 14px; transform-origin: top left; }
 .adg-head { display: flex; align-items: center; gap: 11px; margin: 2px 2px 4px; padding: 10px; border-radius: 14px; background: rgba(62,207,142,.13); box-shadow: inset 0 0 0 1px rgba(110,231,168,.22); }
 .adg-head.adg-paused { background: rgba(224,154,31,.16); box-shadow: inset 0 0 0 1px rgba(255,210,122,.25); }
 .adg-head.adg-off { background: rgba(229,72,77,.16); box-shadow: inset 0 0 0 1px rgba(255,138,138,.25); }

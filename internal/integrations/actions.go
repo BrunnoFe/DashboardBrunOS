@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"brunos/internal/events"
 )
 
 // ActionDef descreve uma Ação para a interface.
@@ -30,6 +32,22 @@ type ActionReq struct {
 type ActionKind interface {
 	Action(ctx context.Context, c *http.Client, cfg Config, req ActionReq) (string, error)
 }
+
+// Reminder é o aviso que uma Ação deixa no sino até o app voltar ao normal (ex.: AdGuard desligado "até
+// eu ligar"). Covered = Aviso pronto que já avisa a mesma coisa; se ele estiver ligado, não repete.
+type Reminder struct {
+	Title, Body, Covered string
+}
+
+// RemindKind é um Tipo cujas Ações podem deixar um lembrete. Remind diz se a Ação deixa um (ok=false:
+// nenhum, e um lembrete aberto se fecha, como ao ligar de novo); Settled diz, pelos valores buscados, que
+// o app voltou ao normal e o lembrete pode sair.
+type RemindKind interface {
+	Remind(req ActionReq) (Reminder, bool)
+	Settled(vals map[string]Value) bool
+}
+
+func actionKey(id string) string { return "integ:" + id + ":action" }
 
 const maxPauseMinutes = 24 * 60
 
@@ -60,6 +78,16 @@ func (h *Hub) DoAction(ctx context.Context, id string, req ActionReq) error {
 	// só no registro do servidor: um aviso no sino a cada pausa seria barulho (o "até ligar" já tem o
 	// Aviso pronto de proteção desligada)
 	slog.Info("integração: ação", "nome", it.Name, "ação", what)
+	if rk, ok := k.(RemindKind); ok && h.Events != nil {
+		if r, on := rk.Remind(req); on {
+			if !it.Alerts[r.Covered].On {
+				h.Events.Emit(events.Event{Kind: "integration-reminder", Level: events.Aviso, Key: actionKey(id),
+					Title: it.Name + ": " + r.Title, Body: r.Body})
+			}
+		} else {
+			h.Events.Resolve(actionKey(id), nil)
+		}
+	}
 	h.mu.Lock()
 	if e := h.cache[id]; e != nil {
 		e.tried = time.Time{}

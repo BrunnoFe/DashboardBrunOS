@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"brunos/internal/events"
 )
 
 // AdGuard de mentira que aceita as Ações. old = versão sem /control/protection.
@@ -96,6 +99,75 @@ func TestAdGuardActions(t *testing.T) {
 	}
 	if len(f.bodies["/control/protection"]) != 3 {
 		t.Error("pedido inválido chegou ao AdGuard")
+	}
+}
+
+// "Até eu ligar" deixa um lembrete no sino; ligar de novo (ou a proteção voltar) fecha.
+func TestAdGuardReminder(t *testing.T) {
+	f := &adgFake{}
+	srv := f.server(t)
+	defer srv.Close()
+	h, id := newActionHub(t, srv.URL)
+	h.Events = events.New("")
+	ctx := context.Background()
+	key := actionKey(id)
+
+	_ = h.DoAction(ctx, id, ActionReq{Action: "pause", Minutes: 5})
+	if h.Events.IsActive(key) {
+		t.Fatal("pausa com tempo não deveria deixar lembrete")
+	}
+	_ = h.DoAction(ctx, id, ActionReq{Action: "pause"})
+	if !h.Events.IsActive(key) {
+		t.Fatal("até eu ligar deveria deixar lembrete")
+	}
+	_ = h.DoAction(ctx, id, ActionReq{Action: "resume"})
+	if h.Events.IsActive(key) {
+		t.Fatal("ligar de novo deveria fechar o lembrete")
+	}
+
+	// a proteção voltou por fora (painel do AdGuard): a próxima busca fecha o lembrete
+	_ = h.DoAction(ctx, id, ActionReq{Action: "pause"})
+	it, _ := h.Store.Get(id)
+	h.mu.Lock()
+	h.cache[id] = &entry{busy: true}
+	h.mu.Unlock()
+	f.mu.Lock()
+	f.on = true
+	f.mu.Unlock()
+	h.fetch(ctx, it)
+	if h.Events.IsActive(key) {
+		t.Fatal("proteção ligada na busca deveria fechar o lembrete")
+	}
+
+	// com o Aviso pronto "Proteção desligada" ligado, não repete
+	pass := "senha"
+	if _, err := h.Store.Update(id, Input{URL: srv.URL, User: "admin", Secret: &pass, Alerts: map[string]AlertSetting{"protection_off": {On: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = h.DoAction(ctx, id, ActionReq{Action: "pause"})
+	if h.Events.IsActive(key) {
+		t.Fatal("com o Aviso pronto ligado, o lembrete não deveria repetir")
+	}
+}
+
+// Pausa com prazo: o Hub busca de novo logo depois que ela acaba, sem esperar o intervalo.
+func TestHubRefetchAfterPause(t *testing.T) {
+	f := &adgFake{}
+	srv := f.server(t)
+	defer srv.Close()
+	h, id := newActionHub(t, srv.URL)
+	f.on, f.left = false, 40_000
+	it, _ := h.Store.Get(id)
+	h.mu.Lock()
+	h.cache[id] = &entry{busy: true}
+	h.mu.Unlock()
+	now := h.Now()
+	h.fetch(context.Background(), it)
+	h.mu.Lock()
+	next := h.cache[id].next
+	h.mu.Unlock()
+	if d := next.Sub(now); d < 40*time.Second || d > 45*time.Second {
+		t.Fatalf("próxima busca em %v, esperado ~42 s", d)
 	}
 }
 

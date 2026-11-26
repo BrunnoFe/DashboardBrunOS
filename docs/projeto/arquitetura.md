@@ -333,6 +333,9 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     `/control/dns_config` só para "até ligar") e `resume`; métrica `pause_left` (s) e a interna `_guard`
     (0 só desligado sem prazo; o Aviso pronto `protection_off` olha ela, então pausa com tempo não avisa).
     `KindInfo.Live`: buscado sempre que há alguém conectado, mesmo sem widget (escudo do topo).
+    0.34.1: métrica interna `_refetch` (s) pede uma busca extra (`entry.next`, ex.: fim da pausa) e
+    `RemindKind` (`Remind`/`Settled`) deixa um lembrete no sino com a chave `integ:<id>:action` (AdGuard
+    "até eu ligar"; não repete se o Aviso pronto `Covered` estiver ligado).
     `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
     Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
 - **`internal/files/media.go`** (0.34.0): `ProbeMedia(io.ReaderAt, size)` lê só o cabeçalho de MKV/WebM
@@ -499,9 +502,9 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
   senha; também nas Configurações, na busca e no "Reiniciar agora" das Atualizações), contagem no botão e
   no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`. 0.33.0: contagem no zero
   abre a Tela de atualização (`reboot`/`shutdown`).
-- `js/adguard.js` (0.34.0, decisão 73): escudo `#adg-btn` à esquerda das Atualizações (`right: 146px`), só
-  com Integração AdGuard. Lê `protection_on`/`pause_left` de `S.metrics` (`on('metrics')`; o
-  `loadIntegrations` também emite), contagem a cada segundo, relê as integrações quando a pausa acaba; menu
+- `js/adguard.js` (0.34.0, decisão 73): escudo `#adg-btn` no canto esquerdo (0.34.1; antes ao lado das
+  Atualizações), só com Integração AdGuard. Lê `protection_on`/`pause_left` de `S.metrics` (`on('metrics')`;
+  o `loadIntegrations` também emite), contagem a cada segundo e verde assim que ela zera; menu
   Pausar 5/30/60 min ou Até eu ligar / Ligar agora, sem confirmação, valendo para todos os AdGuards.
 - Aviso de vídeo mudo (`files.js`, 0.34.0): `mediaCheck` pede `api.files.media`, `mediaProblem` compara a
   faixa padrão com `canPlayType` (`CODEC_MIME`) e põe o `.pv-warn` por cima do player, com Baixar e Abrir no

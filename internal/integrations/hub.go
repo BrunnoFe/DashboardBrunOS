@@ -33,6 +33,7 @@ type entry struct {
 	tried     time.Time
 	busy      bool
 	downSince time.Time
+	next      time.Time // busca extra pedida pelo Tipo (métrica "_refetch", ex.: fim da pausa do AdGuard)
 }
 
 // View é o que a interface recebe de uma integração.
@@ -106,7 +107,7 @@ func (h *Hub) Tick(ctx context.Context) {
 			h.cache[it.ID] = e
 		}
 		interval, ok := h.intervalLocked(it, viewers)
-		due := ok && !e.busy && now.Sub(e.tried) >= interval
+		due := ok && !e.busy && (now.Sub(e.tried) >= interval || (!e.next.IsZero() && !now.Before(e.next)))
 		if due {
 			e.busy, e.tried = true, now
 		}
@@ -187,7 +188,11 @@ func (h *Hub) fetch(ctx context.Context, it Integration) {
 			e.downSince = now
 		}
 	} else {
-		e.values, e.at, e.err, e.downSince = vals, now.Unix(), "", time.Time{}
+		e.values, e.at, e.err, e.downSince, e.next = vals, now.Unix(), "", time.Time{}, time.Time{}
+		// o Tipo pode pedir uma busca antes do intervalo (ex.: a pausa do AdGuard acaba em 40 s)
+		if v := vals["_refetch"]; v.Num != nil && *v.Num > 0 && *v.Num < 86400 {
+			e.next = now.Add(time.Duration(*v.Num)*time.Second + 2*time.Second)
+		}
 	}
 	bg := h.bg[it.ID]
 	downSince := e.downSince
@@ -195,6 +200,10 @@ func (h *Hub) fetch(ctx context.Context, it Integration) {
 	h.mu.Unlock()
 
 	if err == nil {
+		// lembrete de uma Ação (ex.: "desligado até você ligar"): sai quando o app voltou ao normal
+		if rk, ok := k.(RemindKind); ok && h.Events != nil && rk.Settled(vals) {
+			h.Events.Resolve(actionKey(it.ID), nil)
+		}
 		for mid := range bg {
 			if v, ok := vals[mid]; ok && v.Num != nil {
 				h.Series.Add(it.ID+"."+mid, *v.Num)
