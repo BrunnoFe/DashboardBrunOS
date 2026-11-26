@@ -23,6 +23,11 @@ func (nextcloud) Info() KindInfo {
 			{ID: "user", Label: "Usuário administrador (deixe vazio para usar o token)", Type: "text"},
 			{ID: "secret", Label: "Token do serverinfo (ou senha de app)", Type: "secret", Required: true,
 				Help: "Recomendado: um token só de leitura. No servidor: sudo docker exec -u www-data <container do Nextcloud> php occ config:app:set serverinfo token --value <um texto aleatório> e cole o mesmo texto aqui."},
+			// 0.37.0: arquivos do Nextcloud na janela Arquivos (WebDAV); os dois juntos ligam o lugar "Nextcloud"
+			{ID: "files_user", Label: "Arquivos: seu usuário do Nextcloud (opcional)", Type: "text",
+				Help: "Preencha este e a senha de app abaixo para a pasta do Nextcloud aparecer na janela Arquivos, como uma pasta do servidor."},
+			{ID: "secret2", Label: "Arquivos: senha de app (opcional)", Type: "secret",
+				Help: "No Nextcloud: foto do perfil → Configurações pessoais → Segurança → Criar nova senha de app. Ela pode ser revogada lá a qualquer momento."},
 		},
 		Interval: 300,
 		Metrics: []MetricDef{

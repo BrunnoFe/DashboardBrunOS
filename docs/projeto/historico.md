@@ -301,6 +301,14 @@ Cartão GPU na janela Uso ao vivo, Métricas `brunos.gpu_*`, Modelos "GPU" e "GP
 cabeçalho, em `tests/script-energia.sh` e no `apitest.py`; o `/tmp` do WSL some quando ele reinicia (o
 binário do teste some junto).
 
+## 0.37.0 (26/11/2026): Nextcloud como pasta da janela Arquivos
+Última das quatro versões do plano de 25/11 (decisão 73). Lugar remoto (`internal/files/remote.go`) com as
+mesmas rotas `/api/files/*`; WebDAV em `internal/integrations/webdav.go`; senha de app como segunda
+credencial cifrada (`Secret2`). Navegar, ver (Range), baixar, enviar, criar pasta, renomear, mover, apagar
+(lixeira do Nextcloud) e copiar/mover Nextcloud ↔ discos. Fica para depois: zip, busca, editor, extrair,
+duplicados, mapa do espaço e envio em pedaços. Lição: um `defer` que mexe na variável devolvida só vale com
+retorno nomeado (o Nextcloud não aparecia na lista de lugares; o teste pegou).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

@@ -227,6 +227,15 @@ s,b,_=req('POST','/api/integrations/nao-existe/action',{'action':'pause','minute
 s,b,_=req('POST','/api/integrations/nao-existe/action',{'action':'pause'}, hdr=False); check('ação: sem X-BrunOS → 403', s==403, (s,b))
 s,b,_=req('GET','/api/integrations/plex/find?name=Filme.2003.mkv'); check('plex: sem Plex cadastrado → none', s==200 and json.loads(b)=={'url':'','none':True}, (s,b))
 s,b,_=req('GET','/api/integrations/plex/find?name=../etc/passwd'); check('plex: nome com barra → 400', s==400, (s,b))
+# 0.37.0: Nextcloud como lugar da janela Arquivos (usuário + senha de app cifrada)
+s,b,_=req('POST','/api/integrations',{'kind':'nextcloud','name':'Nuvem','url':'http://127.0.0.1:9','secret':'tok','secret2':'senha-app-secreta','options':{'files_user':'bruno'}}); nc=json.loads(b) if s==200 else {}
+check('nextcloud: senha de app guardada sem voltar para o navegador', s==200 and nc.get('hasSecret2') is True and 'senha-app-secreta' not in b.decode(), (s,b))
+check('nextcloud: senha de app cifrada no disco', 'senha-app-secreta' not in open(FIX+'/data/integrations.json').read())
+s,b,_=req('GET','/api/files/roots'); rts=json.loads(b) if s==200 else []
+check('nextcloud: vira um lugar da janela Arquivos', any(r['id']=='nc-'+nc.get('id','') and r['kind']=='remote' and r['name']=='Nuvem' for r in rts), b[:300])
+s,b,_=req('GET','/api/files/list?root=nc-'+nc.get('id','')+'&path='); check('nextcloud fora do ar → erro amigável', s>=400 and 'erro interno' not in b.decode(), (s,b))
+s,b,_=req('GET','/api/files/zip?root=nc-'+nc.get('id','')+'&p=.'); check('nextcloud: zip ainda não → 400 com explicação', s==400 and 'Nextcloud' in json.loads(b).get('error',''), (s,b))
+req('DELETE','/api/integrations/'+nc.get('id',''))
 # revisão de segurança, lote 3: ocultos da pasta pessoal só leitura; a chave privada some de tudo
 H0=FIX+'/files/home/usuario'
 s,b,_=req('GET','/api/files/list?root=home&path=usuario/.ssh'); nm=[e['name'] for e in json.loads(b)['entries']]

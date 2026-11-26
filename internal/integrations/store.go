@@ -35,6 +35,7 @@ type Integration struct {
 	URL      string                  `json:"url"`
 	User     string                  `json:"user,omitempty"`
 	Secret   string                  `json:"secret,omitempty"`
+	Secret2  string                  `json:"secret2,omitempty"` // segunda credencial cifrada (0.37.0: senha de app dos arquivos do Nextcloud)
 	Interval int                     `json:"interval"`
 	Alerts   map[string]AlertSetting `json:"alerts,omitempty"`
 	Options  map[string]string       `json:"options,omitempty"` // campos extras (não secretos)
@@ -42,15 +43,16 @@ type Integration struct {
 
 // Public é o que vai para o navegador: nunca o segredo.
 type Public struct {
-	ID        string                  `json:"id"`
-	Kind      string                  `json:"kind"`
-	Name      string                  `json:"name"`
-	URL       string                  `json:"url"`
-	User      string                  `json:"user,omitempty"`
-	HasSecret bool                    `json:"hasSecret"`
-	Interval  int                     `json:"interval"`
-	Alerts    map[string]AlertSetting `json:"alerts"`
-	Options   map[string]string       `json:"options"`
+	ID         string                  `json:"id"`
+	Kind       string                  `json:"kind"`
+	Name       string                  `json:"name"`
+	URL        string                  `json:"url"`
+	User       string                  `json:"user,omitempty"`
+	HasSecret  bool                    `json:"hasSecret"`
+	HasSecret2 bool                    `json:"hasSecret2,omitempty"`
+	Interval   int                     `json:"interval"`
+	Alerts     map[string]AlertSetting `json:"alerts"`
+	Options    map[string]string       `json:"options"`
 }
 
 func (i Integration) Public() Public {
@@ -62,7 +64,7 @@ func (i Integration) Public() Public {
 	if o == nil {
 		o = map[string]string{}
 	}
-	return Public{ID: i.ID, Kind: i.Kind, Name: i.Name, URL: i.URL, User: i.User, HasSecret: i.Secret != "", Interval: i.Interval, Alerts: a, Options: o}
+	return Public{ID: i.ID, Kind: i.Kind, Name: i.Name, URL: i.URL, User: i.User, HasSecret: i.Secret != "", HasSecret2: i.Secret2 != "", Interval: i.Interval, Alerts: a, Options: o}
 }
 
 // Input é o que chega da interface ao criar/editar. Secret nil = manter o atual; "" = apagar.
@@ -72,6 +74,7 @@ type Input struct {
 	URL      string                  `json:"url"`
 	User     string                  `json:"user"`
 	Secret   *string                 `json:"secret"`
+	Secret2  *string                 `json:"secret2"` // nil = manter; "" = apagar (0.37.0)
 	Interval int                     `json:"interval"`
 	Alerts   map[string]AlertSetting `json:"alerts"`
 	Options  map[string]string       `json:"options"`
@@ -190,7 +193,25 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 	}
 	it := Integration{Kind: in.Kind, Name: in.Name, URL: in.URL, User: strings.TrimSpace(in.User), Interval: in.Interval, Alerts: map[string]AlertSetting{}}
 	if prev != nil {
-		it.ID, it.Secret = prev.ID, prev.Secret
+		it.ID, it.Secret, it.Secret2 = prev.ID, prev.Secret, prev.Secret2
+	}
+	seal := func(v *string, dst *string) error {
+		if v == nil {
+			return nil
+		}
+		if len(*v) > 4096 {
+			return &ErrInput{"senha/token muito longo"}
+		}
+		if *v == "" {
+			*dst = ""
+			return nil
+		}
+		sealed, err := s.box.Seal(*v)
+		if err != nil {
+			return err
+		}
+		*dst = sealed
+		return nil
 	}
 	if in.Secret != nil {
 		if len(*in.Secret) > 4096 {
@@ -202,11 +223,22 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 		}
 		it.Secret = sealed
 	}
+	has2 := false
+	for _, f := range info.Fields {
+		has2 = has2 || f.ID == "secret2"
+	}
+	if has2 { // só Tipos que declaram a segunda credencial a guardam
+		if err := seal(in.Secret2, &it.Secret2); err != nil {
+			return Integration{}, err
+		}
+	} else {
+		it.Secret2 = ""
+	}
 	for _, f := range info.Fields {
 		if f.Required && f.ID == "secret" && it.Secret == "" {
 			return Integration{}, &ErrInput{f.Label + " é obrigatório"}
 		}
-		if f.ID == "url" || f.ID == "user" || f.ID == "secret" {
+		if f.ID == "url" || f.ID == "user" || f.ID == "secret" || f.ID == "secret2" {
 			continue
 		}
 		// campo extra (ex.: álbum): só os que o Tipo declara, texto curto
@@ -223,9 +255,12 @@ func (s *Store) Validate(in Input, prev *Integration) (Integration, error) {
 	}
 	// a senha/token guardado vale só para o endereço onde foi digitado: trocar o endereço (ou o IP da
 	// tomada) sem digitar de novo mandaria a credencial para outro servidor
-	if prev != nil && in.Secret == nil && prev.Secret != "" &&
-		(originOf(prev.URL) != originOf(it.URL) || prev.Options["host"] != it.Options["host"]) {
+	moved := prev != nil && (originOf(prev.URL) != originOf(it.URL) || prev.Options["host"] != it.Options["host"])
+	if moved && in.Secret == nil && prev.Secret != "" {
 		return Integration{}, &ErrInput{"o endereço mudou: digite a senha/token de novo"}
+	}
+	if moved && in.Secret2 == nil && prev.Secret2 != "" { // a senha de app também vale só para o endereço dela
+		return Integration{}, &ErrInput{"o endereço mudou: digite a senha de app dos arquivos de novo"}
 	}
 	known := map[string]AlertDef{}
 	for _, a := range info.Alerts {

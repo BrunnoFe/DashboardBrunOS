@@ -61,6 +61,7 @@ type Hub struct {
 	wake  chan struct{}
 	sem   chan struct{}
 	saved time.Time
+	dav   *http.Client // arquivos do Nextcloud (webdav.go): sem limite de tempo total
 }
 
 func NewHub(st *Store, series *SeriesStore, ev *events.Store) *Hub {

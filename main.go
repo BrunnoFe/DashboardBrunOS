@@ -301,6 +301,7 @@ func main() {
 	fsvc.MaxUpload = cfg.MaxUploadGB << 30
 	fsvc.LoadUploads(filepath.Join(cfg.DataDir, "uploads.json")) // envios em pedaços que ficaram pela metade
 	fsvc.Protect(cfg.DataDir, cfg.RuntipiDir)                    // segredos somem do Arquivos (protect.go)
+	fsvc.Remotes = s.integ.FileRemotes                           // 0.37.0: o Nextcloud como pasta (WebDAV)
 	s.files = fsvc
 	for _, r := range fsvc.Roots() {
 		slog.Info("pasta disponível", "nome", r.Name, "id", r.ID, "somenteLeitura", r.ReadOnly)

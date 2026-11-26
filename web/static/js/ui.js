@@ -59,6 +59,7 @@ const P = {
   gauge: '<path d="M4.5 18a9 9 0 1 1 15 0"/><path d="M12 13l4-5"/><circle cx="12" cy="13" r="1.2"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z"/>',
   pause: '<path d="M8.5 5.5v13M15.5 5.5v13"/>',
+  cloud: '<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.5 9.2 4.7 4.7 0 0 0 7 18.5z"/>', // 0.37.0: Nextcloud no Arquivos
   // 0.35.0: modo tartaruga do Transmission (casco, cabeça e patas)
   turtle: '<path d="M4 15.5c0-4 3.6-7 8-7s8 3 8 7z"/><path d="M20 13.5h1.6a1.4 1.4 0 0 0 0-2.8H19M6.5 15.5l-.8 2.5M17.5 15.5l.8 2.5M9 8.8l1.5 3.4h3l1.5-3.4"/>',
   plug: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',

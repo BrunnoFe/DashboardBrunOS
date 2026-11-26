@@ -72,6 +72,8 @@ type Service struct {
 	usage     usageCache      // mapa do espaço (usage.go)
 	released  map[string]bool // discos soltos para desmontar (0.16.0): não reabre até o BrunOS reiniciar
 	secrets   secretDirs      // pastas e arquivos com segredos que o Arquivos não mostra (protect.go)
+	// Remotes devolve os lugares remotos (0.37.0: Nextcloud por WebDAV, vindos das integrações); nil = nenhum.
+	Remotes func() []RemoteRoot
 }
 
 // Release fecha a pasta de um disco (pelo nome) e não reabre mais até o BrunOS reiniciar. Antes de
@@ -594,6 +596,9 @@ func (s *Service) Open(rootID, rel string) (*os.File, fs.FileInfo, error) {
 // ── Escrita ───────────────────────────────────────────────────────
 
 func (s *Service) Mkdir(rootID, rel, name string) (string, error) {
+	if rm := s.remote(rootID); rm != nil {
+		return s.remoteMkdir(rm, rel, name)
+	}
 	r, err := s.root(rootID)
 	if err != nil {
 		return "", err
@@ -618,6 +623,9 @@ func (s *Service) Mkdir(rootID, rel, name string) (string, error) {
 }
 
 func (s *Service) Rename(rootID, rel, newName string) error {
+	if rm := s.remote(rootID); rm != nil {
+		return s.remoteRename(rm, rel, newName)
+	}
 	r, err := s.root(rootID)
 	if err != nil {
 		return err
@@ -664,6 +672,9 @@ func uniqueName(dir, name string) string {
 
 // Paste move ou copia itens de uma pasta para outra (inclusive entre discos).
 func (s *Service) Paste(srcRoot string, rels []string, dstRoot, dstRel string, copyMode bool) error {
+	if s.remote(srcRoot) != nil || s.remote(dstRoot) != nil {
+		return s.remotePaste(srcRoot, rels, dstRoot, dstRel, copyMode)
+	}
 	sr, err := s.root(srcRoot)
 	if err != nil {
 		return err
@@ -794,6 +805,9 @@ func copyTree(src, dst string, skip func(string) bool) error {
 
 // Delete apaga de vez (sem lixeira).
 func (s *Service) Delete(rootID string, rels []string) error {
+	if rm := s.remote(rootID); rm != nil { // no Nextcloud, apagar vai para a lixeira dele
+		return s.remoteDelete(rm, rels)
+	}
 	r, err := s.root(rootID)
 	if err != nil {
 		return err
@@ -959,9 +973,16 @@ type RootInfo struct {
 	Free  uint64 `json:"free"`
 }
 
-func (s *Service) RootInfos() []RootInfo {
+func (s *Service) RootInfos() (out []RootInfo) {
 	roots := s.Roots()
-	out := make([]RootInfo, 0, len(roots))
+	out = make([]RootInfo, 0, len(roots))
+	defer func() { // 0.37.0: lugares remotos (Nextcloud) no fim, com o tipo "remote"
+		if s.Remotes != nil {
+			for _, x := range s.Remotes() {
+				out = append(out, RootInfo{RootConfig: RootConfig{ID: x.ID, Name: x.Name, Kind: "remote"}})
+			}
+		}
+	}()
 	for _, r := range roots {
 		ri := RootInfo{RootConfig: r.RootConfig}
 		var st syscall.Statfs_t

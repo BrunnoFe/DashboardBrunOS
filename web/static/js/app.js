@@ -941,6 +941,8 @@ async function loadIntegrations() {
     S.kinds = kinds; S.integrations = list.integrations || [];
     for (const v of list.views || []) S.metrics[v.id] = v;
     resetDefs(); paintWidgets(); emit('metrics');
+    // 0.37.0: o Nextcloud com senha de app vira um lugar da janela Arquivos: relê a lista de lugares
+    api.files.roots().then((r) => { if (Array.isArray(r)) S.roots = r; }).catch(() => { /* fica a lista de antes */ });
   } catch { /* sem integrações: só os widgets do BrunOS */ }
 }
 

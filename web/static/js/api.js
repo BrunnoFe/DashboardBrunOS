@@ -364,7 +364,8 @@ const real = {
     // Arquivos grandes vão em pedaços de 8 MB: se a conexão cair, continua de onde parou (e, se a
     // página for recarregada, escolher o mesmo arquivo para a mesma pasta retoma o envio).
     upload(root, path, name, file, onProgress) {
-      if (file.size > BIG_UPLOAD) return chunkedUpload(root, path, name, file, onProgress);
+      // 0.37.0: no Nextcloud (lugar "nc-") vai inteiro, direto para ele (envio em pedaços é só para os discos)
+      if (file.size > BIG_UPLOAD && !String(root).startsWith('nc-')) return chunkedUpload(root, path, name, file, onProgress);
       const xhr = new XMLHttpRequest();
       const promise = new Promise((resolve, reject) => {
         xhr.open('PUT', `/api/files/upload?${q({ root, path, name })}`);
@@ -466,6 +467,9 @@ function makeDemo() {
       F('Filme (2003).mkv', 7.4e9, 30), F('Outro filme.mkv', 2.2e9, 31)]), D('Séries', [])]),
     'disco2': D('', [D('Backups', [F('backup-2026-10.tar.gz', 21e9, 9)]), D('Músicas', [F('faixa.flac', 34e6, 100)])]),
     'disco3': D('', [D('Immich', []), D('Nextcloud', [])]),
+    // 0.37.0: o Nextcloud da demonstração (pastas genéricas)
+    'nc-demo': D('', [D('Documentos', [F('Contrato.pdf', 1.2e6, 3), F('Planilha de gastos.xlsx', 84e3, 1)]), D('Fotos', [F('ferias-01.jpg', 3.4e6, 20), F('ferias-02.jpg', 3.1e6, 20)]),
+      D('Compartilhado', []), F('Leia-me.md', 2e3, 40)]),
   };
   const rootsMeta = [['home', 'Home', 250, 40], ['disco1', 'Disco1', 1000, 520], ['disco2', 'Disco2', 1000, 180], ['disco3', 'Disco3', 1000, 710], ['backup', 'Backup', 0, 0], ['externo', 'Externo', 0, 0]];
   let demoMapped = ['Disco1', 'Disco2', 'Disco3'];
@@ -526,7 +530,8 @@ function makeDemo() {
       { at: now - 86400 * 9 - 900, kind: 'sumiu', level: 'aviso', text: 'Sumiu da lista de discos (desligado ou desconectado)' }, { at: now - 86400 * 210, kind: 'visto', text: 'Visto pela primeira vez pelo BrunOS como /dev/sda' }],
     'D-SDE': [{ at: now - 3 * 3600, kind: 'novo', text: 'Conectado pela primeira vez como /dev/sde' }],
   };
-  const demoRoots = () => rootsMeta.filter(([id, name]) => id === 'home' || demoMapped.includes(name)).map(([id, name, t, u]) => ({ id, name, kind: id === 'home' ? 'place' : 'disk', readOnly: false, total: t * GB, free: (t - u) * GB }));
+  const demoRoots = () => [...rootsMeta.filter(([id, name]) => id === 'home' || demoMapped.includes(name)).map(([id, name, t, u]) => ({ id, name, kind: id === 'home' ? 'place' : 'disk', readOnly: false, total: t * GB, free: (t - u) * GB })),
+    { id: 'nc-demo', name: 'Nextcloud', kind: 'remote', readOnly: false }]; // 0.37.0: Nextcloud por WebDAV
   const trashItems = [];
 
   // Central de avisos e energia simuladas (#contagem no endereço mostra a contagem regressiva)

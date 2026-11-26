@@ -372,7 +372,7 @@ function drawIntegration() {
   if (!k) {
     main().innerHTML = `<div class="wapp-head"><div><h3>Nova integração</h3><p>Qual app?</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
       <div class="winteg-list">${kinds.map((x) => `<button class="winteg" data-kind="${esc(x.id)}"><span class="winteg-ico">${kindIcon(x.id)}</span><span class="winteg-txt"><b>${esc(x.name)}</b><small>${esc(x.desc)}</small></span><span class="chev">${svg('chevR')}</span></button>`).join('')}</div>
-      <p class="hint">Todos só leem dados: o BrunOS nunca muda nada nos seus apps.</p>`;
+      <p class="hint">Quase todos só leem dados. O AdGuard e o Transmission também aceitam pausar, e o Nextcloud mexe nos seus arquivos se você der uma senha de app para isso.</p>`;
     return;
   }
   const field = (f) => {
@@ -382,6 +382,8 @@ function drawIntegration() {
       return `<label>${esc(f.label)}<span class="wcity"><input class="text-input" data-city value="${esc(g.options?.city || '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off">${has ? `<small class="wcity-ok">${svg('check')}${esc((+g.options.lat).toFixed(2))}, ${esc((+g.options.lon).toFixed(2))}</small>` : ''}</span>
         <span class="wcity-list" hidden></span>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     }
+    // 0.37.0: segunda credencial (senha de app dos arquivos do Nextcloud), guardada cifrada como a primeira
+    if (f.id === 'secret2') return `<label>${esc(f.label)}<input class="text-input" type="password" autocomplete="new-password" data-g="secret2" value="${esc(g.secret2 || '')}" placeholder="${g.hasSecret2 ? '•••••••• guardada (deixe vazio para manter)' : ''}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     if (f.id !== 'url' && f.id !== 'user' && f.id !== 'secret') { // campo extra (ex.: álbum do Immich)
       return `<label>${esc(f.label)}<input class="text-input" data-gopt="${esc(f.id)}" value="${esc(g.options?.[f.id] || '')}" placeholder="${esc(f.placeholder || '')}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
     }
@@ -411,6 +413,7 @@ function integBody() {
   const g = st.integ;
   const b = { kind: g.kind, name: g.name, url: g.url, user: g.user, interval: +g.interval, alerts: g.alerts, options: g.options || {} };
   if (g.secret) b.secret = g.secret;
+  if (g.secret2) b.secret2 = g.secret2;
   return b;
 }
 async function testInteg(btn) {

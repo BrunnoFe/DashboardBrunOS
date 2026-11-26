@@ -6,6 +6,11 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.37.0', date: '2026-11-26', items: [
+    { t: 'Seu Nextcloud dentro do Arquivos', d: 'Na integração do Nextcloud, coloque seu usuário e uma senha de app. A pasta dele aparece em Nuvem, como uma pasta do servidor.' },
+    { t: 'Leve e traga arquivos', d: 'Copie ou mova entre o Nextcloud e os discos do servidor, envie, renomeie e crie pastas. O que você apaga vai para a lixeira do próprio Nextcloud.' },
+    { t: 'Vídeos e fotos de lá também', d: 'Abra fotos e vídeos do Nextcloud direto na pré-visualização, avançando e voltando no vídeo sem baixar tudo.' },
+  ] },
   { v: '0.36.0', date: '2026-11-26', items: [
     { t: 'De olho na placa de vídeo', d: 'Em Uso ao vivo apareceu o cartão GPU: uso, frequência, temperatura e consumo, com gráfico de 5 minutos até 30 dias.' },
     { t: 'Widgets da GPU', d: 'Em Widgets → Modelos, escolha GPU (os números de agora) ou GPU 24 h (o gráfico do dia).' },

@@ -81,6 +81,8 @@ export function mountFiles(body, opts = {}) {
 
 const rootById = (id) => F.ctx.roots.find((r) => r.id === id);
 const rootRO = () => !!rootById(F.root)?.readOnly;
+// 0.37.0: lugar remoto (Nextcloud por WebDAV): zip, busca, editor, extrair, duplicados e mapa ainda não
+const rootRemote = (id = F.root) => rootById(id)?.kind === 'remote';
 
 /* ── Navegação ─────────────────────────────────────────────────── */
 async function go(root, path, push = true) {
@@ -115,12 +117,13 @@ const up = () => { if (F.mode === 'browse' && F.path) go(F.root, parentOf(F.path
 
 /* ── Desenho ───────────────────────────────────────────────────── */
 const isDisk = (r) => r.kind ? r.kind === 'disk' : !(r.id === 'home' || /home/i.test(r.name));
+const isRemote = (r) => r.kind === 'remote';
 function drawSide() {
   const favs = F.ctx.favorites || [];
   const usage = (r) => r.total ? `<span class="f-mini-track"><i style="width:${clamp(((r.total - r.free) / r.total) * 100, 0, 100)}%"></i></span>` : '';
   const link = (r) => `<button class="f-link ${F.mode === 'browse' && F.root === r.id && !F.path ? 'on' : ''}" data-root="${esc(r.id)}" data-drop-root="${esc(r.id)}" data-drop-path="">
-      ${svg(isDisk(r) ? 'disk' : 'home')}<span class="f-link-txt"><span>${esc(r.name)}${r.readOnly ? ' <small class="ro">leitura</small>' : ''}</span>${usage(r)}</span></button>`;
-  const places = F.ctx.roots.filter((r) => !isDisk(r)), disks = F.ctx.roots.filter(isDisk);
+      ${svg(isRemote(r) ? 'cloud' : isDisk(r) ? 'disk' : 'home')}<span class="f-link-txt"><span>${esc(r.name)}${r.readOnly ? ' <small class="ro">leitura</small>' : ''}</span>${usage(r)}</span></button>`;
+  const places = F.ctx.roots.filter((r) => !isDisk(r) && !isRemote(r)), disks = F.ctx.roots.filter(isDisk), clouds = F.ctx.roots.filter(isRemote);
   const open = F.ctx.settings?.filesDisksOpen !== false;
   $('.f-side-list', F.body).innerHTML = `
     <div class="f-sec">Locais</div>
@@ -132,6 +135,7 @@ function drawSide() {
     <div class="f-disks" ${open ? '' : 'hidden'}>
       ${disks.map(link).join('') || '<button class="f-disks-empty" data-f="map-disks">' + svg('plus') + 'Mapear discos</button>'}
     </div>
+    ${clouds.length ? `<div class="f-sec">Nuvem</div>${clouds.map(link).join('')}` : ''}
     ${favs.length ? `<div class="f-sec">Favoritos</div>${favs.map((f, i) => `<button class="f-link ${F.mode === 'browse' && F.root === f.root && F.path === f.path && f.path ? 'on' : ''}" data-fav="${i}" data-drop-root="${esc(f.root)}" data-drop-path="${esc(f.path)}">${folderSVG()}<span class="f-link-txt"><span>${esc(f.name)}</span></span></button>`).join('')}` : ''}
     <div class="f-sec">Outros</div>
     <button class="f-link ${F.mode === 'trash' ? 'on' : ''}" data-f="trash">${svg('trash')}<span class="f-link-txt"><span>Lixeira</span></span></button>`;
@@ -344,6 +348,7 @@ function download(entries) {
   if (api.demo) { toast('Download indisponível na demonstração'); return; }
   const a = document.createElement('a');
   if (entries.length === 1 && !entries[0].dir) a.href = api.files.rawUrl(F.root, pathOf(entries[0]), true);
+  else if (rootRemote()) { toast('Baixar pasta ainda não funciona no Nextcloud', 'Baixe os arquivos um por um, ou copie a pasta para um disco do servidor.'); return; }
   else a.href = api.files.zipUrl(F.root, entries.map(pathOf));
   a.click();
 }
@@ -366,7 +371,8 @@ async function trash(entries, permanent = false) {
   try {
     if (permanent) await api.files.del(F.root, entries.map(pathOf));
     else await api.files.trash(F.root, entries.map(pathOf));
-    toast(permanent ? 'Excluído' : `${label} na lixeira`, permanent ? '' : 'Dá para restaurar pela Lixeira.', permanent ? null : { label: 'Abrir lixeira', run: () => F && openTrash() });
+    if (rootRemote()) toast(`${label} na lixeira do Nextcloud`, 'Dá para restaurar pela lixeira do próprio Nextcloud (Arquivos → Arquivos excluídos).');
+    else toast(permanent ? 'Excluído' : `${label} na lixeira`, permanent ? '' : 'Dá para restaurar pela Lixeira.', permanent ? null : { label: 'Abrir lixeira', run: () => F && openTrash() });
     reload();
   } catch (e) {
     if (!permanent && /outro disco/.test(e.message)) { if (await confirmDialog('Não dá para mandar para a lixeira', `${e.message}.`, 'Excluir para sempre', { danger: true })) trash(entries, true); }
@@ -443,11 +449,11 @@ async function extractArchive(e) {
 }
 const narrowBar = () => { const v = $('.view-toggle', F.body); return !!v && getComputedStyle(v).display === 'none'; };
 function toolsItems() {
-  const ro = rootRO(), root = F.root, path = F.path, rootName = rootById(root)?.name || '';
+  const ro = rootRO(), root = F.root, path = F.path, rootName = rootById(root)?.name || '', rem = rootRemote();
   return [
-    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro, run: newTextFile },
-    { icon: 'treemap', label: 'Mapa do espaço desta pasta', run: () => import('./filetools.js').then((m) => m.spaceDialog({ root, path, rootName, onOpen: (p) => F && go(root, p) })) },
-    { icon: 'dupes', label: 'Encontrar arquivos duplicados', run: () => import('./filetools.js').then((m) => m.duplicatesDialog({ root, path, rootName, readOnly: ro, onChanged: () => F && F.root === root && reload({ keepSel: true }) })) },
+    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro || rem, run: newTextFile },
+    { icon: 'treemap', label: 'Mapa do espaço desta pasta', hidden: rem, run: () => import('./filetools.js').then((m) => m.spaceDialog({ root, path, rootName, onOpen: (p) => F && go(root, p) })) },
+    { icon: 'dupes', label: 'Encontrar arquivos duplicados', hidden: rem, run: () => import('./filetools.js').then((m) => m.duplicatesDialog({ root, path, rootName, readOnly: ro, onChanged: () => F && F.root === root && reload({ keepSel: true }) })) },
     // janela estreita (0.32.0): ocultos e lista/grade saem da barra e vêm para este menu
     ...(narrowBar() ? [
       { icon: F.showHidden ? 'eyeOff' : 'eye', label: F.showHidden ? 'Esconder arquivos ocultos' : 'Mostrar arquivos ocultos', run: toggleHidden },
@@ -458,13 +464,13 @@ function toolsItems() {
 
 function itemMenu(e, x, y) {
   if (!F.sel.has(keyOf(e))) { F.sel = new Set([keyOf(e)]); F.anchor = keyOf(e); draw(); }
-  const sel = selectedEntries(), one = sel.length === 1 ? sel[0] : null, ro = rootRO();
+  const sel = selectedEntries(), one = sel.length === 1 ? sel[0] : null, ro = rootRO(), rem = rootRemote();
   const isFav = one?.dir && (F.ctx.favorites || []).some((f) => f.root === F.root && f.path === pathOf(one));
   contextMenu(x, y, [
     { icon: one?.dir ? 'folder' : 'eye', label: one?.dir ? 'Abrir' : 'Visualizar', hidden: !one, run: () => openEntry(one), kbd: 'Enter' },
     { icon: 'plus', label: 'Abrir em nova guia', hidden: !(one?.dir && F.openTab), run: () => F.openTab(F.root, pathOf(one)), kbd: 'Clique do meio' },
-    { icon: 'edit', label: ro ? 'Abrir no editor (só leitura)' : 'Editar', hidden: !canEdit(one), run: () => editFile(pathOf(one), one.name) },
-    { icon: 'unzip', label: 'Extrair aqui', hidden: !(one && !one.dir && ARCHIVE.test(one.name)) || ro, run: () => extractArchive(one) },
+    { icon: 'edit', label: ro ? 'Abrir no editor (só leitura)' : 'Editar', hidden: !canEdit(one) || rem, run: () => editFile(pathOf(one), one.name) },
+    { icon: 'unzip', label: 'Extrair aqui', hidden: !(one && !one.dir && ARCHIVE.test(one.name)) || ro || rem, run: () => extractArchive(one) },
     { icon: 'folder', label: 'Mostrar na pasta', hidden: !(one && F.mode === 'search'), run: () => go(F.root, parentOf(one.path)).then(() => { F.sel = new Set([one.name]); draw(); }) },
     { icon: 'download', label: sel.length > 1 || one?.dir ? 'Baixar como .zip' : 'Baixar', run: () => download(sel) },
     { icon: 'image', label: 'Usar como papel de parede', hidden: !(one && THUMB_EXT.test(one.name)) || api.demo, run: () => useAsWallpaper(one) },
@@ -475,23 +481,23 @@ function itemMenu(e, x, y) {
     { icon: 'cut', label: 'Recortar', hidden: ro, run: () => setClipboard('cut'), kbd: 'Ctrl+X' },
     { icon: 'paste', label: 'Colar dentro', hidden: !(clipboard && one?.dir) || ro, run: () => paste(F.root, pathOf(one)) },
     '-',
-    { icon: 'trash', label: 'Mover para a lixeira', hidden: ro, run: () => trash(sel), kbd: 'Del' },
-    { icon: 'x', label: 'Excluir para sempre', hidden: ro, danger: true, run: () => trash(sel, true), kbd: 'Shift+Del' },
+    { icon: 'trash', label: rem ? 'Mover para a lixeira do Nextcloud' : 'Mover para a lixeira', hidden: ro, run: () => trash(sel), kbd: 'Del' },
+    { icon: 'x', label: 'Excluir para sempre', hidden: ro || rem, danger: true, run: () => trash(sel, true), kbd: 'Shift+Del' },
   ]);
 }
 function blankMenu(x, y) {
-  const ro = rootRO() || F.mode !== 'browse';
+  const ro = rootRO() || F.mode !== 'browse', rem = rootRemote();
   contextMenu(x, y, [
     { icon: 'folderPlus', label: 'Nova pasta', hidden: ro, run: mkdir },
-    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro, run: newTextFile },
+    { icon: 'filePlus', label: 'Novo arquivo de texto…', hidden: ro || rem, run: newTextFile },
     { icon: 'upload', label: 'Enviar arquivos…', hidden: ro, run: () => pickUpload(false) },
     { icon: 'folder', label: 'Enviar pasta…', hidden: ro, run: () => pickUpload(true) },
     { icon: 'paste', label: `Colar${clipboard ? ` (${clipboard.paths.length})` : ''}`, disabled: !clipboard, hidden: ro, run: () => paste() },
     '-',
-    { icon: 'download', label: 'Baixar esta pasta (.zip)', hidden: F.mode !== 'browse', run: () => { const a = document.createElement('a'); a.href = api.files.zipUrl(F.root, [F.path || '.']); a.click(); } },
+    { icon: 'download', label: 'Baixar esta pasta (.zip)', hidden: F.mode !== 'browse' || rem, run: () => { const a = document.createElement('a'); a.href = api.files.zipUrl(F.root, [F.path || '.']); a.click(); } },
     { icon: 'star', label: 'Adicionar esta pasta aos favoritos', hidden: !F.path || F.mode !== 'browse', run: () => toggleFavorite({ name: baseOf(F.path), dir: true, _path: F.path }) },
-    { icon: 'treemap', label: 'Mapa do espaço desta pasta', hidden: F.mode !== 'browse', run: toolsItems()[1].run },
-    { icon: 'dupes', label: 'Encontrar arquivos duplicados', hidden: F.mode !== 'browse', run: toolsItems()[2].run },
+    { icon: 'treemap', label: 'Mapa do espaço desta pasta', hidden: F.mode !== 'browse' || rem, run: toolsItems()[1].run },
+    { icon: 'dupes', label: 'Encontrar arquivos duplicados', hidden: F.mode !== 'browse' || rem, run: toolsItems()[2].run },
     { icon: F.showHidden ? 'eyeOff' : 'eye', label: F.showHidden ? 'Esconder ocultos' : 'Mostrar ocultos', run: toggleHidden },
     { icon: 'refresh', label: 'Atualizar', run: () => reload({ keepSel: true }) },
   ]);
@@ -593,7 +599,7 @@ function preview(e) {
     $('.pv-name', d.el).textContent = f.name;
     $('.pv-meta', d.el).textContent = `${fmtBytes(f.size)} · ${timeAgo(f.mtime)} · ${idx + 1} de ${files.length}`;
     $('[data-pv="prev"]', d.el).hidden = idx === 0; $('[data-pv="next"]', d.el).hidden = idx === files.length - 1;
-    $('[data-pv="edit"]', d.el).hidden = !canEdit(f) || f.size > 5 * 1024 * 1024;
+    $('[data-pv="edit"]', d.el).hidden = !canEdit(f) || f.size > 5 * 1024 * 1024 || rootRemote();
     const k = extKind(f.name), ext = f.name.split('.').pop().toLowerCase();
     stage._for = pathOf(f); stage._media = null; stage._plex = null;
     if (api.demo) {

@@ -35,7 +35,8 @@ Testar tudo também em tela de celular (390 px), com prints.
    RAPL "uncore" via script, temperatura; AMD: uso, VRAM, temperatura, consumo; NVIDIA pelo `nvidia-smi`
    via script, sem teste real), Modelo "GPU", seção no monitor de hardware, histórico de 30 dias. Junto:
    estudo de aceleração por GPU no BrunOS (parecer para o Bruno, sem código).
-4. **0.37.0: Nextcloud por WebDAV**: usuário + senha de app na Integração Nextcloud ligam o lugar
+4. **0.37.0: Nextcloud por WebDAV** (lançada em 26/11, aguardando teste; fora da 1ª versão: zip, busca,
+   editor, extrair, duplicados, mapa do espaço e envio em pedaços com retomada): usuário + senha de app na Integração Nextcloud ligam o lugar
    "Nextcloud" na janela Arquivos: navegar, ver (vídeo com avançar/voltar), baixar, enviar, criar pasta,
    renomear, mover, apagar (lixeira do Nextcloud) e copiar/mover entre o Nextcloud e os discos.
 

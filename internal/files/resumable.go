@@ -117,6 +117,9 @@ func freeSpace(dir string) (uint64, bool) {
 
 // StartUpload prepara um envio em pedaços. relName pode ter subpastas (envio de pasta).
 func (s *Service) StartUpload(rootID, rel, relName string, size int64) (string, error) {
+	if s.remote(rootID) != nil { // Nextcloud: a interface manda inteiro (/api/files/upload)
+		return "", ErrRemoteUnsupported
+	}
 	r, err := s.root(rootID)
 	if err != nil {
 		return "", err

@@ -346,6 +346,16 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     mensagem amigável (imagem que não existe = "a versão pode não ter sido publicada").
     `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
     Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
+- **Nextcloud como lugar da janela Arquivos** (0.37.0): `internal/files/remote.go` define `Remote` (List,
+  Stat, Get com Range, Mkdir, Put, Move, Copy, Delete) e `Service.Remotes`; lugares com id `nc-<integração>`
+  e `kind: "remote"`. Mkdir/Rename/Paste/Trash/Delete/upload desviam para o remoto; `Paste` cobre Nextcloud ↔
+  disco (copiar e mover, pastas inteiras) e Nextcloud ↔ Nextcloud; as rotas GET (`list`, `raw` com Range,
+  `media`) passam por `remoteGET`, e as que ainda não existem (zip, busca, editor, extrair, duplicados, mapa,
+  envio em pedaços) respondem `ErrRemoteUnsupported`. `internal/integrations/webdav.go`: `davRemote`
+  (PROPFIND/GET/PUT/MKCOL/MOVE/COPY/DELETE em `/remote.php/dav/files/<usuário>`, cliente com `safeTransport`,
+  sem seguir redirecionamento e sem prazo total); `Hub.FileRemotes()` monta um por Integração Nextcloud com
+  `files_user` + `Secret2`. `Integration.Secret2`: segunda credencial cifrada (só Tipos que declaram o campo
+  `secret2`; trocar o endereço pede de novo).
 - **`internal/sysinfo/gpu.go`** (0.36.0): `Snapshot.GPUs` (id, vendor, name, busy, busyEst, freq,
   freqMax, vramUsed, vramTotal, temp, power). Intel (i915/xe) pelo `/sys/class/drm/card*`: frequência e uso
   estimado pelo RC6 (`power/rc6_residency_ms`); temperatura = sensor "GPU" da placa-mãe. AMD (amdgpu): uso,

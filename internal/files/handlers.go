@@ -21,10 +21,25 @@ func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("GET /api/files/roots", wrap(s.hRoots))
 	mux.HandleFunc("GET /api/files/disks", wrap(s.hDisks))
 	mux.HandleFunc("PUT /api/files/disks", wrap(s.hSetDisks))
-	mux.HandleFunc("GET /api/files/list", wrap(s.hList))
-	mux.HandleFunc("GET /api/files/raw", wrap(s.hRaw))
-	mux.HandleFunc("GET /api/files/zip", wrap(s.hZip))
-	mux.HandleFunc("GET /api/files/search", wrap(s.hSearch))
+	// 0.37.0: com ?root= de um lugar remoto (Nextcloud), as rotas GET vão para remote.go; nil = ainda não
+	mux.HandleFunc("GET /api/files/list", wrap(s.remoteGET(s.hList, func(w http.ResponseWriter, r *http.Request, rm Remote) {
+		q := r.URL.Query()
+		entries, err := s.remoteList(rm, q.Get("path"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		p, _ := clean(q.Get("path"))
+		if p == "." {
+			p = ""
+		}
+		writeJSON(w, 200, map[string]any{"root": q.Get("root"), "path": p, "entries": entries})
+	})))
+	mux.HandleFunc("GET /api/files/raw", wrap(s.remoteGET(s.hRaw, func(w http.ResponseWriter, r *http.Request, rm Remote) {
+		s.remoteRaw(w, r, rm, r.URL.Query().Get("path"))
+	})))
+	mux.HandleFunc("GET /api/files/zip", wrap(s.remoteGET(s.hZip, nil)))
+	mux.HandleFunc("GET /api/files/search", wrap(s.remoteGET(s.hSearch, nil)))
 	mux.HandleFunc("PUT /api/files/upload", wrap(s.hUpload))
 	mux.HandleFunc("POST /api/files/mkdir", wrap(s.hMkdir))
 	mux.HandleFunc("POST /api/files/rename", wrap(s.hRename))
@@ -35,7 +50,7 @@ func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("POST /api/files/trash/restore", wrap(s.hTrashRestore))
 	mux.HandleFunc("POST /api/files/trash/delete", wrap(s.hTrashDelete))
 	mux.HandleFunc("POST /api/files/trash/empty", wrap(s.hTrashEmpty))
-	mux.HandleFunc("GET /api/files/text", wrap(s.hTextGet))
+	mux.HandleFunc("GET /api/files/text", wrap(s.remoteGET(s.hTextGet, nil)))
 	mux.HandleFunc("PUT /api/files/text", wrap(s.hTextPut))
 	mux.HandleFunc("POST /api/files/newfile", wrap(s.hNewFile))
 	mux.HandleFunc("POST /api/files/upload/start", wrap(s.hUpStart))
@@ -44,9 +59,16 @@ func (s *Service) Register(mux *http.ServeMux, wrap func(http.HandlerFunc) http.
 	mux.HandleFunc("POST /api/files/upload/finish", wrap(s.hUpFinish))
 	mux.HandleFunc("POST /api/files/upload/cancel", wrap(s.hUpCancel))
 	mux.HandleFunc("POST /api/files/extract", wrap(s.hExtract))
-	mux.HandleFunc("GET /api/files/duplicates", wrap(s.hDuplicates))
-	mux.HandleFunc("GET /api/files/usage", wrap(s.hUsage))
-	mux.HandleFunc("GET /api/files/media", wrap(s.hMedia))
+	mux.HandleFunc("GET /api/files/duplicates", wrap(s.remoteGET(s.hDuplicates, nil)))
+	mux.HandleFunc("GET /api/files/usage", wrap(s.remoteGET(s.hUsage, nil)))
+	mux.HandleFunc("GET /api/files/media", wrap(s.remoteGET(s.hMedia, func(w http.ResponseWriter, r *http.Request, rm Remote) {
+		info, err := s.remoteMedia(rm, r.URL.Query().Get("path"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, info)
+	})))
 }
 
 func (s *Service) hUpStart(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +225,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		code, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, ErrTooBig):
 		code, msg = http.StatusRequestEntityTooLarge, err.Error()
+	case errors.Is(err, ErrRemoteUnsupported):
+		code, msg = http.StatusBadRequest, err.Error()
 	case errors.Is(err, ErrBinary), errors.Is(err, ErrEncoding), errors.Is(err, ErrLink), errors.Is(err, errMedia):
 		code, msg = http.StatusUnsupportedMediaType, err.Error()
 	case errors.Is(err, ErrUploadGone):
@@ -456,7 +480,13 @@ func (s *Service) hUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "arquivo maior que o limite de upload"})
 		return
 	}
-	p, err := s.Upload(q.Get("root"), q.Get("path"), q.Get("name"), r.Body)
+	var p string
+	var err error
+	if rm := s.remote(q.Get("root")); rm != nil { // Nextcloud: o corpo vai direto para ele (sem guardar aqui)
+		p, err = s.remoteUpload(rm, q.Get("path"), q.Get("name"), r.Body, r.ContentLength)
+	} else {
+		p, err = s.Upload(q.Get("root"), q.Get("path"), q.Get("name"), r.Body)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return

@@ -66,6 +66,9 @@ func (r *Root) safeTrashDir() (string, error) {
 
 // Trash move os itens para a lixeira da raiz.
 func (s *Service) Trash(rootID string, rels []string) error {
+	if rm := s.remote(rootID); rm != nil { // Nextcloud: o DELETE dele já manda para a lixeira dele
+		return s.remoteDelete(rm, rels)
+	}
 	r, err := s.root(rootID)
 	if err != nil {
 		return err
