@@ -4,6 +4,7 @@
 import { api } from './api.js';
 import { $, esc, html, svg, toast, toastError, openDialog, on } from './ui.js';
 import { redrawNotifications } from './notifications.js';
+import { showUpdScreen } from './updscreen.js';
 
 let ctx = null, panel = null, state = { hostReady: null, manual: null }, tick = 0;
 
@@ -53,8 +54,16 @@ function paint() {
   badge.textContent = m ? (left ? mmss(left) : '…') : '';
   b.setAttribute('aria-label', m ? `${GOING[m.action]} o servidor em ${left} segundos` : 'Energia');
   if (m && left <= 0 && Date.now() / 1000 > m.deadline + 150) setManual(null); // o servidor não foi: some
+  // 0.33.0: a contagem acabou: Tela de atualização ("Reiniciando o servidor" / "Desligando o servidor"),
+  // que recarrega a página quando ele volta (e some sozinha se ele não cair em 2,5 min)
+  if (m && left <= 0 && shownFor !== m.deadline && Date.now() / 1000 < m.deadline + 150) {
+    shownFor = m.deadline;
+    if (panel) closePowerMenu();
+    showUpdScreen({ kind: m.action === 'desligar' ? 'shutdown' : 'reboot', expectDownMs: (m.deadline + 150) * 1000 - Date.now() });
+  }
   if (panel) draw();
 }
+let shownFor = 0; // prazo do pedido que já abriu a Tela de atualização
 
 export function closePowerMenu() {
   if (!panel) return;

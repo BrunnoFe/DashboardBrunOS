@@ -111,7 +111,9 @@ testar contra o backend.
 ## Como lançar uma versão
 
 1. Atualize `VERSION` (ex.: `0.4.0`), `runtipi-app/brunos/docker-compose.json` (tag da imagem) e
-   `runtipi-app/brunos/config.json` (`version`, `tipi_version` +1, `updated_at` em ms).
+   `runtipi-app/brunos/config.json` (`version`, `tipi_version` +1, `updated_at` em ms). Desde a 0.33.0,
+   escreva as **Novidades** da versão no topo de `web/static/js/novidades.js` (data do lançamento; título
+   curto em negrito + uma frase simples e humana, sem jargão nem cara de robô, como o Bruno pediu).
 2. Commit na `main` e push. O GitHub Actions roda os testes e, se a versão do `VERSION` ainda não
    existir no GHCR, publica `ghcr.io/brunnofe/brunos:<versão>` e `latest`.
 3. Na loja (`RuntipiAppStore`): branch nova, copie `runtipi-app/brunos/{config.json,docker-compose.json}`

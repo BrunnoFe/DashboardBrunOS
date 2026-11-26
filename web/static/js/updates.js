@@ -4,6 +4,23 @@
 // painel mostra o andamento (decisão 47).
 import { api } from './api.js';
 import { $, esc, html, svg, toast, toastError, timeAgo, confirmDialog, openDialog, fmtBytes } from './ui.js';
+import { showUpdScreen, updScreenStep, hideUpdScreen, updScreenKind } from './updscreen.js';
+
+// 0.33.0: a atualização do próprio BrunOS (o app "brunos" da loja) mostra a Tela de atualização
+const isSelf = (j) => j?.kind === 'app' && (j.target || '').split(':')[0] === 'brunos';
+let pollFails = 0, ringOkT = 0;
+
+// Anel no ícone do app que está atualizando (tela inicial e dock). Num <style> com o seletor do app, para
+// sobreviver aos redesenhos da tela; o desenho do anel está no extra.css. ok = ✓ verde rápido.
+function paintRing(urn, ok = false) {
+  let st = document.getElementById('upd-ring-css');
+  if (!urn) { st?.remove(); return; }
+  if (!st) { st = document.createElement('style'); st.id = 'upd-ring-css'; document.head.append(st); }
+  const u = CSS.escape(urn), sel = `.app[data-app="${u}"] .app-icon::before, .dock-item[data-app="${u}"]::before`;
+  st.textContent = ok
+    ? `${sel} { content: '✓'; display: grid; place-items: center; padding: 0; font-weight: 800; color: #fff; font-size: 22px; background: rgba(58,209,107,.8); box-shadow: 0 0 0 2.5px #3ad16b; -webkit-mask: none; mask: none; animation: upd-ok 2.6s ease both; }`
+    : `${sel} { content: ''; } .app[data-app="${u}"] .app-icon > img, .dock-item[data-app="${u}"] img { opacity: .55; }`;
+}
 
 let ctx = null, panel = null, checking = false, pollTimer = 0, lastJobRunning = false, dismissed = 0, failure = '';
 let afterJob = 0; // quando a última atualização terminou (ms): segue lendo até a conferência de depois acabar
@@ -33,6 +50,20 @@ export function paintUpdates() {
   b.classList.toggle('sec', n.security > 0);
   b.classList.toggle('busy', run || checking);
   b.setAttribute('aria-label', run ? `Atualizando ${s.job.name}` : n.total ? `Atualizações: ${n.total}` : 'Atualizações: tudo em dia');
+  const j = s?.job;
+  // o próprio BrunOS: Tela de atualização com as etapas (sem backup, a primeira etapa já é "Baixando")
+  if (run && isSelf(j)) {
+    if (panel) closeUpdates();
+    showUpdScreen({ kind: 'self', from: j.from, to: j.to, backup: j.backup });
+    updScreenStep(j.backup && j.phase !== 'backup' ? 1 : 0);
+  } else if (!run && updScreenKind() === 'self' && j && !j.ok) { // deu errado antes de reiniciar: volta e mostra o erro
+    hideUpdScreen();
+    toast(`Não deu para atualizar o BrunOS`, j.err || 'Veja o painel de Atualizações.', null, { error: true });
+  }
+  // app comum: anel no ícone enquanto atualiza, ✓ quando termina bem
+  if (run && j?.kind === 'app' && !isSelf(j)) { clearTimeout(ringOkT); paintRing(j.target); }
+  else if (lastJobRunning && !run && j?.ok && j.kind === 'app') { paintRing(j.target, true); ringOkT = setTimeout(() => { ringOkT = 0; paintRing(''); }, 2700); }
+  else if (!run && !ringOkT) paintRing('');
   if (lastJobRunning && !run) { ctx?.reloadApps?.(); afterJob = Date.now(); } // terminou: as setas dos ícones mudam
   if (afterJob && !s?.checking && Date.now() - afterJob > AFTER_JOB) { afterJob = 0; ctx?.reloadApps?.(); } // a conferência de depois acabou
   lastJobRunning = run;
@@ -46,10 +77,15 @@ export function paintUpdates() {
 function schedulePoll() {
   clearTimeout(pollTimer); pollTimer = 0;
   if (!jobRunning() && !afterJob) return;
+  const s = snap();
   pollTimer = setTimeout(async () => {
-    try { ctx.set(await api.updates.get()); } catch { /* tenta de novo */ }
+    try { ctx.set(await api.updates.get()); pollFails = 0; }
+    catch {
+      // o servidor parou de responder no meio da atualização do Linux (o Docker reiniciou): Tela de atualização
+      if (++pollFails >= 2 && s?.job?.running && s.job.kind === 'linux') showUpdScreen({ kind: 'linux', step: 1 });
+    }
     paintUpdates();
-  }, panel ? 3000 : 15000);
+  }, panel || isSelf(s?.job) || s?.job?.kind === 'linux' ? 3000 : 15000);
 }
 
 export const updatesOpen = () => !!panel;

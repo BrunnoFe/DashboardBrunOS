@@ -11,12 +11,14 @@ Tudo o que o BrunOS faz, assunto por assunto.
 - **Ícones:** em *Personalizar* (botão direito num app) ou num atalho novo, escolha um ícone do catálogo do [dashboardicons.com](https://dashboardicons.com) colando o nome ou o link, ou envie o seu próprio arquivo (SVG, PNG, ICO ou JPG, até 1 MB). Uma prévia mostra o resultado antes de salvar. Os ícones ficam guardados no servidor e aparecem mesmo sem internet.
 - **Formas de acesso:** cada app abre pelo domínio (`https://app.server.lan`) ou pela porta (`server.lan:8384`). No Automático, o app abre do mesmo jeito que você abriu o BrunOS e, se esse jeito não estiver funcionando, troca sozinho para o outro. O BrunOS testa os dois de tempos em tempos: no botão direito do app (*Abrir pelo domínio* / *Abrir pela porta*), em *Personalizar* e nos *Detalhes do app*, uma bolinha verde mostra o que respondeu e uma cinza, o que não respondeu.
 - A busca (`Ctrl+K`) acha apps, ações e arquivos.
+- **Escala:** em *Configurações → Aparência* dá para deixar a tela inicial e as janelas do sistema menores ou maiores (de 70% a 110%, separadas), como a escala do Windows. Cada aparelho guarda a sua; no celular o mínimo é 85%.
+- **Novidades:** na primeira vez que você abre uma versão nova, uma janelinha conta o que mudou. Para rever, clique na versão do BrunOS em *Configurações*.
 - **Tela de bloqueio:** `Ctrl+Shift+L` (ou a busca, ou o botão direito na tela inicial) mostra um relógio grande sobre o papel de parede. Em *Configurações → Conta* você escolhe se ela pede a senha para voltar e depois de quanto tempo sem uso ela bloqueia sozinha.
 - **Widgets:** na janela *Widgets* há modelos de armazenamento, sistema, rede, internet, bateria, consumo, gráficos, Relógio (digital ou de ponteiros, com fuso horário), Bloco de notas e Lista de tarefas (escritos direto na tela inicial e iguais em todos os aparelhos). Cadastrando a integração *Clima* com o nome da sua cidade, aparecem temperatura, ícone do tempo e previsão dos próximos dias.
 
 ## Arquivos
 
-Gerenciador completo, com abas: lixeira, envio com retomada, zip, busca, editor de texto, extrair arquivos, caça a duplicados e mapa do espaço. Em *Arquivos → Discos → Mapear* você escolhe quais discos aparecem. Por segurança, os arquivos ocultos da pasta pessoal (como `.ssh` e `.bashrc`) só podem ser lidos (para mudar, use o Terminal), e senhas e chaves (dados do BrunOS, configurações secretas dos apps, chaves privadas) nem aparecem.
+Gerenciador completo, com abas, que se ajeita à largura da janela (no celular ou numa janela pequena, os botões viram ícones e o caminho de pastas longo recolhe as do meio em "…"): lixeira, envio com retomada, zip, busca, editor de texto, extrair arquivos, caça a duplicados e mapa do espaço. Em *Arquivos → Discos → Mapear* você escolhe quais discos aparecem. Por segurança, os arquivos ocultos da pasta pessoal (como `.ssh` e `.bashrc`) só podem ser lidos (para mudar, use o Terminal), e senhas e chaves (dados do BrunOS, configurações secretas dos apps, chaves privadas) nem aparecem.
 
 ## Discos
 
@@ -45,7 +47,7 @@ Com o script do servidor atualizado, **instalar acontece na própria Loja**: as 
 
 ## Atualizações
 
-O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pacotes do Linux). Um clique abre o painel e já confere; dali dá para atualizar cada app e o Linux sem abrir o terminal, acompanhando o andamento. A atualização roda no próprio servidor e continua mesmo se o BrunOS reiniciar no meio. A frequência da conferência automática fica em *Configurações → Sistema → Procurar atualizações*.
+O botão ao lado do sino mostra quantas atualizações há (apps do Runtipi e pacotes do Linux). Um clique abre o painel e já confere; dali dá para atualizar cada app e o Linux sem abrir o terminal, acompanhando o andamento. A atualização roda no próprio servidor e continua mesmo se o BrunOS reiniciar no meio. O app que está atualizando ganha um anel girando no ícone. Ao atualizar o próprio BrunOS (ou quando o Linux reinicia o Docker, ou o servidor reinicia), aparece uma tela com a logo animada e as etapas, e a página volta sozinha quando ele estiver de pé. A frequência da conferência automática fica em *Configurações → Sistema → Procurar atualizações*.
 
 ## Energia e consumo
 

@@ -246,6 +246,19 @@ que esteja rodando em vez de pular, e a interface segue lendo o servidor enquant
 - O painel parava de ler o servidor quando via "terminou", mas a conferência nova só vinha depois, e a
   conferência recente (menos de 10 min) impedia conferir de novo ao abrir o painel.
 
+## 0.33.0 (25/11/2026): Tela de atualização, Novidades e Escala
+Tela de atualização com a logo em órbita dentro de um anel que mostra as etapas (atualizar o BrunOS, Linux
+quando o servidor para de responder, reiniciar/desligar o servidor, reiniciar o BrunOS); recarrega sozinha
+quando ele volta. Anel girando no ícone do app que atualiza e ✓ ao terminar. Novidades na primeira abertura
+de cada versão (e ao clicar na versão nas Configurações). Escala da Tela inicial e do Sistema, por aparelho,
+70–110 % (85 % no celular). Decisões 70 a 72. Lições:
+- Só `zoom` na tela inicial não adianta: o encaixe estica tudo de volta. O zoom vai na `.page-body` e as
+  contas continuam em px da tela (a composição encolhe); o arrastar desconta a escala (`areaZoom`).
+- Elementos posicionados por `left/top` em JS (menus `.ctx`) andam errado com `zoom`: ficaram de fora.
+- O anel do ícone vive num `<style>` com o seletor do app: sobrevive aos redesenhos da tela inicial.
+- Protótipos injetados na própria página de demonstração (papel de parede e desfoque de verdade) e vídeos
+  pelo Playwright (`recordVideo`, precisa do ffmpeg dele) ajudaram o Bruno a escolher (e a misturar dois).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

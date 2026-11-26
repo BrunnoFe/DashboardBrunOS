@@ -19,6 +19,7 @@ import * as wins from './windows.js';
 import { appWindow } from './appwindow.js';
 import { parseIconInput, cdnIcon, ICON_ACCEPT, ICON_MAX } from './icons.js';
 import { brunosForm, portHost, accessUrls, formStatus, pickForm } from './access.js';
+import { SCALE, scaleOf, scalePct, scaleMin, setScale, applyScale } from './scale.js';
 import {
   $, $$, esc, html, clamp, fmt, fmtBytes, fmtRate, fmtDuration, debounce, on, emit, svg, folderSVG,
   toast, toastError, contextMenu, closeMenu, menuOpen, dialogs, openDialog, confirmDialog, promptDialog,
@@ -956,6 +957,11 @@ let curRegua = 0, AU = areaUtil(1280), ICON = { icon: 64, casa: 101 };
 function setIconVars() {
   const mobile = innerWidth < MOBILE_W, r = document.documentElement.style;
   AU = areaUtil(innerWidth);
+  // Escala da Tela inicial (0.33.0): a tela é desenhada com zoom --hs. Abaixo de 100 % as contas ficam
+  // iguais e a composição inteira encolhe (sobra papel de parede em volta); acima, a Área útil diminui na
+  // mesma proporção para não passar da tela.
+  const hs = scaleOf('home');
+  if (hs > 1) AU = { margin: AU.margin, width: AU.width / hs };
   curRegua = reguaFor(AU.width, mobile);
   ICON = iconMetrics(curRegua, set().iconSize, { mobile });
   r.setProperty('--app-icon', ICON.icon + 'px');
@@ -965,8 +971,10 @@ function setIconVars() {
 function auHeight(el) {
   const desk = $('#desktop'), top = el.getBoundingClientRect().top - desk.getBoundingClientRect().top + desk.scrollTop;
   const search = $('#search-pill')?.getBoundingClientRect().top || innerHeight - 110;
-  return Math.max(120, search - 36 - top);
+  return Math.max(120, search - 36 - top) / Math.max(1, scaleOf('home')); // acima de 100 %: em px da tela com zoom
 }
+// zoom de verdade de uma Área de widgets na tela: o dela (Quadro) vezes a Escala da Tela inicial
+const areaZoom = (area) => (parseFloat(area.style.zoom) || 1) * scaleOf('home');
 function drawHome() {
   const grid = $('#app-grid');
   setIconVars();
@@ -1058,7 +1066,7 @@ function fillWidgets(pg, real, list, { nApps, side, mobile, am, mode }) {
   const cc = mobile ? 2 : clamp(Math.floor((auW + Q.gapX) / (175 + Q.gapX)), 1, mc);
   const k = Math.min(260 / Q.w, auW / (cc * Q.w + (cc - 1) * Q.gapX));
   box.innerHTML = areaHTML(real, list, { k, compactCols: cc });
-  const h = box.firstElementChild?.getBoundingClientRect().height || 0;
+  const h = (box.firstElementChild?.getBoundingClientRect().height || 0) / scaleOf('home'); // px da tela → px com zoom
   return { side: false, appRows: nApps ? rowsFit(auH - h - gapH, ICON.icon) : 0 };
 }
 // Folga que a caixa de apps pode avançar sobre a margem: a meia casa do nome em cada ponta (os ícones em
@@ -1299,9 +1307,10 @@ function folderMenu(id, x, y) {
   grid.addEventListener('click', (e) => { if (aSuppress) { aSuppress = false; e.preventDefault(); e.stopPropagation(); } }, true);
   grid.addEventListener('dragstart', (e) => { if (e.target.closest?.('.app')) e.preventDefault(); }); // sem o arrastar nativo
   function aStart(e) {
-    const r = ad.el.getBoundingClientRect(), g = ad.el.cloneNode(true);
+    const r = ad.el.getBoundingClientRect(), g = ad.el.cloneNode(true), hs = scaleOf('home');
     g.classList.add('app-ghost');
-    Object.assign(g.style, { width: `${r.width}px`, height: `${r.height}px` });
+    // o fantasma fica no body (fora do zoom da Tela inicial): mesmo zoom, para ficar do mesmo tamanho
+    Object.assign(g.style, { width: `${r.width / hs}px`, height: `${r.height / hs}px`, zoom: String(hs) });
     document.body.append(g);
     Object.assign(ad, { on: true, ghost: g, gx: ad.x0 - r.left, gy: ad.y0 - r.top, snap: areaSnapshot() });
     ad.el.classList.add('app-origin'); document.body.classList.add('w-dragging');
@@ -1314,12 +1323,13 @@ function folderMenu(id, x, y) {
     if (reduced()) return;
     for (const el of els) {
       if (el === ad?.el) continue;
-      const a = first.get(el), b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+      const hs = scaleOf('home'), a = first.get(el), b = el.getBoundingClientRect(), dx = (a.left - b.left) / hs, dy = (a.top - b.top) / hs;
       if (Math.abs(dx) + Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
     }
   }
   function aMove(e) {
-    ad.ghost.style.transform = `translate(${e.clientX - ad.gx}px, ${e.clientY - ad.gy}px)`;
+    const hs = scaleOf('home');
+    ad.ghost.style.transform = `translate(${(e.clientX - ad.gx) / hs}px, ${(e.clientY - ad.gy) / hs}px)`;
     const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0; // beira da tela: muda de Página
     if (edge && !ad.edgeT) ad.edgeT = setTimeout(() => { if (ad) ad.edgeT = 0; goPage(page + edge); }, 650);
     if (!edge) { clearTimeout(ad.edgeT); ad.edgeT = 0; }
@@ -1693,6 +1703,11 @@ function cfgPwRow() {
   const lock = cfgPw.lockedUntil > Date.now() / 1000 ? ` · <b class="cfgpw-warn">bloqueada até ${new Date(cfgPw.lockedUntil * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</b> por senhas erradas` : '';
   return { ...base, desc: `${when}${lock}. Pedida para formatar discos e desinstalar apps. Para trocar, o Terminal pede a senha atual.`, ctrl: go('Trocar', false) };
 }
+// − 85 % + e "Voltar a 100%" de uma Escala (part: 'home' | 'sys')
+function scaleCtl(part) {
+  const pct = scalePct(part), lbl = part === 'home' ? 'da tela inicial' : 'do sistema';
+  return `<span class="scale-ctl"><button type="button" data-scale="${part}" data-d="-1" ${pct <= scaleMin() ? 'disabled' : ''} aria-label="Diminuir a escala ${lbl}">−</button><b aria-live="polite">${pct} %</b><button type="button" data-scale="${part}" data-d="1" ${pct >= SCALE.max ? 'disabled' : ''} aria-label="Aumentar a escala ${lbl}">+</button></span><button type="button" class="pill-btn sm scale-reset" data-scale="${part}" data-d="0" ${pct === 100 ? 'hidden' : ''}>Voltar a 100%</button>`;
+}
 function settingsRows() {
   const st = set();
   const pw = cfgPwRow(); // sem senha ainda: aparece em destaque no topo do Sistema; criada: junto do Terminal
@@ -1705,6 +1720,8 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'image', title: 'Papel de parede', desc: st.wallpaperMode === 'schedule' ? 'Por horário: cada papel de parede vale a partir da hora marcada, até a próxima (troca sozinho, com a cor de destaque junto)' : 'Escolha uma imagem ou envie a sua. Também dá para soltar o arquivo em qualquer lugar da tela inicial',
       ctrl: `<div class="wp-ctrl"><div class="seg wp-mode"><button class="${st.wallpaperMode !== 'schedule' ? 'on' : ''}" data-wpmode="single">Um só</button><button class="${st.wallpaperMode === 'schedule' ? 'on' : ''}" data-wpmode="schedule">Por horário</button></div>${st.wallpaperMode === 'schedule' ? scheduleHTML(wps) : `<div class="wp-thumbs">${wps.map((id) => `<span class="wp-thumb-wrap"><button class="wp-thumb ${st.wallpaper === id ? 'on' : ''}" data-wp="${esc(id)}" style="background-image:url('${esc(wallpaperUrl(id, { thumb: true }))}')" aria-label="Papel de parede"></button>${id.startsWith('upload:') ? `<button class="wp-del" data-wp-del="${esc(id.slice(7))}" aria-label="Apagar">${svg('x')}</button>` : ''}</span>`).join('')}<button class="wp-thumb add" data-wp-add aria-label="Enviar imagem">${svg('plus')}</button></div>`}</div>` },
     { group: 'Aparência', cat: 'look', icon: 'palette', title: 'Cor de destaque', desc: 'Automática tira a cor dominante do papel de parede; Vibrante pega a mais saturada', ctrl: `<span class="brand-chip" title="Cor atual"><i></i></span><div class="seg">${[['auto', 'Automática'], ['vibrant', 'Vibrante'], ['manual', 'Manual']].map(([k, l]) => `<button class="${st.accentMode === k ? 'on' : ''}" data-accent="${k}">${l}</button>`).join('')}</div>${st.accentMode === 'manual' ? `<div class="swatches">${SWATCH_HUES.map((h) => `<button class="swatch ${st.manualHue === h ? 'on' : ''}" data-hue="${h}" style="background:hsl(${h} 80% 48%)" aria-label="Matiz ${h}"></button>`).join('')}<input type="range" min="0" max="359" value="${st.manualHue}" data-hue-range aria-label="Matiz" style="--p:${st.manualHue / 3.59}%;width:110px"></div>` : ''}` },
+    { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Escala da tela inicial', desc: `Deixa a saudação, os widgets, os ícones e a busca menores ou maiores, como a escala do Windows. Vale só neste aparelho${innerWidth < MOBILE_W ? ' (no celular, o mínimo é 85 %)' : ''}`, ctrl: scaleCtl('home') },
+    { group: 'Aparência', cat: 'look', icon: 'winMax', title: 'Escala do sistema', desc: 'Janelas do BrunOS, dock, botões do canto, avisos e diálogos. Os apps abertos em janela não mudam. Vale só neste aparelho', ctrl: scaleCtl('sys') },
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Organização da tela inicial', desc: `Tamanho e espaço dos ícones, última fileira de apps e o que fazer quando não cabe tudo. Agora: ${ICON_SIZES[iconSizeKey(st.iconSize)].name} · ${ICON_GAPS[st.iconGap] || 'Fixo'} · ${LAST_ROW[st.lastRow] || LAST_ROW.centro} · ${HOME_FIT[st.homeFit] || HOME_FIT.encolher}`,
       ctrl: `<button class="pill-btn" data-act="home-layout">${svg('apps')}Ajustar</button>` },
@@ -1787,7 +1804,7 @@ function renderSettings(body) {
           <div class="kv"><span>Processador</span><span title="${esc(info.cpuModel || '')}">${esc((info.cpuModel || '—').replace(/\(R\)|\(TM\)|CPU|@.*$/g, '').replace(/\s+/g, ' ').trim())}</span></div>
           <div class="kv"><span>IP local</span><span>${esc(S.tipi.internalIp || location.hostname)}</span></div>
           <div class="kv"><span>Tempo ativo</span><span data-bind="uptime">—</span></div>
-          <div class="kv"><span>BrunOS</span><span>${esc(S.system?.version || S.pub.version || '')}</span></div>
+          <div class="kv kv-news" data-act="news" role="button" tabindex="0" title="Ver as novidades"><span>BrunOS</span><span>${esc(S.system?.version || S.pub.version || '')} · Novidades</span></div>
         </div>
         <div class="btn-row wrap">
           <button class="pill-btn" data-act="logout">${svg('logout')}Sair</button>
@@ -1869,6 +1886,13 @@ function wireSettings(body) {
     else if ((el = q('[data-act="dock-pick"]'))) dockPicker(el, () => { const b = $('[data-act="dock-pick"]', body); if (b) b.outerHTML = dockPickerBtn(); });
     else if ((el = q('[data-openin]'))) { st.openIn = el.dataset.openin; save(); renderApps(); redraw(); }
     else if ((el = q('[data-winstyle]'))) { st.winStyle = el.dataset.winstyle; save(); wins.layout(); redraw(); }
+    else if (q('[data-act="news"]')) import('./novidades.js').then((m) => m.showNovidades());
+    else if ((el = q('[data-scale]')) && !el.disabled) { // Escala (0.33.0): por aparelho, no navegador
+      const part = el.dataset.scale, d = +el.dataset.d;
+      setScale(part, d ? scalePct(part) + d * SCALE.step : 100);
+      if (part === 'home') renderApps(); else { sizeDock(); wins.layout(); }
+      redraw();
+    }
     else if ((el = q('[data-dockmax]'))) { st.dockWithMax = el.dataset.dockmax; save(); wins.layout(); redraw(); }
     else if ((el = q('[data-urlmode]'))) { st.urlMode = el.dataset.urlmode; save(); renderApps(); redraw(); }
     else if ((el = q('[data-lockmode]'))) { st.lockMode = el.dataset.lockmode; save(); redraw(); }
@@ -2502,6 +2526,9 @@ async function enterDesktop(animate) {
   S.appsTimer = setInterval(() => { if (!document.body.classList.contains('is-locked') && !document.hidden) { loadApps(); refreshInternet(); } }, 60000);
   document.body.classList.remove('is-locked');
   if (animate) { document.body.classList.add('just-unlocked'); setTimeout(() => document.body.classList.remove('just-unlocked'), 1600); }
+  // Novidades (0.33.0): uma vez por navegador em cada versão nova (instalação nova só marca como vista)
+  const ver = S.system?.version || S.pub.version;
+  if (!api.demo) import('./novidades.js').then((m) => (set().welcomed ? setTimeout(() => m.checkNovidades(ver), 1500) : m.markSeen(ver))).catch(() => {});
   if (!set().welcomed) {
     set().welcomed = true; save();
     setTimeout(() => toast('Tudo pronto!', 'Clique com o botão direito nos ícones para personalizar, ou solte uma foto na tela para trocar o papel de parede.', { label: 'Configurar', run: () => openSheet('settings', $('[data-sys="settings"]')) }), 1300);
@@ -2563,7 +2590,7 @@ function areaGeom(area) {
 }
 // põe os widgets nos lugares do plano, com FLIP (escorregam de onde estavam até o lugar novo)
 function previewArea(area, rects, skip) {
-  const els = $$('.widget-wrap[data-wid]', area), k = parseFloat(area.style.zoom) || 1;
+  const els = $$('.widget-wrap[data-wid]', area), k = areaZoom(area);
   const first = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
   const by = new Map(rects.map((o) => [o.id, o]));
   for (const el of els) {
@@ -2615,7 +2642,7 @@ function previewArea(area, rects, skip) {
 
   function start(e) {
     const { wrap } = st, area = wrap.closest('[data-area]'); if (!area) { st = null; return; }
-    const r = wrap.getBoundingClientRect(), z = parseFloat(area.style.zoom) || 1;
+    const r = wrap.getBoundingClientRect(), z = areaZoom(area);
     Object.assign(st, { on: true, area, page: +area.dataset.area, it: widgetById(st.id), gx: st.x0 - r.left, gy: st.y0 - r.top, orig: rectsOn(+area.dataset.area), snap: areaSnapshot() });
     // o "fantasma" que segue o ponteiro, por cima de tudo (fora da página, que pode deslizar)
     const g = wrap.cloneNode(true);
@@ -2627,7 +2654,7 @@ function previewArea(area, rects, skip) {
     suppressClick = true;
   }
   function move(e) {
-    const z = parseFloat(st.area.style.zoom) || 1;
+    const z = areaZoom(st.area);
     st.ghost.style.transform = `translate(${(e.clientX - st.gx) / z}px, ${(e.clientY - st.gy) / z}px)`;
     const edge = e.clientX < 40 ? -1 : e.clientX > innerWidth - 40 ? 1 : 0; // beira da tela: muda de Página
     if (edge && !st.edgeT) st.edgeT = setTimeout(() => { if (st) st.edgeT = 0; goPage(page + edge); }, 650);
@@ -2759,7 +2786,8 @@ addEventListener('drop', (e) => {
   uploadWallpaper(e.dataTransfer.files[0]);
 });
 let rsz;
-addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => { renderApps(); sizeDock(); }, 120); });
+addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => { applyScale(); renderApps(); sizeDock(); }, 120); });
+applyScale(); // Escala da Tela inicial e do Sistema (por aparelho), antes de desenhar
 setInterval(() => { renderGreeting(); if (!document.body.classList.contains('is-locked')) applySchedule(); }, 60_000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.body.classList.contains('is-locked')) loadApps(); });
 

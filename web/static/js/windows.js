@@ -58,7 +58,7 @@ const reduced = () => st().reduceMotion || matchMedia('(prefers-reduced-motion: 
 export const mode = () => (narrowMQ.matches ? 'full' : st().winStyle === 'sheet' ? 'sheet' : 'float');
 const visible = () => [...wins.values()].filter((w) => !w.min).sort((a, b) => a.z - b.z);
 const front = () => visible().at(-1) || null;
-const dockSpace = () => { const d = $('#dock'); return d ? d.offsetHeight + 20 : 94; };
+const dockSpace = () => { const d = $('#dock'); return d ? d.getBoundingClientRect().height + 20 : 94; }; // com a Escala do Sistema (zoom)
 
 export const isSys = (id) => String(id).startsWith('sys:');
 export const has = (id) => wins.has(id);

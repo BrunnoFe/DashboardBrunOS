@@ -483,7 +483,25 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
 - `js/powermenu.js` (0.25.0): botão `#power-btn` (depois do sino; o sino foi para `right: 58px` e as
   Atualizações para `102px`), menu Bloquear/Sair/Reiniciar/Desligar, `powerAction(action)` (diálogo com a
   senha; também nas Configurações, na busca e no "Reiniciar agora" das Atualizações), contagem no botão e
-  no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`.
+  no menu com Cancelar; acompanha os avisos `power-manual*` pelo `on('notify')`. 0.33.0: contagem no zero
+  abre a Tela de atualização (`reboot`/`shutdown`).
+- `js/updscreen.js` (0.33.0, decisão 70): Tela de atualização. `showUpdScreen({kind, from, to, backup,
+  step, expectDownMs})` (`self`, `linux`, `reboot`, `restart`, `shutdown`), `updScreenStep(i)`,
+  `hideUpdScreen()`. Pergunta `api.public()` a cada 2 s: duas falhas seguidas = caiu (etapa "Reiniciando");
+  voltou depois de cair ou com outra versão = recarrega a página; não caiu em `expectDownMs` = some com
+  aviso. Chamada por `updates.js` (atualização do app `brunos`, e o Linux quando o servidor para de
+  responder), `powermenu.js` e `disksapp.js` (reiniciar o BrunOS). O anel no ícone do app que atualiza é um
+  `<style id="upd-ring-css">` posto pelo `updates.js` (`paintRing`), com o desenho em `extra.css`.
+- `js/novidades.js` (0.33.0, decisão 71): `NOVIDADES` (lista por versão, a mais nova primeiro: título +
+  frase curta), `checkNovidades(versão)` ao entrar (compara com `localStorage['brunos.seenVersion']`;
+  instalação nova só marca, `markSeen`), `showNovidades()` (clique na versão em Configurações). **A cada
+  versão lançada, acrescentar as novidades dela aqui** (data do lançamento).
+- `js/scale.js` (0.33.0, decisão 72): Escala por aparelho (`localStorage['brunos.scale']` = `{home, sys}`
+  em %, 70–110, mínimo 85 abaixo de 640 px). `applyScale()` põe `--hs`/`--ss` no `:root`; o CSS aplica
+  `zoom` (Tela inicial: `.home-header`, `.page-body`, `.page-dots`, busca; Sistema: dock, botões do canto,
+  painéis, avisos, diálogos, barra e corpo das janelas menos as de app). `app.js` desconta `--hs` no
+  arrastar (`areaZoom`, fantasmas, FLIP); acima de 100 % a Área útil diminui na mesma proporção. Os menus
+  (`.ctx`) não escalam: são posicionados por coordenadas em vários lugares.
 - `js/power.js` (0.4.0): `powerDialog({openTerminal})` (Configurações → Sistema → Energia),
   `paintBanner(status)`/`refreshPowerBanner()` (faixa da contagem; usa `status.remaining` do servidor),
   `outagesHTML(lista)` (também na janela da bateria). Modo demonstração: `#contagem` no endereço

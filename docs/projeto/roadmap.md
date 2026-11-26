@@ -14,16 +14,18 @@ celular.
 
 ## Plano de 25/11/2026 (combinado com o Bruno, duas versões)
 
-1. **0.32.0: correções** (lançada em 25/11, aguardando teste do Bruno):
+1. **0.32.0: correções** (lançada e testada pelo Bruno em 25/11: "Tudo certo!"):
    - Arquivos: cabeçalho da lista fixo com fundo (as linhas passavam por cima dele ao rolar);
    - Arquivos: caminho em linha própria embaixo dos botões, recolhendo o meio em "…" (com menu) quando não
      cabe; a barra se adapta à largura da janela (container query): Pasta/Enviar só ícone, busca vira lupa;
    - Atualizações: o painel não mudava depois de atualizar (a interface parava de ler o servidor antes de
      ele terminar de conferir de novo). Tirar o app da lista ao terminar bem e continuar lendo enquanto o
      servidor confere.
-2. **0.33.0: atualizações mais bonitas e escala** (decisões 70 a 72):
-   - Tela de atualização (estilo da animação escolhido pelo Bruno por protótipos: logo enchendo, anel
-     girando ou barra brilhando);
+2. **0.33.0: atualizações mais bonitas e escala** (decisões 70 a 72; lançada em 25/11, aguardando teste;
+   conferir em especial arrastar widgets e ícones com a escala reduzida e a tela ao atualizar o BrunOS):
+   - Tela de atualização: ideia do Bruno depois dos protótipos, a logo em "órbita" (o arco gira e encolhe, a
+     bolinha dá a volta, o centro pulsa) dentro de um anel que mostra o progresso das etapas, com um brilho
+     girando; etapas em pílulas embaixo (Backup · Baixando · Reiniciando · Voltando);
    - anel de progresso no ícone do app que está atualizando;
    - Novidades na primeira abertura de cada versão (e em Configurações → Sobre);
    - Escala da Tela inicial e do Sistema, por aparelho, em Configurações → Aparência.

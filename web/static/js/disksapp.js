@@ -5,7 +5,8 @@ import { api } from './api.js';
 import { $, $$, esc, fmt, fmtBytes, fmtRate, svg, toast, toastError, confirmDialog, promptDialog, openDialog, timeAgo } from './ui.js';
 import { mountChart, periodSeg, PERIOD_LONG, fmtTime } from './charts.js';
 import { forecastText, driveTempHelp } from './disks.js';
-import { allowUnload, count as winCount } from './windows.js';
+import { count as winCount } from './windows.js';
+import { showUpdScreen } from './updscreen.js';
 
 const TABS = [['overview', 'Visão geral'], ['health', 'Saúde'], ['perf', 'Desempenho'], ['space', 'Espaço'], ['timeline', 'Linha do tempo']];
 const HEALTH = { ok: ['OK', 'ok', 'O disco não relata problemas.'],
@@ -535,13 +536,9 @@ function restartDialog(title, html) {
     e.target.closest('button').disabled = true;
     try {
       await api.restartSelf();
-      toast('Reiniciando o BrunOS…', 'A página volta sozinha em alguns segundos.');
       dlg.close();
-      // espera ele sair e voltar
-      setTimeout(async function wait(n = 0) {
-        try { const r = await fetch('/api/health', { cache: 'no-store' }); if (r.ok && n > 1) { allowUnload(); location.reload(); return; } } catch { /* ainda reiniciando */ }
-        if (n < 40) setTimeout(() => wait(n + 1), 1500);
-      }, 2500);
+      // 0.33.0: Tela de atualização ("Reiniciando o BrunOS"), que recarrega a página quando ele volta
+      showUpdScreen({ kind: 'restart', expectDownMs: 60_000 });
     } catch (err) { toastError(err, 'Não deu para reiniciar'); dlg.close(); }
   });
 }

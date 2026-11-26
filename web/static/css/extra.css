@@ -1948,3 +1948,98 @@ body.dock-auto:not(.dock-peek) #dock-peek { display: block; }
   /* ocultos e lista/grade vão para o menu "⋯" (o JS confere se a grade sumiu) */
   .f-toolbar .f-wide, .f-toolbar .view-toggle { display: none; }
 }
+
+/* ── Escala da interface (0.33.0, decisão 72) ──────────────────────
+   --hs: Tela inicial; --ss: Sistema (scale.js, por aparelho). zoom de CSS em cada parte; as janelas de
+   app (o site do app, num iframe) não mudam. O JS desconta a escala no arrastar de widgets e ícones. */
+:root { --hs: 1; --ss: 1; }
+.home-header, .app-page > .page-body, .app-page > .w-area-bar, .page-dots, .search-pill { zoom: var(--hs); }
+#dock, .bell-btn, .notif-panel, #toast-host, #dialog-host .dialog, #dialog-host .dlg-x,
+#win-host .win-bar, #win-host .win-body:not(:has(> iframe)), #sheet-host .sheet > * { zoom: var(--ss); }
+/* a busca fica logo acima da dock, que tem a sua própria escala */
+.search-pill { bottom: calc((84px * var(--ss) + 14px) / var(--hs)); }
+@media (max-width: 640px) { .search-pill { bottom: calc((70px * var(--ss) + 14px) / var(--hs)); } }
+/* controle − / + das Configurações */
+.scale-ctl { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.06); box-shadow: var(--shadow-btn-hl-soft); }
+.scale-ctl button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 700; }
+.scale-ctl button:hover:not([disabled]) { background: rgba(255,255,255,.1); }
+.scale-ctl button[disabled] { opacity: .3; cursor: default; }
+.scale-ctl b { min-width: 52px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.scale-reset { margin-left: 6px; }
+.scale-reset[hidden] { display: none; }
+@media (pointer: coarse) { .scale-ctl button { width: 38px; height: 38px; } }
+
+/* ── Tela de atualização (0.33.0, decisão 70) ──────────────────────
+   Órbita (a própria logo: o arco gira e encolhe, a bolinha dá a volta, o centro pulsa) dentro de um anel
+   que mostra as etapas, com um brilho girando. Por cima de tudo, inclusive da Tela de bloqueio. */
+#upd-screen { position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px 16px 96px; text-align: center; user-select: none;
+  background: rgba(6,8,14,.34); -webkit-backdrop-filter: blur(34px) saturate(130%); backdrop-filter: blur(34px) saturate(130%);
+  animation: us-in .5s ease both; transition: opacity .4s; }
+#upd-screen.out { opacity: 0; pointer-events: none; }
+@keyframes us-in { from { opacity: 0; } }
+body.upd-screen-on #dock, body.upd-screen-on .search-pill, body.upd-screen-on .bell-btn { opacity: 0; pointer-events: none; }
+.us-art { position: relative; width: 148px; height: 148px; display: grid; place-items: center; margin-bottom: 30px; }
+.us-ring { position: absolute; inset: 0; transform: rotate(-90deg); fill: none; stroke-width: 4; stroke-linecap: round; }
+.us-track { stroke: rgba(255,255,255,.1); }
+.us-prog { stroke: var(--brand); transition: stroke-dashoffset .9s var(--ease-out), stroke .4s; }
+.us-comet { stroke: var(--brand-lightest); opacity: .9; transform-origin: 74px 74px; animation: us-spin 1.8s linear infinite; }
+#upd-screen.back .us-prog { stroke: #3ad16b; }
+.us-logo { width: 80px; height: 80px; overflow: visible; filter: drop-shadow(0 4px 18px rgba(0,0,0,.3)); }
+.us-arc { stroke-dasharray: 112 126; transform-origin: 32px 34px; animation: us-arc 2.4s cubic-bezier(.65,0,.35,1) infinite; }
+.us-orb { transform-origin: 32px 34px; animation: us-spin 2.4s cubic-bezier(.65,0,.35,1) infinite; }
+.us-core { transform-origin: 32px 34px; animation: us-core 2.4s ease-in-out infinite; }
+.us-halo { fill: var(--brand-lightest); opacity: .5; transform-origin: 32px 34px; animation: us-halo 2.4s ease-out infinite; }
+@keyframes us-spin { to { transform: rotate(360deg); } }
+@keyframes us-arc { 0% { transform: rotate(0); stroke-dasharray: 112 126; } 50% { stroke-dasharray: 40 126; } 100% { transform: rotate(360deg); stroke-dasharray: 112 126; } }
+@keyframes us-core { 50% { transform: scale(.82); } }
+@keyframes us-halo { 0% { transform: scale(.6); opacity: .55; } 100% { transform: scale(1.9); opacity: 0; } }
+.us-title { margin: 0; font-size: clamp(20px, 3vw, 26px); font-weight: 700; letter-spacing: -.01em; text-shadow: 0 2px 14px rgba(0,0,0,.3); }
+.us-dots { display: inline-block; width: 1.2em; text-align: left; }
+.us-dots::after { content: ''; animation: us-dots 1.6s steps(4) infinite; }
+@keyframes us-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.us-ver { margin-top: 8px; font-size: 13.5px; font-weight: 600; opacity: .75; font-variant-numeric: tabular-nums; }
+.us-ver b { color: var(--brand-lightest); }
+.us-sub { margin: 10px 0 0; font-size: 13px; font-weight: 500; opacity: .7; max-width: 420px; }
+.us-steps { display: flex; align-items: center; gap: 8px; margin-top: 28px; flex-wrap: wrap; justify-content: center; }
+.us-step { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border-radius: 99px; font-size: 12.5px; font-weight: 600;
+  background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); opacity: .5; transition: opacity .3s, background .3s; }
+.us-step i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.5); }
+.us-step.done { opacity: .85; }
+.us-step.done i { background: #3ad16b; }
+.us-step.on { opacity: 1; background: var(--brand-soft); box-shadow: inset 0 0 0 1px hsl(var(--bh) var(--bs) var(--bl) / .6); }
+.us-step.on i { background: var(--brand-lightest); animation: us-pulse 1.2s ease-in-out infinite; }
+@keyframes us-pulse { 50% { transform: scale(1.6); opacity: .5; } }
+.us-slow { margin: 22px 0 0; font-size: 13px; font-weight: 500; opacity: .85; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 420px; }
+.us-hint { position: absolute; bottom: clamp(28px, 7dvh, 64px); left: 16px; right: 16px; margin: 0; font-size: 12.5px; font-weight: 500; opacity: .55; }
+@media (max-width: 480px) { .us-step { padding: 5px 9px 5px 7px; font-size: 11.5px; gap: 5px; } .us-steps { gap: 5px; } }
+
+/* anel no ícone do app que está atualizando (0.33.0). O desenho fica aqui, sem `content` (não aparece);
+   o updates.js põe num <style> só o seletor do app com `content` (sobrevive aos redesenhos da tela). */
+@property --upd-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.app .app-icon::before, .dock-item::before { position: absolute; inset: -6px; border-radius: 31%; padding: 3.5px; pointer-events: none; z-index: 3;
+  background: conic-gradient(from var(--upd-a), rgba(255,255,255,.18) 0 35%, var(--brand-lightest) 80%, #fff);
+  filter: drop-shadow(0 0 6px hsl(var(--bh) var(--bs) 65% / .7));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: upd-ring 1.3s linear infinite; }
+@keyframes upd-ring { to { --upd-a: 360deg; } }
+/* Novidades (0.33.0, decisão 71) */
+.nv-dlg { padding: 22px 22px 18px; }
+.nv-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.nv-head .logo { --logo: 40px; flex: none; }
+.nv-head h2 { margin: 0; font-size: 19px; }
+.nv-head small { font-size: 12.5px; opacity: .6; font-weight: 500; }
+.nv-list { max-height: min(60dvh, 520px); overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+.nv-ver + .nv-ver { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.07); }
+.nv-ver-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.nv-ver-head b { font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--brand-soft); color: var(--brand-lightest); }
+.nv-ver-head small { font-size: 11.5px; opacity: .5; font-weight: 600; }
+.nv-ver ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.nv-ver li { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,.04); }
+.nv-ver li b { font-size: 13.5px; font-weight: 700; }
+.nv-ver li small { font-size: 12px; line-height: 1.45; opacity: .68; font-weight: 500; }
+.kv-news { cursor: pointer; border-radius: 8px; }
+.kv-news:hover span:last-child { color: var(--brand-lightest); text-decoration: underline; text-underline-offset: 3px; }
+
+/* terminou bem: um ✓ verde rápido no lugar do anel (as regras vêm do updates.js) */
+@keyframes upd-ok { 0% { opacity: 0; transform: scale(.8); } 12%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
