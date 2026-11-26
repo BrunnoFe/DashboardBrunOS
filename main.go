@@ -317,6 +317,7 @@ func main() {
 	go s.integ.Run(ctx)
 	go s.energy.Run(ctx)          // consumo: uma amostra por minuto
 	go s.smart.Run(ctx)           // SMART a cada 6 h e temperatura dos discos USB a cada 20 min
+	go s.gpuLoop(ctx)             // consumo da GPU Intel e placas NVIDIA pelo script (0.36.0)
 	go s.disks.Run(ctx)           // janela Discos: lista a cada 10 min e quando um disco liga ou desliga
 	go s.updates.Run(ctx)         // atualizações na frequência escolhida e acompanhamento das que estão rodando
 	go s.watchConfigPassword(ctx) // avisa uma vez no sino enquanto a Senha de configuração não existe

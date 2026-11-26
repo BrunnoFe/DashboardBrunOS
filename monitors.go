@@ -20,6 +20,33 @@ import (
 	"brunos/internal/updates"
 )
 
+// gpuLoop (0.36.0) pede ao script o consumo da GPU integrada da Intel (RAPL "uncore", só o root lê) e as
+// placas NVIDIA (nvidia-smi), uma vez por minuto. Sem ligação com o servidor, script antigo ou nada para
+// medir: tenta de novo em 30 min (o resto da GPU vem do /sys a cada amostra, sem o script).
+func (s *server) gpuLoop(ctx context.Context) {
+	wait := 20 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		qctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		out, err := s.power.HostOutput(qctx, hostcmd.CmdGPU)
+		cancel()
+		if err != nil {
+			wait = 30 * time.Minute
+			continue
+		}
+		h := sysinfo.ParseGPUHost(out, time.Now())
+		s.stats.SetGPUHost(h)
+		wait = time.Minute
+		if h.UncoreUJ == 0 && len(h.Nvidia) == 0 {
+			wait = 30 * time.Minute
+		}
+	}
+}
+
 // setupMonitors liga o consumo e custo, a saúde dos discos e as atualizações de apps e do Linux. Os três
 // leem o servidor pelo script do servidor quando precisam de root; as atualizações também instalam por
 // ele (decisão 47).

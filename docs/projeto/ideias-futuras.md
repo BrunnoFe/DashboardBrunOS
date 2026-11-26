@@ -51,6 +51,22 @@ importante" (por isso a interface já é testada em tamanho de celular).
 - **Tomadas Shelly e Tasmota** (24/11/2026): leem o consumo pela rede de casa só com o IP, sem conta nem
   chave. Fazer quando o Bruno comprar uma tomada dessas.
 
+## Estudo: aceleração por GPU no próprio BrunOS (0.36.0, pedido do Bruno em 25/11/2026)
+
+Parecer: **não vale a pena hoje**. O que o BrunOS faz não ganharia com a GPU:
+- A interface (gráficos, vidro, animações) já é desenhada pela GPU do aparelho que abre o painel.
+- Prévias de fotos e vídeos são o próprio navegador decodificando; o servidor só entrega o arquivo.
+- Duplicados, mapa do espaço e zip são limitados pelo disco, não por conta.
+- O único caso real seria **converter vídeo** (o som DTS/AC3 que o navegador não toca, e HEVC). Para isso o
+  container precisaria do aparelho `/dev/dri` (mais poder sobre o servidor) e do ffmpeg com VA-API: a
+  imagem passaria de ~4 MB para mais de 100 MB e deixaria de ser `scratch`. E a GPU do servidor (Intel de
+  4ª geração) só acelera H.264; HEVC continuaria na CPU.
+- Quem já faz isso bem é o **Plex**: com Plex Pass, dar a placa de vídeo a ele em Loja → Plex → Ajustes →
+  Placa de vídeo liga a conversão por hardware. O botão "Abrir no Plex" do aviso de vídeo mudo usa isso.
+
+Rever se: o servidor ganhar uma GPU dedicada **e** surgir algo no BrunOS que precise de conta pesada (ex.:
+reconhecimento de fotos), o que hoje é papel do Immich.
+
 ## Recusado (não propor de novo)
 
 - **Tema claro**: "não vejo necessidade" (07/11/2026).

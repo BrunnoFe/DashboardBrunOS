@@ -212,6 +212,8 @@ func TestHostScriptRefuses(t *testing.T) {
 		"limite 80; reboot", "limite $(id)", "limite *", "protecao talvez", "desligar agora", "versao x", "sh", "limite -1",
 		"tailscale up", "tailscale down", "tailscale status --json; reboot",
 		"smart /dev/sda", "smart; reboot", "temperatura sda", "energia 1", "atualizacoes sim", "apt upgrade",
+		"gpu 1", "gpu; reboot", "gpu $(id)",
+		"gpu 1", "gpu; reboot", "gpu $(id)",
 		"smart", "smart sda", "smart sda xyz", "smart ../sda sat", "smart /dev/sda sat", "smart sda sat x",
 		"smart sda1 sat", "smart nvme0n1p1 auto", "smart sdabc sat", "smart SDA sat", "smart sd* sat",
 		"temperatura sda -d", "temperatura sda sat;reboot", "discos sda", "discos; reboot", "protecao on off",
@@ -278,7 +280,7 @@ func TestHostScriptRefuses(t *testing.T) {
 			t.Errorf("%s pelo SSH: %s", c, out)
 		}
 	}
-	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 19") || ParseVersion([]byte(out)) != ScriptVersion {
+	if out, code := run("versao"); code != 0 || !strings.Contains(out, "brunos-host 20") || ParseVersion([]byte(out)) != ScriptVersion {
 		t.Fatalf("versao: %d %q", code, out)
 	}
 	// trava-chave (script 19): o endereço vem só do SSH_CLIENT do sshd, nunca do pedido
@@ -311,7 +313,7 @@ func TestHostScriptRefuses(t *testing.T) {
 func TestReadAllowed(t *testing.T) {
 	for cmd, want := range map[string]bool{
 		"discos": true, "smart sda sat": true, "smart nvme0n1 auto": true, "temperatura sdab sat": true,
-		"tailscale": true, "atualizacoes": true, "energia": true,
+		"tailscale": true, "atualizacoes": true, "energia": true, "gpu": true, "gpu x": false,
 		"smart": false, "smart sda": false, "smart sda -a": false, "smart /dev/sda sat": false, "smart sda1 sat": false,
 		"discos sda": false, "desligar": false, "limite 80": false, "": false, "tailscale up": false,
 		"versao": true, "tamanho-backup immich:migrated": true, "tamanho-backup immich": false, "tamanho-backup a:b x": false,

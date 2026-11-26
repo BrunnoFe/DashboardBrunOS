@@ -82,7 +82,8 @@ const (
 	// com "-"; o /etc/fstab é regravado de forma atômica ao desmontar.
 	// 19 = "trava-chave": prende a chave do BrunOS (from= no authorized_keys) à rede do Docker de onde o
 	// pedido veio, lida do SSH_CLIENT pelo próprio script, 0.30.0.
-	ScriptVersion = 19
+	// 20 = "gpu" (só leitura): contador do RAPL "uncore" (GPU integrada da Intel) e nvidia-smi, 0.36.0.
+	ScriptVersion = 20
 	// LockKeyFrom: a partir desta versão o script sabe prender a chave à rede do Docker.
 	LockKeyFrom = 19
 	// SelfUpdateFrom: a partir desta versão o script do servidor sabe se atualizar sozinho.
@@ -107,6 +108,7 @@ const (
 	CmdTailscale     = "tailscale" // só lê: tailscale status --json (script 3)
 	// script 4 (0.11.0) e 5 (0.11.2), todos só leitura:
 	CmdEnergy  = "energia"      // contador do RAPL (energy_uj) e o limite dele
+	CmdGPU     = "gpu"          // script 20 (0.36.0), só leitura: "uncore <uj> <max>" e "nvidia <csv>"
 	CmdUpdates = "atualizacoes" // apt-check, reboot-required e a lista de pacotes
 	// script 5 (0.11.2), só leitura:
 	CmdDisks = "discos"      // lsblk: nome, transporte (usb, sata, nvme) e número de série de cada disco
@@ -157,7 +159,7 @@ const (
 )
 
 // ReadCmds são os pedidos de leitura que o BrunOS pode fazer pelo HostOutput.
-var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true,
+var ReadCmds = map[string]bool{CmdTailscale: true, CmdEnergy: true, CmdGPU: true, CmdSmart: true, CmdTemps: true, CmdUpdates: true, CmdDisks: true,
 	CmdVersion: true, CmdBackupSize: true, CmdDiskDetail: true, CmdDiskState: true, CmdDiskErrors: true, "discos-estado": true}
 
 // ParseVersion lê "brunos-host 7" (0 se não der).
@@ -343,8 +345,8 @@ func CmdProtect(on bool) string {
 // HostScript é o script instalado em ScriptPath. Indentado com espaços (não tabs): colado
 // num terminal, um tab poderia virar autocompletar.
 const HostScript = `#!/bin/sh
-# brunos-host 19: o único programa que a chave do BrunOS pode rodar neste servidor.
-# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | atualizacoes |
+# brunos-host 20: o único programa que a chave do BrunOS pode rodar neste servidor.
+# Aceita só: desligar | limite <50-100> | protecao <on|off> | tailscale | energia | gpu | atualizacoes |
 # discos | smart <disco> <sat|auto> | temperatura <disco> <sat|auto> | atualizar-lojas | atualizar-linux |
 # atualizar-app <app>:<loja> <sim|nao> | atualizacao-estado | tamanho-backup <app>:<loja> |
 # discos-detalhe | estado <disco> | erros <disco> | smart-teste <disco> <sat|auto> <curto|longo> |
@@ -369,7 +371,7 @@ const HostScript = `#!/bin/sh
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-VERSAO=19
+VERSAO=20
 CHAVE_ASSINATURA='` + ReleasePublicKey + `'
 via_ssh=0
 if [ "$(id -u)" -ne 0 ]; then
@@ -464,7 +466,7 @@ case "$acao" in
     fi
     [ $# -eq 2 ] || falha "pedido inválido"
     ip_ok "$valor" || falha "endereço inválido" ;;
-  desligar|reiniciar|desligar-agendado|cancelar-desligar|tailscale|energia|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
+  desligar|reiniciar|desligar-agendado|cancelar-desligar|tailscale|energia|gpu|atualizacoes|discos|discos-detalhe|atualizar-linux|atualizacao-estado|atualizar-lojas) [ $# -eq 1 ] || falha "pedido inválido" ;;
   estado|erros|velocidade|ejetar)
     [ $# -eq 2 ] || falha "pedido inválido"
     disco_ok "$valor" || falha "disco inválido" ;;
@@ -814,6 +816,21 @@ case "$acao" in
       fi
     done
     falha "este processador não tem medidor de energia (RAPL)" 3 ;;
+  gpu)
+    # placa de vídeo (0.36.0), só leitura: o subdomínio "uncore" do RAPL (a GPU integrada da Intel) e
+    # o nvidia-smi, quando existirem; sem nenhum dos dois, só "nada"
+    for z in /sys/class/powercap/intel-rapl:0:* /sys/class/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:*; do
+      if [ "$(cat "$z/name" 2>/dev/null)" = uncore ] && [ -r "$z/energy_uj" ]; then
+        echo "uncore $(cat "$z/energy_uj") $(cat "$z/max_energy_range_uj" 2>/dev/null || echo 0)"
+        break
+      fi
+    done
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      timeout 5 nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.gr,clocks.max.gr \
+        --format=csv,noheader,nounits 2>/dev/null | sed -n '1,8s/^/nvidia /p'
+    fi
+    echo "nada"
+    exit 0 ;;
   discos)
     # só o que o Linux já sabe (udev): não fala com o disco
     exec lsblk -dnP -o NAME,TRAN,SERIAL ;;

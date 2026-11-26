@@ -78,7 +78,7 @@ function openUrl(href) {
 const S = {
   pub: {}, me: null, settings: structuredClone(DEFAULTS), apps: [], tipi: {}, docker: false, dockerActions: false,
   system: null, snapshot: null, history: [], roots: [], wallpapers: [], localWallpaper: null, stopStream: null,
-  kinds: [], integrations: [], metrics: {}, internet: null,
+  kinds: [], integrations: [], metrics: {}, internet: null, gpuHist: [],
 };
 const set = () => S.settings;
 // Só salva depois de as preferências do servidor chegarem: antes disso S.settings é o padrão, e
@@ -470,6 +470,7 @@ function widgetCtx() {
       const d = defs.get(id); if (!d) return null;
       if (d.hist === 'net') return netPts().slice(-120);
       if (d.hist === 'energy') return (energyPts() || []).slice(-180);
+      if (d.hist === 'gpu') return S.gpuHist.map((p) => ({ t: p.t, v: p[d.gk] ?? null })); // 0.36.0
       if (d.hist) return S.history.map((p) => ({ t: p.t, v: p[d.hist] ?? null }));
       if (d.kind === 'series') return seriesPts(ctx.value(id)?.s).slice(-48);
       if (d.history) return seriesPts(integValue(`${d.iid}.${d.history}`)?.s).slice(-48);
@@ -488,6 +489,13 @@ function widgetCtx() {
         return crop(netPts());
       }
       if (d.hist === 'energy') { const p = energyPts(); return p ? crop(p) : null; }
+      if (d.hist === 'gpu') { // 0.36.0: 5 min daqui; o resto dos Históricos (gpu.<placa>.<gk>)
+        if (range === 'live') return S.gpuHist.map((p) => ({ t: p.t, v: p[d.gk] ?? null }));
+        const g = gpu0(); if (!g) return null;
+        const name = `gpu.${g.id}.${d.gk}`;
+        const c = cachedSeries(`hist:${name}:${range}`, 60e3, async () => ((await api.history([name], range)).series?.[name] || []).map(([t, v]) => ({ t, v })));
+        return c.pts ? crop(c.pts) : null;
+      }
       if (d.hist) {
         if (range === 'live') return S.history.map((p) => ({ t: p.t, v: p[d.hist] ?? null }));
         const c = cachedSeries(`stats:${range}`, 60e3, async () => (await api.statsHistory(range)).points || []);
@@ -2188,6 +2196,13 @@ function linkDialog() {
 }
 
 /* Uso ao vivo — cartões, gráfico, discos e consumo por app */
+// GPU (0.36.0): a primeira placa do servidor; a linha de detalhes do gráfico
+const gpu0 = () => S.snapshot?.gpus?.[0] || null;
+function gpuLine(g) {
+  return [g.name, g.freq != null ? `${fmt(g.freq, 0)}${g.freqMax ? ` de ${fmt(g.freqMax, 0)}` : ''} MHz` : '', g.temp != null ? `${fmt(g.temp, 0)} °C` : '',
+    g.power != null ? `${fmt(g.power, 1)} W` : '', g.vramTotal ? `memória ${fmtBytes(g.vramUsed || 0)} de ${fmtBytes(g.vramTotal)}` : '',
+    g.busyEst ? 'uso estimado pelo tempo em repouso' : ''].filter(Boolean).join(' · ');
+}
 let liveOpen = false;
 function liveUsageDialog() {
   if (liveOpen) return;
@@ -2199,6 +2214,7 @@ function liveUsageDialog() {
       <button class="stat-card" data-m="mem"><div class="k">Memória</div><div class="v" data-bind="mem"></div><div class="s" data-bind="memFree"></div><div class="track"><i data-bind-w="mem"></i></div></button>
       <button class="stat-card" data-m="temp"><div class="k">Temperatura</div><div class="v" data-bind="temp"></div><div class="s" data-bind="fan"></div><div class="track"><i data-bind-w="temp"></i></div></button>
       <button class="stat-card" data-m="net"><div class="k">Rede</div><div class="v v-sm" data-bind="rx"></div><div class="s">↑ <span data-bind="tx"></span></div><div class="track"><i data-bind-w="net"></i></div></button>
+      <button class="stat-card" data-m="gpu" hidden><div class="k">GPU</div><div class="v" data-gpu="v"></div><div class="s" data-gpu="s"></div><div class="track"><i data-gpu="w"></i></div></button>
     </div>
     <div class="spark-box"><div class="lbl"><span data-spark-title></span><span data-spark-extra></span><span class="f-spacer"></span>
       ${periodSeg('live', true)}</div><div class="live-chart"></div></div>
@@ -2208,19 +2224,33 @@ function liveUsageDialog() {
       <input class="text-input sm proc-filter" placeholder="Filtrar" hidden aria-label="Filtrar processos">
       <div class="seg seg-sm"><button class="on" data-list="apps">Apps</button><button data-list="procs">Processos</button></div></div>
     <div class="proc-list"><div class="empty-note">Carregando…</div></div>`, { width: 680, onClose: () => { liveOpen = false; off(); clearTimeout(usageTimer); clearTimeout(longTimer); } });
-  const titles = { cpu: 'CPU', mem: 'Memória', temp: 'Temperatura', net: 'Rede (download e upload)' };
+  const titles = { cpu: 'CPU', mem: 'Memória', temp: 'Temperatura', net: 'Rede (download e upload)', gpu: 'GPU (uso)' };
+  let gpuLong = [];
   const loadLong = async () => {
     clearTimeout(longTimer);
     if (period === 'live' || !liveOpen) return;
-    try { const r = await api.statsHistory(period); longPts = r.points || []; longStep = r.step || 60; } catch { longPts = []; }
+    try {
+      if (metric === 'gpu') { // 0.36.0: a GPU vem dos Históricos por nome (gpu.<placa>.busy)
+        const g = gpu0(), name = `gpu.${g?.id}.busy`, r = await api.history([name], period);
+        gpuLong = (r.series?.[name] || []).map(([t, v, mx]) => ({ t, busy: v, busyMax: mx })); longStep = r.step || 60;
+      } else { const r = await api.statsHistory(period); longPts = r.points || []; longStep = r.step || 60; }
+    } catch { longPts = []; gpuLong = []; }
     drawChart();
     longTimer = setTimeout(loadLong, 60000);
   };
   // gráfico (0.14.0): peça única com eixo, valor ao passar o mouse e Ponta viva no "5 min"
   const chart = mountChart($('.live-chart', d.el), [], { h: 120 });
-  const fmts = { cpu: (v) => `${fmt(v, v > 0 && v < 10 ? 1 : 0)}%`, mem: (v) => `${fmt(v, 0)}%`, temp: (v) => `${fmt(v, 0)} °C`, net: (v) => fmtRate(v) };
+  const fmts = { cpu: (v) => `${fmt(v, v > 0 && v < 10 ? 1 : 0)}%`, mem: (v) => `${fmt(v, 0)}%`, temp: (v) => `${fmt(v, 0)} °C`, net: (v) => fmtRate(v), gpu: (v) => `${fmt(v, v > 0 && v < 10 ? 1 : 0)}%` };
   const drawChart = () => {
     const live = period === 'live';
+    if (metric === 'gpu') { // 0.36.0
+      const h = live ? S.gpuHist : gpuLong, g = gpu0();
+      chart.update([{ pts: h.map((p) => ({ t: p.t, v: p.busy ?? null, max: live ? undefined : p.busyMax })), cls: 'c0' }],
+        { fmt: fmts.gpu, live, step: live ? 0 : (longStep || 60), min: 0, max: 100, empty: live ? 'aguardando dados' : 'ainda sem histórico da GPU' });
+      $('[data-spark-title]', d.el).textContent = `Uso da GPU${g?.busyEst ? ' (estimado)' : ''} · ${PERIOD_LONG[period]}`;
+      $('[data-spark-extra]', d.el).textContent = g ? gpuLine(g) : '';
+      return;
+    }
     let h = live ? S.history : longPts;
     if (metric === 'temp') h = h.filter((p) => p.temp);
     const pt = (k) => h.map((p) => ({ t: p.t, v: p[k] ?? null, max: live ? undefined : p[`${k}Max`] }));
@@ -2276,6 +2306,14 @@ function liveUsageDialog() {
   const draw = () => {
     bindStats(d.el);
     const sn = S.snapshot;
+    // 0.36.0: cartão da GPU (só quando o servidor tem placa de vídeo)
+    const g = gpu0(), gc = $('[data-m="gpu"]', d.el);
+    gc.hidden = !g; $('.stat-cards', d.el).classList.toggle('has-gpu', !!g);
+    if (g) {
+      $('[data-gpu="v"]', gc).textContent = g.busy != null ? `${fmt(g.busy, g.busy < 10 ? 1 : 0)}%` : '—';
+      $('[data-gpu="s"]', gc).textContent = [g.freq != null ? `${fmt(g.freq, 0)} MHz` : '', g.temp != null ? `${fmt(g.temp, 0)} °C` : '', g.power != null ? `${fmt(g.power, 1)} W` : ''].filter(Boolean).join(' · ') || g.name;
+      $('[data-gpu="w"]', gc).style.width = `${clamp(g.busy ?? 0, 0, 100)}%`;
+    }
     if (sn) { const peak = Math.max(1e6, ...S.history.map((p) => p.rx)); const el = $('[data-bind-w="net"]', d.el); if (el) el.style.width = clamp((sn.net.rx / peak) * 100, 0, 100) + '%'; }
     drawChart(); drawDisks();
   };
@@ -2305,7 +2343,9 @@ function liveUsageDialog() {
       clearTimeout(usageTimer); drawUsage(); return;
     }
     const c = e.target.closest('[data-m]'); if (!c) return;
-    metric = c.dataset.m; $$('[data-m]', d.el).forEach((x) => x.classList.toggle('on', x === c)); drawChart();
+    const was = metric;
+    metric = c.dataset.m; $$('[data-m]', d.el).forEach((x) => x.classList.toggle('on', x === c));
+    if (period !== 'live' && (metric === 'gpu') !== (was === 'gpu')) loadLong(); else drawChart(); // a GPU tem histórico próprio
   });
   $('.proc-filter', d.el).addEventListener('input', debounce((e) => { procFilter = e.target.value; clearTimeout(usageTimer); drawUsage(); }, 250));
   const off = on('stats', draw);
@@ -2506,7 +2546,12 @@ function startStream() {
       for (const v of d.metrics || []) S.metrics[v.id] = v;
       bindStats(); paintWidgets(); emit('stats'); refreshNotifications(); refreshPowerBanner(); refreshNotes(); refreshPowerMenu();
     },
-    (d) => { S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift(); bindStats(); paintWidgets(); emit('stats'); },
+    (d) => {
+      S.snapshot = d.snapshot; S.history.push(d.point); if (S.history.length > 150) S.history.shift();
+      const g = d.snapshot?.gpus?.[0]; // 0.36.0: GPU "ao vivo" (5 min) guardada aqui; os Períodos longos vêm dos Históricos
+      if (g) { S.gpuHist.push({ t: d.snapshot.t, busy: g.busy, temp: g.temp, power: g.power, freq: g.freq, vram: g.vramUsed }); if (S.gpuHist.length > 150) S.gpuHist.shift(); }
+      bindStats(); paintWidgets(); emit('stats');
+    },
     (e) => { onNotify(e); if (e.kind.startsWith('power-shutdown')) refreshPowerBanner(); if (e.kind.startsWith('app-')) loadApps(); },
     // valores novos de uma integração (o servidor só manda quando busca)
     (m) => { if (m.removed) delete S.metrics[m.id]; else S.metrics[m.id] = m; paintWidgets(); emit('metrics'); },

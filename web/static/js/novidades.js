@@ -6,6 +6,11 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.36.0', date: '2026-11-26', items: [
+    { t: 'De olho na placa de vídeo', d: 'Em Uso ao vivo apareceu o cartão GPU: uso, frequência, temperatura e consumo, com gráfico de 5 minutos até 30 dias.' },
+    { t: 'Widgets da GPU', d: 'Em Widgets → Modelos, escolha GPU (os números de agora) ou GPU 24 h (o gráfico do dia).' },
+    { t: 'Placa integrada também conta', d: 'Na Intel do servidor, o uso é uma estimativa pelo tempo em que ela descansa, e a memória de vídeo é a própria RAM.' },
+  ] },
   { v: '0.35.0', date: '2026-11-26', items: [
     { t: 'Widget de torrents', d: 'Em Widgets → Modelos → Transmission: torrents. Mostra cada torrent com progresso, velocidades e estado, com filtro e botões para pausar ou retomar tudo e ligar o modo tartaruga.' },
     { t: 'Atualização que dá errado avisa', d: 'Se a versão nova não puder ser baixada, a tela de atualização some e diz o que aconteceu, em vez de fingir que deu certo.' },

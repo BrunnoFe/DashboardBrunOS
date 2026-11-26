@@ -346,6 +346,13 @@ Subcomando `brunos healthcheck` (usado pelo `HEALTHCHECK` da imagem).
     mensagem amigável (imagem que não existe = "a versão pode não ter sido publicada").
     `plex.go`: `plexFind` (título tirado do nome do arquivo → `/search`; vale só se o nome do arquivo do
     Plex for igual; séries por `/library/metadata/{n}/allLeaves`) → endereço da página no Plex web.
+- **`internal/sysinfo/gpu.go`** (0.36.0): `Snapshot.GPUs` (id, vendor, name, busy, busyEst, freq,
+  freqMax, vramUsed, vramTotal, temp, power). Intel (i915/xe) pelo `/sys/class/drm/card*`: frequência e uso
+  estimado pelo RC6 (`power/rc6_residency_ms`); temperatura = sensor "GPU" da placa-mãe. AMD (amdgpu): uso,
+  VRAM e o hwmon da placa. `SetGPUHost` recebe o pedido `gpu` do script (versão 20: RAPL "uncore" e
+  `nvidia-smi`), chamado pelo `gpuLoop` (`monitors.go`) uma vez por minuto (30 min sem nada a medir).
+  Históricos: `gpu.<id>.busy|freq|temp|power|vram`. Interface: Métricas `brunos.gpu_*` (`hist: 'gpu'` +
+  `gk`), Modelos "GPU" e "GPU 24 h", e o 5º cartão da janela Uso ao vivo (`S.gpuHist` = 5 min).
 - **`internal/files/media.go`** (0.34.0): `ProbeMedia(io.ReaderAt, size)` lê só o cabeçalho de MKV/WebM
   (EBML: Segment → Tracks, ou pelo SeekHead quando o Tracks vem depois dos Clusters) e de MP4/MOV (caixas
   `moov/trak`: `hdlr`, `mdhd`, `tkhd`, `stsd`; `moov` no fim custa só pular as caixas). Devolve

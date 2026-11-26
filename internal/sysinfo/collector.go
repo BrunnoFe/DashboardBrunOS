@@ -53,6 +53,7 @@ type Snapshot struct {
 	DiskIO  []DiskIO `json:"diskIO"`
 	Net     Net      `json:"net"`
 	Uptime  float64  `json:"uptime"`
+	GPUs    []GPU    `json:"gpus,omitempty"` // placas de vídeo (0.36.0)
 }
 
 type Collector struct {
@@ -81,6 +82,7 @@ type Collector struct {
 	extMu   sync.Mutex
 	ext     map[string]diskTemp // temperatura vinda do SMART (discos USB, sem drivetemp)
 	wake    chan struct{}
+	gpu     gpuState // placas de vídeo: RC6 anterior e o que o script mediu (gpu.go)
 
 	// OnSample recebe cada amostra (para os Históricos). memPct = memória usada em %.
 	OnSample func(s Snapshot, memPct float64)
@@ -165,6 +167,7 @@ func (c *Collector) sample() {
 	s.CPU.Cores, s.CPU.Model, s.CPU.Load = c.info.Cores, c.info.CPUModel, readLoad(c.cfg.Proc)
 	s.Mem = readMem(c.cfg.Proc)
 	s.Sensors, s.Temp, s.FanRPM = readHwmon(c.cfg.Sys)
+	s.GPUs = c.readGPUs(s.Sensors, now) // 0.36.0
 	s.Battery = readBattery(c.cfg.Sys)
 	if s.Battery != nil {
 		if s.Battery.Status != c.batStatus {

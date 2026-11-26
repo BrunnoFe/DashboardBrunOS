@@ -89,6 +89,13 @@ export const BRUNOS_METRICS = [
   B('os_updates', 'Atualizações do Linux', 'num', '', 'refresh'),
   B('os_security', 'Atualizações de segurança', 'num', '', 'shield'),
   B('os_reboot', 'Reinício necessário', 'text', '', 'power'),
+  // 0.36.0: placa de vídeo (a primeira do servidor); hist 'gpu' + gk = qual série (gpu.<placa>.<gk>)
+  B('gpu_busy', 'GPU: uso', 'num', '%', 'layers', { hist: 'gpu', gk: 'busy', max: 100 }),
+  B('gpu_freq', 'GPU: frequência', 'num', 'MHz', 'activity', { hist: 'gpu', gk: 'freq' }),
+  B('gpu_temp', 'GPU: temperatura', 'num', '°C', 'temp', { hist: 'gpu', gk: 'temp' }),
+  B('gpu_power', 'GPU: consumo', 'num', 'W', 'bolt', { hist: 'gpu', gk: 'power' }),
+  B('gpu_vram', 'GPU: memória de vídeo', 'num', 'B', 'memory', { hist: 'gpu', gk: 'vram' }),
+  B('gpu_name', 'GPU: modelo', 'text', '', 'info'),
 ];
 const METER_TXT = { plug: 'pela tomada', battery: 'pela bateria', rapl: 'só o processador', estimate: 'estimativa calibrada' };
 
@@ -139,6 +146,16 @@ export function brunosValue(id, S) {
     case 'brunos.os_updates': return S.updates && (S.updates.os.err ? { t: '—' } : { n: S.updates.os.total });
     case 'brunos.os_security': return S.updates && (S.updates.os.err ? { t: '—' } : { n: S.updates.os.security, level: S.updates.os.security ? 'aviso' : '' });
     case 'brunos.os_reboot': return S.updates && (S.updates.os.reboot ? { t: 'sim', level: 'aviso' } : { t: 'não' });
+    case 'brunos.gpu_busy': case 'brunos.gpu_freq': case 'brunos.gpu_temp': case 'brunos.gpu_power': case 'brunos.gpu_vram': case 'brunos.gpu_name': {
+      if (!sn) return undefined;
+      const g = sn.gpus?.[0];
+      if (!g) return { t: 'sem placa de vídeo' };
+      const v = { 'brunos.gpu_busy': g.busy, 'brunos.gpu_freq': g.freq, 'brunos.gpu_temp': g.temp, 'brunos.gpu_power': g.power, 'brunos.gpu_vram': g.vramUsed }[id];
+      if (id === 'brunos.gpu_name') return { t: g.name };
+      if (id === 'brunos.gpu_vram' && !g.vramTotal) return { t: 'usa a RAM' }; // integrada: não tem memória própria
+      if (v == null) return { t: id === 'brunos.gpu_power' ? 'medindo…' : '—' };
+      return { n: v, max: id === 'brunos.gpu_busy' ? 100 : id === 'brunos.gpu_vram' ? g.vramTotal : id === 'brunos.gpu_freq' ? g.freqMax || undefined : undefined };
+    }
     default: return undefined;
   }
 }
@@ -202,6 +219,8 @@ function brunosModels() {
     { id: 'energy', name: 'Consumo e custo', desc: 'Watts agora, hoje, gasto do mês e projeção', item: { format: 'stat', size: 'w', title: 'Consumo', bar: false, slots: [S1('brunos.power_w', { spark: true }), S1('brunos.energy_meter', { label: '' }), S1('brunos.energy_today', { label: 'Hoje' }), S1('brunos.cost_month', { label: 'Mês até agora' }), S1('brunos.cost_projection', { label: 'Projeção' })], click: { kind: 'window', target: 'power' } } },
     { id: 'energy-chart', name: 'Consumo 24 h', desc: 'Gráfico do consumo com mínimo, máximo e média', item: { format: 'chart', size: 'w', title: 'Consumo', slots: [S1('brunos.power_w')], chart: { type: 'line', range: '24h', stats: true }, click: { kind: 'window', target: 'power' } } },
     { id: 'cost', name: 'Gasto do mês', desc: 'Quanto o servidor gastou de luz no mês e a projeção', item: { format: 'stat', size: 's', title: 'Luz do servidor', bar: false, slots: [S1('brunos.cost_month'), S1('brunos.cost_projection', { label: 'projeção do mês' })], click: { kind: 'window', target: 'power' } } },
+    { id: 'gpu', name: 'GPU', desc: 'Uso, frequência, temperatura e consumo da placa de vídeo', item: { format: 'grid', title: 'GPU', caption: false, slots: [S1('brunos.gpu_busy', { label: 'Uso', spark: true }), S1('brunos.gpu_freq', { label: 'Clock' }), S1('brunos.gpu_temp', { label: 'Temp.' }), S1('brunos.gpu_power', { label: 'Consumo' })], click: { kind: 'window', target: 'live' } } },
+    { id: 'gpu-chart', name: 'GPU 24 h', desc: 'Gráfico do uso e da temperatura da placa de vídeo', item: { format: 'chart', size: 'w', title: 'GPU', slots: [S1('brunos.gpu_busy', { label: 'Uso' }), S1('brunos.gpu_temp', { label: 'Temperatura' })], chart: { type: 'line', range: '24h', stats: true }, click: { kind: 'window', target: 'live' } } },
     { id: 'updates', name: 'Atualizações', desc: 'Apps com atualização, Linux e reinício necessário', item: { format: 'grid', title: 'Atualizações', caption: false, layout: 'rows', slots: [S1('brunos.apps_updates', { label: 'Apps' }), S1('brunos.os_updates', { label: 'Linux' }), S1('brunos.os_reboot', { label: 'Reiniciar' })], click: { kind: 'window', target: 'settings' } } },
     { id: 'clock', name: 'Relógio', desc: 'Hora grande com a data', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'digital', seconds: false, date: true, tz: '' } } },
     { id: 'clock-analog', name: 'Relógio de ponteiros', desc: 'Relógio analógico', item: { format: 'clock', title: 'Relógio', caption: false, clock: { style: 'analog', seconds: true, date: false, tz: '' } } },

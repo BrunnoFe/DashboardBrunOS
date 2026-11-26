@@ -72,6 +72,14 @@ func (s *Store) Add(snap sysinfo.Snapshot, memPct float64) {
 	if snap.Battery != nil {
 		db.Add(Bat, float64(snap.Battery.Percent))
 	}
+	// placas de vídeo (0.36.0): gpu.<id>.busy|freq|temp|power|vram
+	for _, g := range snap.GPUs {
+		for k, v := range map[string]*float64{"busy": g.Busy, "freq": g.Freq, "temp": g.Temp, "power": g.Power, "vram": g.VramUsed} {
+			if v != nil {
+				db.Add("gpu."+g.ID+"."+k, *v)
+			}
+		}
+	}
 	for _, d := range snap.DiskIO {
 		db.Add("disk."+d.Name+".rd", d.Read)
 		db.Add("disk."+d.Name+".wr", d.Write)

@@ -293,6 +293,14 @@ página recarregava na versão antiga porque o backup do Runtipi para e religa a
 a Tela de atualização só recarrega quando responde a versão de destino. Lição: "caiu e voltou" não quer
 dizer "voltou na versão nova".
 
+## 0.36.0 (26/11/2026): GPU
+Cartão GPU na janela Uso ao vivo, Métricas `brunos.gpu_*`, Modelos "GPU" e "GPU 24 h" e Históricos
+`gpu.<id>.*` (30 dias). Intel e AMD pelo `/sys`; consumo da Intel (RAPL "uncore") e NVIDIA pelo pedido
+`gpu` do script (versão 20). Estudo de aceleração por GPU no BrunOS: não vale hoje (ver
+`ideias-futuras.md`). Lições: subir a versão do script mexe em `VERSAO=` no script, no comentário do
+cabeçalho, em `tests/script-energia.sh` e no `apitest.py`; o `/tmp` do WSL some quando ele reinicia (o
+binário do teste some junto).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

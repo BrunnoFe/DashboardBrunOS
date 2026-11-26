@@ -419,6 +419,8 @@ function makeDemo() {
     sensors: [{ chip: 'coretemp', label: 'Package id 0', value: s.temp }, { chip: 'acpitz', label: 'temp1', value: 47 }],
     fanRpm: 2321, battery: { percent: 86, status: 'Charging', ac: true, energyWh: 35.4, fullWh: 41.2, designWh: 48.8, powerW: 7.6, health: 84, cycles: 213, minutesFull: 46, voltage: 12.4, tech: 'Li-ion', manufacturer: 'SMP', model: 'DELL 0X5', chargeLimit: null, history: Array.from({ length: 96 }, (_, i) => ({ t: Math.floor(Date.now() / 1000) - (95 - i) * 300, p: Math.round(i < 40 ? 100 - i * 1.3 : i < 50 ? 48 + (i - 40) * 0.2 : Math.min(86, 50 + (i - 50) * 0.9)), ac: !(i >= 10 && i < 50) })) }, disks,
     net: { rx: s.rx, tx: s.tx, ifaces: ['enp2s0'] }, uptime: 2 * 86400 + 4 * 3600,
+    // 0.36.0: GPU integrada de exemplo (sem memória própria; uso estimado)
+    gpus: [{ id: 'card0', vendor: 'intel', name: 'Intel (integrada)', busy: +(3 + Math.random() * 9).toFixed(1), busyEst: true, freq: 200 + Math.round(Math.random() * 4) * 50, freqMax: 1100, temp: +(44 + Math.random() * 3).toFixed(0), power: +(0.4 + Math.random() * 0.6).toFixed(1) }],
     // leitura e escrita de cada disco (janela Discos, ao vivo)
     diskIO: ['sda', 'sdb', 'sdc', 'sdd'].map((name, i) => { const busy = Math.random() < 0.3; return { name, read: busy ? Math.round(Math.random() * 40e6 / (i + 1)) : Math.round(Math.random() * 2e5), write: busy ? Math.round(Math.random() * 12e6) : Math.round(Math.random() * 1e5), busy: busy ? +(5 + Math.random() * 30).toFixed(1) : +(Math.random() * 2).toFixed(1) }; }),
   });

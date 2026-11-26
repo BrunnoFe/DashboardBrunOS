@@ -452,6 +452,8 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 0; bord
 .dlg-x:hover { opacity: 1; background: rgba(255,255,255,.1); }
 @keyframes fadein { from { opacity: 0; } }
 .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.stat-cards.has-gpu { grid-template-columns: repeat(5, 1fr); } /* 0.36.0: cartão da GPU */
+.stat-card[hidden] { display: none; }
 .stat-card { border-radius: 14px; padding: 11px 12px; text-align: left; background: rgba(255,255,255,.04); box-shadow: var(--shadow-btn-hl-soft); transition: background .2s, box-shadow .2s; min-width: 0; }
 .stat-card:hover { background: rgba(255,255,255,.07); }
 .stat-card.on { background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), var(--shadow-btn-hl-soft); }
@@ -550,7 +552,8 @@ body.dragover #drop-hint { opacity: 1; }
   .f-side-shade { position: absolute; inset: 0; z-index: 5; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .25s; }
   .files.side-open .f-side-shade { opacity: 1; pointer-events: auto; }
   .f-main { padding-left: 20px; }
-  .stat-cards { grid-template-columns: 1fr 1fr; }
+  .stat-cards, .stat-cards.has-gpu { grid-template-columns: 1fr 1fr; }
+  .stat-cards.has-gpu .stat-card[data-m="gpu"] { grid-column: 1 / -1; } /* o 5º cartão ocupa a linha inteira */
 }
 @media (max-width: 640px) {
   .widget { width: min(240px, 44vw); height: 130px; padding: 10px; }

@@ -30,7 +30,8 @@ Testar tudo também em tela de celular (390 px), com prints.
    upload, estado); todos os torrents com filtro Todos / Baixando / Semeando; rodapé com velocidades
    totais, razão geral, pausar/retomar todos e modo tartaruga; a cada 5 s só com alguém olhando; no
    celular nome + barra + velocidade, o resto ao tocar.
-3. **0.36.0: GPU**: Métricas da fonte BrunOS (Intel: frequência, uso estimado pelo RC6, consumo pelo
+3. **0.36.0: GPU** (lançada em 26/11, aguardando teste; estudo de aceleração em `ideias-futuras.md`: não
+   vale hoje): Métricas da fonte BrunOS (Intel: frequência, uso estimado pelo RC6, consumo pelo
    RAPL "uncore" via script, temperatura; AMD: uso, VRAM, temperatura, consumo; NVIDIA pelo `nvidia-smi`
    via script, sem teste real), Modelo "GPU", seção no monitor de hardware, histórico de 30 dias. Junto:
    estudo de aceleração por GPU no BrunOS (parecer para o Bruno, sem código).
