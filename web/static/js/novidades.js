@@ -6,6 +6,12 @@
 import { esc, openDialog } from './ui.js';
 
 export const NOVIDADES = [
+  { v: '0.39.0', date: '2026-11-26', items: [
+    { t: 'Integrações com janela própria', d: 'O ícone novo no dock mostra seus apps conectados e o que cada um libera: widgets, avisos, a pasta do Nextcloud, o escudo do AdGuard e mais.' },
+    { t: 'Conectar ficou mais fácil', d: 'Em Apps compatíveis aparecem os apps que o BrunOS sabe ler, com os do seu Runtipi primeiro. No botão direito de um app, tem Conectar integração.' },
+    { t: 'O sino avisa', d: 'Instalou um app que dá para conectar? O sino conta, uma vez só.' },
+    { t: 'Dock do seu jeito', d: 'Em Configurações → Apps, tire do dock os ícones que você não usa. Configurações sempre fica.' },
+  ] },
   { v: '0.38.0', date: '2026-11-26', items: [
     { t: 'Celular: cada tela rola sozinha', d: 'Desceu até o fim dos widgets e deslizou para o lado? Os apps já aparecem lá em cima, e a saudação fica parada no topo.' },
     { t: 'Arquivos com o nome da pasta', d: 'A janela mostra o nome da pasta em que você está, em vez de "Arquivos (2)". Ao arrastar uma guia para fora, uma miniatura acompanha o mouse e a janela nova nasce onde você soltar.' },

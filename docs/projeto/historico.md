@@ -321,6 +321,16 @@ torrent). Modelos em abas (`modelGroups` ganhou `key` e `kind`). Bateria: ícone
 (`stateText().short`). Lição: uma tela inicial com uma rolagem só não serve para telas lado a lado com
 alturas diferentes.
 
+## 0.39.0 (26/11/2026): janela Integrações e dock configurável
+Segunda e última versão do plano de 26/11 (decisão 74). As Integrações saíram da janela Widgets para
+`integapp.js` (janela do sistema `sys:integrations`, ícone no dock): Conectadas com o que cada uma libera,
+Apps compatíveis (os instalados no Runtipi primeiro) e o formulário. "Conectar integração" no menu do app;
+atalhos em Widgets, Configurações → Apps e Ctrl+K. Backend: `integrations.AppWatch` avisa uma vez no sino
+de app compatível instalado depois (a primeira conferência só anota; lista vazia do Runtipi não conta).
+Dock: `dockHide` para todos os ícones do sistema menos Configurações. Lição: com o hook de fatos
+bloqueando uma edição no meio de várias em paralelo, conferir o arquivo depois (uma linha ficou
+duplicada e outra faltou; a janela abria vazia).
+
 ## Pegadinhas que ainda valem
 - Janela de app: o clique dentro do app não chega na página do BrunOS (Ctrl+K e atalhos vão para o app); o
   BrunOS usa o `blur` da página para saber que o app foi tocado.

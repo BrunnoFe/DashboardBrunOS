@@ -935,6 +935,19 @@ const widgetsCtx = {
   refreshInternet,
   reloadIntegrations: () => loadIntegrations(),
   organize: () => { closeSheet('widgets'); setTimeout(() => setWidgetEditing(true), 250); },
+  openIntegrations: (o) => openIntegrations(o),
+};
+// Janela Integrações (0.39.0): opts = { edit: id } | { kind, app } | { view: 'catalog' }
+function openIntegrations(opts = {}) { openSheet('integrations', $('[data-sys="integrations"]'), opts); }
+const integCtx = {
+  get integrations() { return S.integrations || []; },
+  get kinds() { return S.kinds || []; },
+  get metrics() { return S.metrics; },
+  roots: () => S.roots || [],
+  currentPage: () => currentReal(),
+  reloadIntegrations: () => loadIntegrations(),
+  openWidgets: (o) => openWidgets(o),
+  openFiles: (root) => openSheet('files', $('[data-sys="files"]'), { root, path: '' }),
 };
 async function loadIntegrations() {
   try {
@@ -942,6 +955,8 @@ async function loadIntegrations() {
     S.kinds = kinds; S.integrations = list.integrations || [];
     for (const v of list.views || []) S.metrics[v.id] = v;
     resetDefs(); paintWidgets(); emit('metrics');
+    // 0.39.0: apps do Runtipi que dá para conectar (o menu do app mostra "Conectar integração")
+    api.integrations.suggest().then((s) => { if (Array.isArray(s)) S.integSugg = s; }).catch(() => { /* sem sugestões */ });
     // 0.37.0: o Nextcloud com senha de app vira um lugar da janela Arquivos: relê a lista de lugares
     api.files.roots().then((r) => { if (Array.isArray(r)) S.roots = r; }).catch(() => { /* fica a lista de antes */ });
   } catch { /* sem integrações: só os widgets do BrunOS */ }
@@ -1419,6 +1434,8 @@ function appMenu(a, x, y, el) {
   const url = appUrl(a), brunos = st.openIn === 'brunos', open = wins.has(a.id);
   const origin = el?.querySelector('.app-icon') || el?.closest?.('.dock-item') || null;
   const setForceTab = (v) => { st.apps[a.id] = { ...(st.apps[a.id] || {}), forceTab: v }; save(); };
+  const integSug = a.kind === 'runtipi' ? (S.integSugg || []).find((s) => s.app === String(a.urn || a.id).split(':')[0]) : null;
+  const integConn = integSug && (S.integrations || []).find((it) => it.kind === integSug.kind);
   contextMenu(x, y, [
     { icon: 'external', label: open ? 'Mostrar janela' : 'Abrir', run: () => (open ? wins.open({ id: a.id }) : openApp(a, { originEl: origin })) },
     { icon: 'winMax', label: a.frame === 'no' ? 'Abrir em janela (o app não permite)' : 'Abrir em janela', hidden: !url || open || (brunos && opensInWindow(a)), run: () => openApp(a, { mode: 'window', originEl: origin }) },
@@ -1426,6 +1443,8 @@ function appMenu(a, x, y, el) {
     { icon: 'x', label: 'Fechar janela', hidden: !open, run: () => wins.close(a.id) },
     { icon: 'external', label: a.o.forceTab ? 'Voltar a abrir no BrunOS' : 'Sempre abrir em nova aba', hidden: !brunos || !url || (a.frame === 'no' && !a.o.forceTab), run: () => setForceTab(!a.o.forceTab) },
     { icon: 'info', label: 'Detalhes, logs e uso…', hidden: a.kind !== 'runtipi', run: () => openAppDetails(a) },
+    // 0.39.0: app que o BrunOS sabe ler → leva à janela Integrações (já conectado: abre a Integração)
+    { icon: 'link', label: integConn ? 'Integração…' : 'Conectar integração…', hidden: !integSug, run: () => openIntegrations(integConn ? { edit: integConn.id } : { kind: integSug.kind, app: integSug.app }) },
     { icon: 'globe', label: 'Abrir pelo domínio', dot: dot('domain'), title: urls.domain, hidden: !alt, run: () => window.open(urls.domain, '_blank', 'noopener') },
     { icon: 'network', label: `Abrir pela porta (${a.port})`, dot: dot('port'), title: urls.port, hidden: !alt, run: () => window.open(urls.port, '_blank', 'noopener') },
     { icon: 'copy', label: 'Copiar endereço', hidden: !appUrl(a), run: async () => { try { await navigator.clipboard.writeText(appUrl(a)); toast('Endereço copiado', appUrl(a)); } catch { toast('Não deu para copiar', appUrl(a)); } } },
@@ -1508,19 +1527,22 @@ const SYS = {
   store: { label: 'Loja', glyph: 'bag', tile: STORE_TILE, run: (el) => openStore({ originEl: el }) },
   live: { label: 'Uso ao vivo', glyph: 'activity', tile: 'linear-gradient(160deg,#2e5e46 0%,#123324 100%)', run: () => liveUsageDialog() },
   widgets: { label: 'Widgets', glyph: 'grid', tile: 'linear-gradient(160deg,#ffd36e 0%,#ff9f43 50%,#f0643c 100%)', run: (el) => openSheet('widgets', el) },
+  // janela Integrações (0.39.0, decisão 74): os apps conectados e o que cada um libera
+  integrations: { label: 'Integrações', glyph: 'link', tile: 'linear-gradient(160deg,#8fd3ff 0%,#5b8cff 50%,#7a5cff 100%)', run: (el) => openSheet('integrations', el) },
   settings: { label: 'Configurações', glyph: 'sliders', tile: 'linear-gradient(160deg,#a5adbd 0%,#5d6577 100%)', run: (el) => openSheet('settings', el) },
   // fica sempre (0.12.0; dá para esconder em Apps no dock); o pontinho aparece com Abas abertas
   terminal: { label: 'Terminal', glyph: 'terminal', tile: 'linear-gradient(160deg,#454c5e 0%,#191c24 100%)', run: () => openTerminal() },
 };
 const DOCK = { base: 50, zoom: 80, range: 150 };
 let dockMouseX = null, dockRaf = 0, tipFor = null;
-// Ícones do sistema que o Bruno escondeu do dock (hoje só o Terminal, que fica por padrão)
+// Ícones do sistema que o Bruno escondeu do dock (Configurações nunca some)
 const dockHidden = (k) => (set().dockHide || []).includes(k);
 function renderDock() {
   const box = $('.dock-items');
   const tabs = termMod?.tabCount?.() ?? S.termTabs ?? 0;
-  // Terminal sempre no dock (acesso rápido), a não ser que esteja desligado no compose ou escondido
-  const sysHTML = Object.entries(SYS).filter(([k]) => k !== 'terminal' || (S.terminal !== false && (!dockHidden('terminal') || tabs > 0))).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? (tabs ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : 'Terminal') : it.label)}">
+  // Ícones do sistema: todos por padrão; dá para esconder qualquer um menos Configurações (0.39.0, dock
+  // configurável, a mesma escolha em todos os aparelhos). O Terminal volta enquanto houver Abas abertas.
+  const sysHTML = Object.entries(SYS).filter(([k]) => k === 'settings' || (k === 'terminal' ? S.terminal !== false && (!dockHidden('terminal') || tabs > 0) : !dockHidden(k))).map(([k, it]) => `<div class="dock-item" data-sys="${k}" data-label="${esc(k === 'terminal' ? (tabs ? `Terminal · ${tabs} ${tabs === 1 ? 'aba' : 'abas'}` : 'Terminal') : it.label)}">
     <button style="--tile:${it.tile}" aria-label="${esc(it.label)}">${it.icon ? `<img src="assets/icons/${it.icon}.webp" alt="">` : svg(it.glyph, 'glyph')}</button><span class="open-dot"></span></div>`).join('');
   const pins = set().dock.map(appById).filter(Boolean);
   const appItem = (a) => {
@@ -1603,7 +1625,7 @@ const markDockOpen = () => {
 // Arquivos, Discos, Widgets e Configurações abrem no gerenciador de Janelas (id "sys:<tipo>"), com o
 // "Estilo das janelas" de Aparência (Folha ou Flutuante). O Arquivos pode abrir uma segunda janela.
 const currentSheet = null; // (compatibilidade: não existe mais folha por cima de tudo)
-const SYS_TITLE = { files: 'Arquivos', widgets: 'Widgets', disks: 'Discos', settings: 'Configurações' };
+const SYS_TITLE = { files: 'Arquivos', widgets: 'Widgets', integrations: 'Integrações', disks: 'Discos', settings: 'Configurações' };
 const sysIcon = (kind) => { const s = SYS[kind]; return s ? `<span class="win-app-ico" style="--tile:${s.tile}">${svg(s.glyph)}</span>` : ''; };
 export function openSheet(kind, originEl, opts = {}) {
   let id = `sys:${kind}`;
@@ -1613,6 +1635,7 @@ export function openSheet(kind, originEl, opts = {}) {
     wins.restore(id); wins.focus(id);
     if (kind === 'files' && (opts.root || opts.search)) import('./filetabs.js').then((m) => m.openInMain(opts));
     if (kind === 'widgets') import('./widgetsapp.js').then((m) => m.focusWidgets(opts));
+    if (kind === 'integrations') import('./integapp.js').then((m) => m.focusIntegrations(opts));
     if (kind === 'disks') import('./disksapp.js').then((m) => m.focusDisk(opts));
     return;
   }
@@ -1630,6 +1653,7 @@ export function openSheet(kind, originEl, opts = {}) {
           closeWin: () => wins.close(id), onTitle: (t) => wins.setTitle(id, t || SYS_TITLE.files),
           detach: (tab, drop) => openSheet('files', null, { adopt: tab, ...drop }) }))),
         widgets: () => import('./widgetsapp.js').then((m) => keep(m.mountWidgets(body, { ...opts, ctx: widgetsCtx }))),
+        integrations: () => import('./integapp.js').then((m) => keep(m.mountIntegrations(body, { ...opts, ctx: integCtx }))),
         disks: () => import('./disksapp.js').then((m) => keep(m.mountDisks(body, { ...opts, ctx: disksCtx }))) }[kind];
       load?.().catch((e) => toastError(e, `Não deu para abrir ${SYS_TITLE[kind]}`));
       return () => { gone = true; cleanup?.(); };
@@ -1687,9 +1711,10 @@ function dockPicker(anchor, onChange) {
   const apps = allApps();
   const pop = html(`<div class="ctx pick-pop" role="listbox" aria-multiselectable="true">
     ${apps.length > 8 ? `<label class="search-field pick-search">${svg('search')}<input placeholder="Procurar app" aria-label="Procurar app"></label>` : ''}
-    <div class="pick-list">${S.terminal === false ? '' : `<label class="pick-row" data-name="terminal">
-      <input type="checkbox" value="sys:terminal" ${dockHidden('terminal') ? '' : 'checked'}><span class="map-check">${svg('check')}</span>
-      <span class="mini" style="--tile:${SYS.terminal.tile}">${svg('terminal', 'glyph')}</span><span class="pick-name">Terminal <small>(antes do divisor)</small></span></label>`}${apps.map((a) => `<label class="pick-row" data-name="${esc(a.name.toLowerCase())}">
+    <div class="pick-list"><div class="pick-sec">Ícones do sistema <small>(Configurações sempre fica)</small></div>${Object.entries(SYS).filter(([k]) => k !== 'settings' && (k !== 'terminal' || S.terminal !== false)).map(([k, it]) => `<label class="pick-row" data-name="${esc(it.label.toLowerCase())}">
+      <input type="checkbox" value="sys:${k}" ${dockHidden(k) ? '' : 'checked'}><span class="map-check">${svg('check')}</span>
+      <span class="mini" style="--tile:${it.tile}">${it.icon ? `<img src="assets/icons/${it.icon}.webp" alt="">` : svg(it.glyph, 'glyph')}</span><span class="pick-name">${esc(it.label)}</span></label>`).join('')}
+      <div class="pick-sec">Apps <small>(depois do divisor)</small></div>${apps.map((a) => `<label class="pick-row" data-name="${esc(a.name.toLowerCase())}">
       <input type="checkbox" value="${esc(a.id)}" ${set().dock.includes(a.id) ? 'checked' : ''}><span class="map-check">${svg('check')}</span>
       ${appIconHTML(a, 'mini')}<span class="pick-name">${esc(a.name)}</span></label>`).join('') || '<div class="empty-note">Nenhum app</div>'}</div>
     <div class="pick-foot"><button class="pick-clear" type="button">Limpar</button><span data-count></span></div></div>`);
@@ -1701,7 +1726,7 @@ function dockPicker(anchor, onChange) {
   count();
   pop.addEventListener('change', (e) => {
     const id = e.target.value, st = set();
-    if (id.startsWith('sys:')) { // ícones do sistema (Terminal): ficam por padrão, dá para esconder
+    if (id.startsWith('sys:')) { // ícones do sistema (0.39.0: todos menos Configurações): ficam por padrão, dá para esconder
       const k = id.slice(4);
       st.dockHide = e.target.checked ? (st.dockHide || []).filter((x) => x !== k) : [...new Set([...(st.dockHide || []), k])];
       save(); renderDock(); return;
@@ -1768,7 +1793,7 @@ function settingsRows() {
     { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Efeito de vidro', desc: 'Desfoque atrás dos widgets, do dock e das janelas. Desligar alivia computadores mais fracos', ctrl: `${range('blur', 0, 40, 'px')}${sw('glass', 'Vidro')}` },
     { group: 'Aparência', cat: 'look', icon: 'apps', title: 'Organização da tela inicial', desc: `Tamanho e espaço dos ícones, última fileira de apps e o que fazer quando não cabe tudo. Agora: ${ICON_SIZES[iconSizeKey(st.iconSize)].name} · ${ICON_GAPS[st.iconGap] || 'Fixo'} · ${LAST_ROW[st.lastRow] || LAST_ROW.centro} · ${HOME_FIT[st.homeFit] || HOME_FIT.encolher}`,
       ctrl: `<button class="pill-btn" data-act="home-layout">${svg('apps')}Ajustar</button>` },
-    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets e as integrações com os apps na janela Widgets', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
+    { group: 'Aparência', cat: 'look', icon: 'grid', title: 'Widgets', desc: 'Crie, edite e organize os widgets na janela Widgets. Os apps de onde eles tiram dados ficam na janela Integrações', ctrl: `<button class="pill-btn" data-act="widgets">${svg('grid')}Abrir Widgets</button>` },
     (() => {
       const total = realPageCount(), p = Math.min(cfgPage, total - 1), c = pageCfg(p);
       return { group: 'Aparência', cat: 'look', icon: 'layers', title: 'Páginas da tela inicial', desc: 'Para cada página: a Disposição (onde ficam os widgets e os apps) e a Medida das Áreas (colunas × linhas). Também dá para mudar no modo Organizar',
@@ -1786,7 +1811,8 @@ function settingsRows() {
     { group: 'Apps', cat: 'apps', icon: 'globe', title: 'Forma de acesso dos apps', desc: `Automático: os apps abrem do mesmo jeito que você abriu o BrunOS (agora, ${brunosForm(location) === 'domain' ? 'pelo domínio' : 'pela porta'}) e trocam para o outro se esse não estiver funcionando. Domínio = app.${esc(S.tipi.localDomain || 'server.lan')}; Porta = ${esc(serverHost())}:porta`, ctrl: `<div class="seg">${[['auto', 'Automático'], ['domain', 'Domínio'], ['port', 'Porta']].map(([k, l]) => `<button class="${st.urlMode === k ? 'on' : ''}" data-urlmode="${k}">${l}</button>`).join('')}</div>` },
     { group: 'Apps', cat: 'apps', icon: 'box', title: 'Endereço do Runtipi', desc: `Usado pelo ícone Runtipi do dock e pela Loja (tela de instalar). Vazio = ${esc(runtipiAuto())}`, ctrl: `<input class="text-input" data-input="runtipiUrl" value="${esc(st.runtipiUrl || '')}" placeholder="${esc(runtipiAuto().replace(/^https?:\/\//, ''))}" aria-label="Endereço do Runtipi">` },
     { group: 'Apps', cat: 'apps', icon: 'network', title: 'Servidor na forma Porta', desc: `Vazio = o mesmo nome que você usou para abrir o BrunOS (agora, ${esc(portHost({ loc: location, localDomain: S.tipi.localDomain, internalIp: S.tipi.internalIp }) || '—')})`, ctrl: `<input class="text-input" data-input="serverHost" value="${esc(st.serverHost)}" placeholder="${esc(S.tipi.internalIp || '192.168.1.50')}" aria-label="Servidor">` },
-    { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Apps no dock', desc: 'Aparecem depois do divisor, na ordem em que você marca', ctrl: dockPickerBtn() },
+    { group: 'Apps', cat: 'apps', icon: 'link', title: 'Integrações', desc: `Conecte seus apps ao BrunOS: widgets com os dados deles, avisos no sino, a pasta do Nextcloud no Arquivos e ações como pausar. Agora: ${(S.integrations || []).length ? `${S.integrations.length} ${S.integrations.length === 1 ? 'conectada' : 'conectadas'}` : 'nenhuma'}`, ctrl: `<button class="pill-btn" data-act="integrations">${svg('link')}Abrir Integrações</button>` },
+    { group: 'Apps', cat: 'apps', icon: 'pin', title: 'Ícones e apps no dock', desc: 'Marque os ícones do sistema que ficam no dock (Configurações sempre fica) e os apps fixados, que aparecem depois do divisor na ordem em que você marca. Vale para todos os aparelhos', ctrl: dockPickerBtn() },
     { group: 'Apps', cat: 'apps', icon: 'link', title: 'Atalhos personalizados', desc: 'Sites e serviços que não estão no Runtipi (roteador, impressora, outros servidores)', ctrl: `<button class="pill-btn" data-act="add-link">${svg('plus')}Adicionar</button>` },
     { group: 'Apps', cat: 'apps', icon: 'activity', title: 'Status nos ícones', desc: 'Verde rodando, cinza parado, amarelo parcialmente rodando, vermelho fora do ar', ctrl: sw('showStatus') },
     { group: 'Apps', cat: 'apps', icon: 'bell', title: 'Avisar quando um app cair', desc: 'A cada minuto o BrunOS confere se cada app responde e avisa no sino se algum parar. Dá para desligar por app em Detalhes do app', ctrl: sw('appMonitor', 'Avisar quando um app cair') },
@@ -1944,6 +1970,7 @@ function wireSettings(body) {
       if (a === 'live') liveUsageDialog();
       else if (a === 'home-layout') homeLayoutDialog(redraw);
       else if (a === 'widgets') openWidgets();
+      else if (a === 'integrations') openIntegrations();
       else if (a === 'logout') logout();
       else if (a === 'device') deviceDialog();
       else if (a === 'power') openPower();
@@ -2370,6 +2397,7 @@ function commandPalette() {
     { icon: 'sliders', label: 'Abrir Configurações', run: () => openSheet('settings', $('[data-sys="settings"]')) },
     { icon: 'grid', label: 'Abrir Widgets (criar e editar)', run: () => openWidgets() },
     { icon: 'plus', label: 'Adicionar widget…', run: () => openWidgets({ add: page }) },
+    { icon: 'link', label: 'Abrir Integrações (conectar apps)', run: () => openIntegrations() },
     { icon: 'sort', label: 'Organizar widgets', run: () => setWidgetEditing(true) },
     { icon: 'activity', label: 'Uso ao vivo', run: () => liveUsageDialog() },
     { icon: 'info', label: 'Informações do dispositivo', run: () => deviceDialog() },

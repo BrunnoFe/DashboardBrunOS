@@ -960,7 +960,9 @@ function makeDemo() {
     integrations: {
       kinds: () => wait(demoKinds, 30),
       list: () => wait({ integrations: demoInteg, views: demoViews() }, 60),
-      suggest: () => wait([{ kind: 'adguard', name: 'AdGuard Home', url: 'http://192.168.1.50:8104', app: 'adguard' }, { kind: 'speedtest', name: 'Speedtest Tracker', url: 'http://192.168.1.50:8765', app: 'speedtest-tracker' }], 80),
+      // 0.39.0: um app instalado e ainda não conectado (aparece em Integrações e no menu do app)
+      suggest: () => wait([{ kind: 'adguard', name: 'AdGuard Home', url: 'http://192.168.1.50:8104', app: 'adguard' }, { kind: 'speedtest', name: 'Speedtest Tracker', url: 'http://192.168.1.50:8765', app: 'speedtest-tracker' },
+        { kind: 'transmission', name: 'Transmission', url: 'http://192.168.1.50:9091', app: 'transmission' }, { kind: 'transmission', name: 'Transmission (VPN)', url: 'http://192.168.1.50:9092', app: 'transmission-openvpn' }], 80),
       add: (b) => {
         const k = demoKinds.find((x) => x.id === b.kind);
         if (!k) return Promise.reject(new Error('tipo de integração desconhecido'));

@@ -464,7 +464,8 @@ Conta e sessões (`auth.json`, `sessions.json`), chaves e segredos (veja `docs/p
 `power.json`, `power-events.json`, `logins.json` (acessos conhecidos), `disk-history.json` (uso diário dos
 discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 30 dias: `snapshot.bin` +
 `journal.log`; o `history.json` antigo some na primeira vez),
-`internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `metric-history.json`
+`internet.json` (quedas), `integrations.json` (integrações, credencial cifrada), `integrations-seen.json`
+(apps compatíveis já vistos no Runtipi: o sino avisa uma vez dos novos, `integrations.AppWatch`, 0.39.0), `metric-history.json`
 (séries em segundo plano), `notes.json`, `smart.json`, `energy.json`, `updates.json`, `terminal_key.json`,
 `disk-events.json` (Linha do tempo dos discos; não confundir com `disks.json`, os discos mapeados).
 
@@ -595,9 +596,15 @@ discos), `uploads.json` (envios em pedaços pendentes), `tsdb/` (Históricos de 
     `modelGroups(integrações)`, `normalize`, `migrate(widgets antigos)`, `innerHTML(item, ctx)` (miolo,
     redesenhado só quando o texto muda) e `widgetHTML` (moldura `wfm-<formato>` + rótulo).
   - `js/charts.js`: `lineSVG`, `barSVG`, `donutSVG`, `sparkSVG`, `stats` (SVG puro, sem biblioteca).
-  - `js/widgetsapp.js`: janela Widgets (`mountWidgets(body, {ctx, edit, add})`, `focusWidgets`):
-    Meus widgets, Modelos, Integrações (formulário com Testar, frequência e Avisos prontos) e editor com
-    prévia ao vivo.
+  - `js/widgetsapp.js`: janela Widgets (`mountWidgets(body, {ctx, edit, add, modelTab})`, `focusWidgets`):
+    Meus widgets, Modelos (abas por app, 0.38.0) e editor com prévia ao vivo; o botão Integrações abre a
+    janela própria.
+  - `js/integapp.js` (0.39.0, decisão 74): janela Integrações (`mountIntegrations`, `focusIntegrations(
+    {edit} | {kind, app} | {view})`): Conectadas (cartões com o que cada uma libera, `unlocks()`, e as
+    sugestões do Runtipi ainda não conectadas), Apps compatíveis e o formulário (Testar, frequência,
+    Avisos prontos). Abre pelo dock (`SYS.integrations`), pelo menu do app ("Conectar integração", casando
+    `S.integSugg[].app` com o id do app no Runtipi), por Widgets, Configurações → Apps e Ctrl+K. Dock
+    configurável: `dockHide` vale para todos os ícones do sistema menos Configurações.
   - `js/app.js`: `W2()` (preferência `widgets2`, converte a antiga na primeira vez), `widgetCtx()`
     (`value`, `def`, `spark`, `series` com cache de `statsHistory` e `metricSeries`, redução para 240
     pontos), Área de widgets no topo de cada página (`pagePer` mede quantos ícones cabem embaixo),

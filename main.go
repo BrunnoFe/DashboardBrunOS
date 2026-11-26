@@ -127,6 +127,7 @@ type server struct {
 	netmon    *netmon.Monitor
 	integ     *integrations.Hub
 	tuya      *integrations.TuyaAssist // Assistente de tomadas (0.31.0)
+	appWatch  *integrations.AppWatch   // aviso de app compatível instalado (0.39.0)
 	tkey      *termkey.Vault
 	notes     *notes.Store
 	icons     *icons.Store // Ícones guardados (0.24.0)
@@ -270,6 +271,7 @@ func main() {
 	s.integ.ImageDir = filepath.Join(cfg.DataDir, "img-cache") // fotos do Immich e capas do Plex já mostradas
 	// Assistente de tomadas Tuya: procura na faixa da rede do IP interno do servidor e do host da Energia
 	s.tuya = integrations.NewTuyaAssist(s.integ, filepath.Join(cfg.DataDir, "tuya-cloud.json"))
+	s.appWatch = &integrations.AppWatch{File: filepath.Join(cfg.DataDir, "integrations-seen.json"), Events: s.events, Store: s.integ.Store}
 	s.tuya.LAN = func() []string {
 		_, info := s.tipi.Apps()
 		return []string{info.InternalIP, s.power.Config().Host}
@@ -314,6 +316,7 @@ func main() {
 	go s.power.Run(ctx, s.batteryReading)
 	go s.watchDisks(ctx)
 	go s.watchApps(ctx)
+	go s.watchCompatApps(ctx) // 0.39.0: avisa no sino quando é instalado um app que dá para conectar
 	go s.netmon.Run(ctx)
 	go s.integ.Run(ctx)
 	go s.energy.Run(ctx)          // consumo: uma amostra por minuto

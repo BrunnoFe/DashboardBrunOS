@@ -26,6 +26,25 @@ func (s *server) batteryReading() *power.Reading {
 	return &power.Reading{Percent: b.Percent, OnBattery: on, PowerW: b.PowerW, EnergyWh: b.EnergyWh, MinutesLeft: b.MinutesLeft}
 }
 
+// watchCompatApps confere a cada 2 minutos se apareceu no Runtipi um app que o BrunOS sabe ler e que
+// ainda não tem Integração; avisa uma vez no sino (0.39.0, decisão 74). Lista vazia (Runtipi não achado
+// ou lendo) não conta: senão a primeira conferência anotaria "nenhum app" e avisaria de todos depois.
+func (s *server) watchCompatApps(ctx context.Context) {
+	time.Sleep(40 * time.Second)
+	t := time.NewTicker(2 * time.Minute)
+	defer t.Stop()
+	for {
+		if apps, _ := s.integrationApps(); len(apps) > 0 {
+			s.appWatch.Check(apps)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
 // watchDisks confere os discos a cada minuto: disco mapeado que se desmontou e disco quente.
 // A cada hora, guarda o uso de cada disco e confere a previsão de disco cheio.
 func (s *server) watchDisks(ctx context.Context) {

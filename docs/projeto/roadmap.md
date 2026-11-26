@@ -25,7 +25,7 @@ Testar tudo também em tela de celular (390 px), com prints.
    - Modelos em abas por app (BrunOS · cada Integração · Em branco);
    - Torrents: Densidade Confortável/Compacta, Colunas escolhidas (mais Enviado, Baixado, Falta, Pares,
      Adicionado em), "Ordenar por" e pausar/retomar um torrent na linha aberta.
-2. **0.39.0: janela Integrações + dock configurável**: janela do sistema com cartões do que cada
+2. **0.39.0: janela Integrações + dock configurável** (lançada em 26/11, aguardando teste do Bruno): janela do sistema com cartões do que cada
    Integração libera e sugestões dos apps instalados; abre pelo dock (computador e celular), menu do app,
    Widgets, Configurações e Ctrl+K; aviso no sino uma vez por app compatível instalado. Dock: escolher os
    ícones do sistema (a mesma escolha em todos os aparelhos; Configurações sempre fica).

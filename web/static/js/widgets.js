@@ -282,6 +282,14 @@ const KIND_MODELS = {
   ],
 };
 
+// Quantos Modelos um Tipo de integração oferece (janela Integrações, 0.39.0: "o que libera")
+export const kindModelCount = (kind) => { try { return KIND_MODELS[kind]?.({ id: '_', kind, name: '', options: {} }).length || 0; } catch { return 0; } };
+// Ícone de um Tipo de integração: o do app, ou um desenho próprio (Clima, tomadas). Usado nas janelas
+// Widgets e Integrações.
+const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
+const KIND_GLYPH = { weather: 'wx-partly', tuya: 'plug' };
+export const kindIcon = (k) => (KIND_ICON[k] ? `<img src="assets/icons/${KIND_ICON[k]}.webp" alt="">` : svg(KIND_GLYPH[k] || 'link', KIND_GLYPH[k] ? 'wx' : ''));
+
 /** Modelos agrupados (cada grupo é uma aba na janela Widgets, 0.38.0):
  *  [{ key, group, kind ('brunos' | tipo da Integração | 'blank'), models: [{ id, name, desc, item }] }]. */
 export function modelGroups(integrations = []) {

@@ -1379,6 +1379,30 @@ label.wsw { display: flex !important; align-items: center; justify-content: spac
 .wed-preview { min-height: 200px; display: grid; place-items: center; padding: 24px 10px; border-radius: 18px; background: rgba(0,0,0,.22) center / cover; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
 .wed-actions { display: flex; gap: 8px; align-items: center; }
 /* integrações */
+/* Janela Integrações (0.39.0): cartões com o que cada integração libera */
+.icards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.icard { display: flex; flex-direction: column; gap: 9px; padding: 14px; border-radius: 16px; background: rgba(255,255,255,.04); box-shadow: var(--shadow-btn-hl-soft); cursor: pointer; text-align: left; min-width: 0; transition: background .15s, transform .2s var(--ease-glass); }
+.icard:hover { background: rgba(255,255,255,.08); }
+.icard:active { transform: scale(.985); }
+.icard:focus-visible { outline: 2px solid var(--brand-lightest); outline-offset: 2px; }
+.icard-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.icard .winteg-txt small.wrap, .winteg-txt small.wrap { white-space: normal; line-height: 1.35; }
+.icard .wst { font-size: 11.5px; }
+.ichips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ichip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,.07); color: rgba(255,255,255,.85); }
+.ichip .svg { font-size: 12px; opacity: .75; }
+.icard-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.icard-acts:empty, .icard-tags:empty { display: none; }
+.icard-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.itag { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 99px; font-size: 11px; font-weight: 650; background: rgba(255,255,255,.1); }
+.itag.ok { background: rgba(58,209,107,.18); color: #b9f5cd; }
+.itag .svg { font-size: 11px; }
+.winteg.sugg .winteg-txt .ichips { margin-top: 4px; }
+.ilib { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; margin: 6px 0 14px; max-width: 560px; border-radius: 14px; background: var(--brand-soft); }
+.ilib .wed-lbl { width: 100%; margin: 0; }
+/* lista do dock (0.39.0): ícones do sistema e apps em seções */
+.pick-sec { font-size: 11px; font-weight: 700; opacity: .5; padding: 8px 10px 4px; }
+.pick-sec small { font-weight: 500; }
 .winteg-list { display: flex; flex-direction: column; gap: 8px; }
 .winteg { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.04); box-shadow: var(--shadow-btn-hl-soft); text-align: left; transition: background .15s; }
 button.winteg:hover { background: rgba(255,255,255,.08); }

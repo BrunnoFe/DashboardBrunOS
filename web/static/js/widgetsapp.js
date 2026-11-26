@@ -1,48 +1,26 @@
-// Janela Widgets (etapa 7): Meus widgets · Modelos · Integrações, e o editor com prévia ao vivo.
+// Janela Widgets (etapa 7): Meus widgets · Modelos, e o editor com prévia ao vivo. As Integrações
+// ganharam janela própria na 0.39.0 (integapp.js); o botão daqui leva até lá.
 // Carregada só quando abre. Termos em CONTEXT.md.
 import { api } from './api.js';
-import { $, $$, esc, svg, on, toast, toastError, confirmDialog, openDialog, timeAgo, clamp, cssVal } from './ui.js';
-import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, TOR_COLS, TOR_SORTS, torOpts, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, fmtText, sizeLabel, minSize } from './widgets.js';
+import { $, $$, esc, svg, on, toast, confirmDialog, openDialog, clamp, cssVal } from './ui.js';
+import { FORMATS, CHART_TYPES, RANGES, WINDOWS, ICONS, FOLDER_ICONS, FOLDER_HUES, ROTATE, TIMEZONES, TOR_COLS, TOR_SORTS, torOpts, modelGroups, normalize, widgetHTML, innerHTML, defaultColors, acceptsKind, sizeLabel, minSize, kindIcon } from './widgets.js';
 
-const KIND_ICON = { adguard: 'adguard-home', speedtest: 'speedtest-tracker', plex: 'plex', immich: 'immich', watchyourlan: 'watchyourlan', tailscale: 'tailscale', transmission: 'transmission', syncthing: 'syncthing', nextcloud: 'nextcloud', vaultwarden: 'vaultwarden' };
-const KIND_GLYPH = { weather: 'wx-partly', tuya: 'plug' }; // tipos sem ícone de app: um desenho próprio
-
-// Clima: procura a cidade pelo nome (o servidor pergunta ao Open-Meteo) e mostra a lista para escolher
-let cityTimer = 0, citySeq = 0;
-function searchCity(input) {
-  clearTimeout(cityTimer);
-  const box = input.closest('label').querySelector('.wcity-list');
-  const q = input.value.trim();
-  if (q.length < 2) { box.hidden = true; return; }
-  cityTimer = setTimeout(async () => {
-    const seq = ++citySeq;
-    box.hidden = false; box.innerHTML = '<span class="hint">procurando…</span>';
-    try {
-      const list = await api.geocode(q);
-      if (seq !== citySeq || !st) return;
-      st.places = list;
-      box.innerHTML = list.length ? list.map((p, i) => `<button type="button" class="wcity-opt" data-place="${i}">${svg('home')}<b>${esc(p.name)}</b><small>${esc([p.region, p.country].filter(Boolean).join(' · '))}</small></button>`).join('') : '<span class="hint">Nenhuma cidade com esse nome.</span>';
-    } catch (e) { if (seq === citySeq) box.innerHTML = `<span class="hint">${esc(e.message)}</span>`; }
-  }, 350);
-}
-const INTERVALS = [[10, '10 segundos'], [15, '15 segundos'], [30, '30 segundos'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos'], [1800, '30 minutos'], [3600, '1 hora']];
 // Tamanho do widget na prévia (px do desenho base): Quadros de 240 × 148, vãos de 28 e 18 + rótulo
 const prevDims = (it) => [it.w * 240 + (it.w - 1) * 28, it.h * 148 + (it.h - 1) * 44];
 
 let st = null; // { body, ctx, view, page, draft, editId, integ }
 
-const kindIcon = (k) => (KIND_ICON[k] ? `<img src="assets/icons/${KIND_ICON[k]}.webp" alt="">` : svg(KIND_GLYPH[k] || 'link', KIND_GLYPH[k] ? 'wx' : ''));
 const sw = (on_, attrs = '') => `<button type="button" class="switch ${on_ ? 'on' : ''}" role="switch" aria-checked="${!!on_}" ${attrs}></button>`;
 
-export function mountWidgets(body, { ctx, edit, add }) {
-  st = { body, ctx, view: 'mine', page: add ?? ctx.currentPage() };
+export function mountWidgets(body, { ctx, edit, add, modelTab }) {
+  st = { body, ctx, view: 'mine', page: add ?? ctx.currentPage(), modelTab };
   body.innerHTML = `<div class="wapp">
     <h2 class="sheet-title">Widgets</h2>
     <div class="wapp-grid">
       <nav class="wapp-nav">
         <button data-view="mine">${svg('grid')}<span>Meus widgets</span><small data-count="mine"></small></button>
         <button data-view="models">${svg('sparkles')}<span>Modelos</span></button>
-        <button data-view="integrations">${svg('link')}<span>Integrações</span><small data-count="integ"></small></button>
+        <button data-act="open-integ" title="Abre a janela Integrações">${svg('link')}<span>Integrações</span><small data-count="integ"></small></button>
         <p class="wapp-tip">Dica: na tela inicial, clique com o botão direito num widget para trocar o tamanho, mover de página ou organizar arrastando.</p>
       </nav>
       <section class="wapp-main"></section>
@@ -61,17 +39,17 @@ export function mountWidgets(body, { ctx, edit, add }) {
 export function focusWidgets(opts = {}) {
   if (!st) return;
   if (opts.edit) openEditor(opts.edit);
-  else if (opts.add != null) { st.page = opts.add; show('models'); }
+  else if (opts.add != null) { st.page = opts.add; if (opts.modelTab) st.modelTab = opts.modelTab; show('models'); }
 }
 
 const main = () => $('.wapp-main', st.body);
 function show(view) {
   st.view = view;
-  $$('.wapp-nav [data-view]', st.body).forEach((b) => b.classList.toggle('on', b.dataset.view === view || (view === 'edit' && b.dataset.view === 'mine') || (view === 'integration' && b.dataset.view === 'integrations')));
+  $$('.wapp-nav [data-view]', st.body).forEach((b) => b.classList.toggle('on', b.dataset.view === view || (view === 'edit' && b.dataset.view === 'mine')));
   const w2 = st.ctx.w2;
   $('[data-count="mine"]', st.body).textContent = Object.keys(w2.items).length || '';
   $('[data-count="integ"]', st.body).textContent = st.ctx.integrations.length || '';
-  ({ mine: drawMine, models: drawModels, integrations: drawIntegrations, edit: drawEditor, integration: drawIntegration })[view]();
+  ({ mine: drawMine, models: drawModels, edit: drawEditor })[view]();
   main().scrollTop = 0;
 }
 
@@ -119,7 +97,7 @@ function drawModels() {
   const total = st.ctx.pages();
   main().innerHTML = `<div class="wapp-head"><div><h3>Modelos</h3><p>Escolha um ponto de partida; dá para mudar tudo depois.</p></div><span class="f-spacer"></span>
     <label class="wapp-inline">Colocar na <select class="text-input sm" data-f="page">${Array.from({ length: total + 1 }, (_, i) => `<option value="${i}" ${i === st.page ? 'selected' : ''}>${i < total ? `página ${i + 1}` : 'página nova'}</option>`).join('')}</select></label></div>
-    ${st.ctx.integrations.length ? '' : `<div class="wapp-note">${svg('link')}<span>Cadastre uma integração (AdGuard, Speedtest…) para ver os modelos com dados dos seus apps.</span><button class="pill-btn" data-view="integrations">Integrações</button></div>`}
+    ${st.ctx.integrations.length ? '' : `<div class="wapp-note">${svg('link')}<span>Cadastre uma integração (AdGuard, Speedtest…) para ver os modelos com dados dos seus apps.</span><button class="pill-btn" data-act="open-integ">Integrações</button></div>`}
     <div class="wapp-tabs" role="tablist" aria-label="Modelos por app">${groups.map((g) => `<button class="wapp-tab ${g.key === cur.key ? 'on' : ''}" role="tab" aria-selected="${g.key === cur.key}" data-mtab="${esc(g.key)}"><span class="wapp-tab-ico">${groupIcon(g.kind)}</span>${esc(g.group)}<small>${g.models.length}</small></button>`).join('')}</div>
     <div class="wapp-cards" role="tabpanel">${cur.models.map((m) => {
       const it = normalize(m.item);
@@ -351,113 +329,6 @@ function saveDraft() {
   show('mine');
 }
 
-/* ── Integrações ───────────────────────────────────────────────── */
-async function drawIntegrations() {
-  const list = st.ctx.integrations;
-  const metrics = st.ctx.metrics;
-  main().innerHTML = `<div class="wapp-head"><div><h3>Integrações</h3><p>Os apps de onde os widgets tiram dados. A senha ou o token fica guardado cifrado no servidor e nunca vem para o navegador.</p></div>
-    <span class="f-spacer"></span><button class="pill-btn" data-act="tuya-assist">${svg('plug')}Assistente de tomadas</button><button class="pill-btn primary" data-act="new-integ">${svg('plus')}Nova integração</button></div>
-    <div class="wapp-suggest"></div>
-    <div class="winteg-list">${list.length ? list.map((it) => {
-      const v = metrics[it.id];
-      const status = v?.err ? `<span class="wst bad">${svg('alert')}${esc(v.err)}</span>` : v?.at ? `<span class="wst ok">atualizado ${esc(timeAgo(v.at))}</span>` : '<span class="wst">só busca quando algum widget usa e a tela está aberta</span>';
-      return `<button class="winteg" data-integ="${esc(it.id)}"><span class="winteg-ico">${kindIcon(it.kind)}</span><span class="winteg-txt"><b>${esc(it.name)}</b><small>${esc(it.url || it.options?.city || '')}</small>${status}</span><span class="chev">${svg('chevR')}</span></button>`;
-    }).join('') : `<div class="wapp-empty">${svg('link')}<p>Nenhuma integração ainda.</p></div>`}</div>`;
-  try {
-    const sugg = (await api.integrations.suggest()).filter((s) => !list.some((it) => it.kind === s.kind && it.url === s.url));
-    const box = $('.wapp-suggest', st.body);
-    if (box && sugg.length && st.view === 'integrations') {
-      box.innerHTML = `<div class="wapp-sec">Encontrei no Runtipi</div><div class="winteg-list">${sugg.map((s, i) => `<div class="winteg sugg"><span class="winteg-ico">${kindIcon(s.kind)}</span><span class="winteg-txt"><b>${esc(s.name)}</b><small>${esc(s.url)}</small></span><button class="pill-btn" data-sugg="${i}">${svg('plus')}Adicionar</button></div>`).join('')}</div>`;
-      st.sugg = sugg;
-    }
-  } catch { /* sem sugestões */ }
-}
-
-function openIntegration(id, preset) {
-  const it = id ? st.ctx.integrations.find((x) => x.id === id) : null;
-  st.integ = it ? { ...structuredClone(it), secret: '', options: { ...(it.options || {}) } } : { kind: preset?.kind || '', name: preset?.name || '', url: preset?.url || '', user: '', secret: '', interval: 0, alerts: {}, options: {}, hasSecret: false };
-  if (!it && st.integ.kind) applyKindDefaults();
-  st.testResult = null;
-  show('integration');
-}
-function applyKindDefaults() {
-  const k = st.ctx.kinds.find((x) => x.id === st.integ.kind); if (!k) return;
-  st.integ.interval ||= k.interval;
-  st.integ.name ||= k.name;
-  for (const a of k.alerts || []) st.integ.alerts[a.id] ||= { on: false, value: a.default };
-}
-function drawIntegration() {
-  const g = st.integ, kinds = st.ctx.kinds, k = kinds.find((x) => x.id === g.kind);
-  if (!k) {
-    main().innerHTML = `<div class="wapp-head"><div><h3>Nova integração</h3><p>Qual app?</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
-      <div class="winteg-list">${kinds.map((x) => `<button class="winteg" data-kind="${esc(x.id)}"><span class="winteg-ico">${kindIcon(x.id)}</span><span class="winteg-txt"><b>${esc(x.name)}</b><small>${esc(x.desc)}</small></span><span class="chev">${svg('chevR')}</span></button>`).join('')}</div>
-      <p class="hint">Quase todos só leem dados. O AdGuard e o Transmission também aceitam pausar, e o Nextcloud mexe nos seus arquivos se você der uma senha de app para isso.</p>`;
-    return;
-  }
-  const field = (f) => {
-    if (f.type === 'hidden') return '';
-    if (f.type === 'city') { // Clima: procura a cidade pelo nome e guarda nome + coordenadas
-      const has = g.options?.lat && g.options?.lon;
-      return `<label>${esc(f.label)}<span class="wcity"><input class="text-input" data-city value="${esc(g.options?.city || '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off">${has ? `<small class="wcity-ok">${svg('check')}${esc((+g.options.lat).toFixed(2))}, ${esc((+g.options.lon).toFixed(2))}</small>` : ''}</span>
-        <span class="wcity-list" hidden></span>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
-    }
-    // 0.37.0: segunda credencial (senha de app dos arquivos do Nextcloud), guardada cifrada como a primeira
-    if (f.id === 'secret2') return `<label>${esc(f.label)}<input class="text-input" type="password" autocomplete="new-password" data-g="secret2" value="${esc(g.secret2 || '')}" placeholder="${g.hasSecret2 ? '•••••••• guardada (deixe vazio para manter)' : ''}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
-    if (f.id !== 'url' && f.id !== 'user' && f.id !== 'secret') { // campo extra (ex.: álbum do Immich)
-      return `<label>${esc(f.label)}<input class="text-input" data-gopt="${esc(f.id)}" value="${esc(g.options?.[f.id] || '')}" placeholder="${esc(f.placeholder || '')}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
-    }
-    if (f.id === 'secret') return `<label>${esc(f.label)}${f.required ? '' : ' <small>(opcional)</small>'}<input class="text-input" type="password" autocomplete="new-password" data-g="secret" value="${esc(g.secret)}" placeholder="${g.hasSecret ? '•••••••• guardado (deixe vazio para manter)' : ''}">${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
-    return `<label>${esc(f.label)}<input class="text-input" data-g="${f.id}" value="${esc(g[f.id] || '')}" placeholder="${esc(f.placeholder || '')}" ${f.id === 'url' ? 'inputmode="url"' : ''}>${f.help ? `<small class="hint">${esc(f.help)}</small>` : ''}</label>`;
-  };
-  const defs = new Map((k.metrics || []).map((m) => [m.id, m]));
-  const tr = st.testResult;
-  main().innerHTML = `<div class="wapp-head"><span class="winteg-ico big">${kindIcon(k.id)}</span><div><h3>${g.id ? esc(g.name) : `Nova integração: ${esc(k.name)}`}</h3><p>${esc(k.desc)}</p></div><span class="f-spacer"></span><button class="pill-btn" data-view="integrations">Voltar</button></div>
-    <form class="form-grid winteg-form" onsubmit="return false">
-      <label>Nome<input class="text-input" data-g="name" value="${esc(g.name)}" maxlength="60"><small class="hint">Aparece nas métricas, ex.: “${esc(g.name || k.name)} › ${esc(k.metrics?.[0]?.name || '')}”.</small></label>
-      ${k.id === 'tuya' ? `<div class="wapp-note">${svg('plug')}<span>Mais fácil: o <b>Assistente de tomadas</b> acha o IP, o ID, a versão e a chave local sozinho, pela conta do app Smart Life.</span><button type="button" class="pill-btn sm" data-act="tuya-assist">Abrir</button></div>`
-        : k.note ? `<div class="wapp-note">${svg('info')}<span>${esc(k.note)}</span></div>` : ''}
-      ${k.id === 'tailscale' ? `<div class="wts-cmds"><button type="button" class="pill-btn" data-act="ts-cmds">${svg('terminal')}Mostrar os comandos de atualização</button><pre class="pw-cmds" hidden tabindex="0"></pre></div>` : ''}
-      ${(k.fields || []).map(field).join('')}
-      <label>Buscar a cada<select class="text-input" data-g="interval">${INTERVALS.map(([s, l]) => `<option value="${s}" ${g.interval === s ? 'selected' : ''}>${l}${s === k.interval ? ' (recomendado)' : ''}</option>`).join('')}</select>
-        <small class="hint">Só enquanto alguém está com o BrunOS aberto e algum widget usa esta integração. Avisos ligados fazem uma busca a cada 5 minutos mesmo com a tela fechada.</small></label>
-      <div class="wed-lbl">Avisos no sino</div>
-      <div class="walerts">${(k.alerts || []).map((a) => { const s = g.alerts[a.id] || { on: false, value: a.default }; return `<div class="walert"><span class="walert-txt"><b>${esc(a.name)}</b><small>${esc(a.desc || '')}</small></span>
-        ${a.fixed ? '' : `<span class="walert-val"><input class="text-input sm" type="number" step="any" data-alert-val="${a.id}" value="${esc(s.value || a.default)}"><small>${esc(a.unit || '')}</small></span>`}${sw(s.on, `data-alert="${a.id}"`)}</div>`; }).join('')}</div>
-      ${tr ? `<div class="wtest ${tr.ok ? 'ok' : 'bad'}">${tr.ok ? `${svg('check')}<div><b>Funcionou!</b><small>${Object.entries(tr.values || {}).filter(([id]) => defs.get(id) && ['num', 'text'].includes(defs.get(id).kind)).slice(0, 5).map(([id, v]) => `${esc(defs.get(id).name)}: ${esc(fmtText(v, defs.get(id), {}))}`).join(' · ')}</small></div>` : `${svg('alert')}<div><b>Não funcionou</b><small>${esc(tr.error)}</small></div>`}</div>` : ''}
-      <div class="dlg-actions">${g.id ? `<button type="button" class="pill-btn danger" data-act="del-integ" style="margin-right:auto">${svg('trash')}Apagar</button>` : ''}
-        <button type="button" class="pill-btn" data-act="test-integ">${svg('refresh')}Testar</button><button type="button" class="pill-btn primary" data-act="save-integ">${svg('check')}Salvar</button></div>
-    </form>`;
-}
-function integBody() {
-  const g = st.integ;
-  const b = { kind: g.kind, name: g.name, url: g.url, user: g.user, interval: +g.interval, alerts: g.alerts, options: g.options || {} };
-  if (g.secret) b.secret = g.secret;
-  if (g.secret2) b.secret2 = g.secret2;
-  return b;
-}
-async function testInteg(btn) {
-  btn.disabled = true; btn.classList.add('busy');
-  try { st.testResult = await api.integrations.test({ ...integBody(), ...(st.integ.id ? { id: st.integ.id } : {}) }); }
-  catch (e) { st.testResult = { ok: false, error: e.message }; }
-  drawIntegration();
-}
-async function saveInteg(btn) {
-  btn.disabled = true;
-  try {
-    const g = st.integ;
-    if (g.id) await api.integrations.update(g.id, integBody()); else await api.integrations.add(integBody());
-    await st.ctx.reloadIntegrations();
-    toast('Integração salva', g.name);
-    show('integrations');
-  } catch (e) { btn.disabled = false; toastError(e, 'Não foi possível salvar'); }
-}
-async function deleteInteg() {
-  const g = st.integ;
-  if (!(await confirmDialog(`Apagar ${g.name}?`, 'Os widgets que usam esta integração vão ficar sem dados (você pode editá-los depois). A senha ou o token guardado é apagado.', 'Apagar', { danger: true }))) return;
-  try { await api.integrations.del(g.id); await st.ctx.reloadIntegrations(); toast('Integração apagada', g.name); show('integrations'); }
-  catch (e) { toastError(e, 'Não foi possível apagar'); }
-}
-
 /* ── Eventos ───────────────────────────────────────────────────── */
 async function onClick(e) {
   if (!st) return;
@@ -470,17 +341,6 @@ async function onClick(e) {
   if ((el = q('[data-pmedida]'))) { st.ctx.pagePicker('wm', +el.dataset.pmedida, el, () => { if (st?.view === 'mine') drawMine(); }); return; }
   if ((el = q('[data-edit]'))) { openEditor(el.dataset.edit); return; }
   if ((el = q('[data-model-use]'))) { const m = st.models.get(el.dataset.modelUse); st.editId = null; openEditor(null, { ...m, model: el.dataset.modelUse }); return; }
-  if ((el = q('[data-integ]'))) { openIntegration(el.dataset.integ); return; }
-  if ((el = q('[data-kind]'))) { st.integ.kind = el.dataset.kind; applyKindDefaults(); drawIntegration(); return; }
-  if ((el = q('[data-sugg]'))) { openIntegration(null, st.sugg[+el.dataset.sugg]); return; }
-  if ((el = q('[data-place]'))) {
-    const p = st.places?.[+el.dataset.place]; if (!p) return;
-    const name = [p.name, p.region].filter(Boolean).join(', ');
-    st.integ.options = { ...(st.integ.options || {}), city: name, lat: String(p.lat), lon: String(p.lon) };
-    if (!st.integ.id && (!st.integ.name || st.integ.name === 'Clima')) st.integ.name = `Clima de ${p.name}`;
-    drawIntegration(); return;
-  }
-  if ((el = q('[data-alert]'))) { const id = el.dataset.alert; const a = st.integ.alerts[id] ||= { on: false }; a.on = !a.on; el.classList.toggle('on', a.on); el.setAttribute('aria-checked', a.on); return; }
   const d = st.draft;
   if (st.view === 'edit' && d) {
     if ((el = q('[data-foact]'))) {
@@ -535,37 +395,13 @@ async function onClick(e) {
     else if (a === 'cancel') { st.draft = null; show(st.editId ? 'mine' : 'models'); }
     else if (a === 'save') saveDraft();
     else if (a === 'remove') { if (await confirmDialog('Remover este widget?', 'Ele sai da tela inicial.', 'Remover', { danger: true })) { st.ctx.remove(st.editId); st.editId = null; show('mine'); } }
-    else if (a === 'new-integ') openIntegration(null);
-    else if (a === 'tuya-assist') { // 0.31.0: carrega sob demanda, como as outras janelas
-      const { tuyaAssistant } = await import('./tuya.js');
-      tuyaAssistant({ onDone: async () => { await st.ctx.reloadIntegrations(); if (st.view === 'integrations') show('integrations'); } });
-    }
-    else if (a === 'ts-cmds') {
-      const pre = el.parentElement.querySelector('pre');
-      try { pre.textContent = (await api.power.setup()).updateCommands; pre.hidden = false; el.hidden = true; }
-      catch (e) { toastError(e, 'Não deu para gerar os comandos'); }
-    }
-    else if (a === 'test-integ') testInteg(el);
-    else if (a === 'save-integ') saveInteg(el);
-    else if (a === 'del-integ') deleteInteg();
+    else if (a === 'open-integ') st.ctx.openIntegrations(); // 0.39.0: janela própria
   }
 }
 
 function onInput(e) {
   if (!st) return;
   const t = e.target;
-  if (st.view === 'integration' && st.integ) {
-    if (t.dataset.city != null && e.type === 'input') { // digitou outra cidade: precisa escolher na lista de novo
-      st.integ.options = { ...(st.integ.options || {}), city: t.value, lat: '', lon: '' };
-      t.parentElement.querySelector('.wcity-ok')?.remove();
-      st.testResult = null; searchCity(t);
-      return;
-    }
-    if (t.dataset.g) { st.integ[t.dataset.g] = t.dataset.g === 'interval' ? +t.value : t.value; st.testResult = null; }
-    if (t.dataset.gopt) { st.integ.options = { ...(st.integ.options || {}), [t.dataset.gopt]: t.value }; st.testResult = null; }
-    if (t.dataset.alertVal) { const a = st.integ.alerts[t.dataset.alertVal] ||= { on: false }; a.value = parseFloat(t.value) || 0; }
-    return;
-  }
   if (st.view === 'models' && t.dataset.f === 'page') { st.page = +t.value; return; }
   const d = st.draft; if (st.view !== 'edit' || !d) return;
   if (t.dataset.fo) {
